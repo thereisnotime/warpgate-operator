@@ -216,6 +216,73 @@ var _ = Describe("WarpgateUser Controller", func() {
 		})
 	})
 
+	Context("ensurePasswordCredential creates secret with owner ref", func() {
+		It("should create the credential in Warpgate and store the password Secret with labels and owner reference", func() {
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(warpgate.User{ID: "user-ownerref-001", Username: "ownerrefuser"})
+				}
+			})
+			mux.HandleFunc("/@warpgate/admin/api/users/user-ownerref-001/credentials/passwords", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(warpgate.PasswordCredential{ID: "cred-ownerref-001", Password: "stored-pw"})
+				}
+			})
+			srv := setupMockAndConnection(mux, "-ownerref")
+			defer srv.Close()
+
+			user := &warpgatev1alpha1.WarpgateUser{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-ownerref-user",
+					Namespace: userNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateUserSpec{
+					ConnectionRef:    connName + "-ownerref",
+					Username:         "ownerrefuser",
+					GeneratePassword: boolPtr(true),
+				},
+			}
+			Expect(k8sClient.Create(ctx, user)).To(Succeed())
+
+			nn := types.NamespacedName{Name: user.Name, Namespace: userNamespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateUser
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.PasswordCredentialID).To(Equal("cred-ownerref-001"))
+			Expect(updated.Status.PasswordSecretRef).To(Equal("test-ownerref-user-password"))
+
+			// Verify the Secret has the expected labels and owner reference.
+			var pwSecret corev1.Secret
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "test-ownerref-user-password",
+				Namespace: userNamespace,
+			}, &pwSecret)).To(Succeed())
+
+			Expect(pwSecret.Labels["app.kubernetes.io/managed-by"]).To(Equal("warpgate-operator"))
+			Expect(pwSecret.Labels["app.kubernetes.io/name"]).To(Equal("warpgate-user-password"))
+			Expect(pwSecret.Labels["app.kubernetes.io/instance"]).To(Equal("test-ownerref-user"))
+
+			// Owner reference should be set.
+			Expect(pwSecret.OwnerReferences).NotTo(BeEmpty())
+			Expect(pwSecret.OwnerReferences[0].Name).To(Equal("test-ownerref-user"))
+
+			// The password should be non-empty (randomly generated).
+			Expect(pwSecret.Data["password"]).NotTo(BeEmpty())
+			Expect(string(pwSecret.Data["username"])).To(Equal("ownerrefuser"))
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+		})
+	})
+
 	Context("Create user with generatePassword=false", func() {
 		It("should not create a password credential or Secret", func() {
 			mux := http.NewServeMux()

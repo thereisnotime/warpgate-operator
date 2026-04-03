@@ -491,6 +491,103 @@ var _ = Describe("WarpgateTicket Controller", func() {
 		})
 	})
 
+	Context("Delete ticket with populated IDs and missing secret", func() {
+		var (
+			mockServer   *httptest.Server
+			tokenSecret  string
+			connName     string
+			crName       string
+			namespace    string
+			deleteCalled bool
+		)
+
+		BeforeEach(func() {
+			tokenSecret = "ticket-delmissec-token"
+			connName = "ticket-delmissec-conn"
+			crName = "ticket-delmissec-tkt"
+			namespace = testNamespace
+			deleteCalled = false
+
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/tickets/pre-ticket-id", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodDelete {
+					deleteCalled = true
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: tokenSecret, Namespace: namespace},
+				Data:       map[string][]byte{"username": []byte("admin"), "password": []byte("test-pass")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:                 mockServer.URL,
+					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: tokenSecret},
+					InsecureSkipVerify:   true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+
+			cr := &warpgatev1alpha1.WarpgateTicket{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       crName,
+					Namespace:  namespace,
+					Finalizers: []string{ticketFinalizer},
+				},
+				Spec: warpgatev1alpha1.WarpgateTicketSpec{
+					ConnectionRef: connName,
+					Username:      "missecuser",
+					TargetName:    "missectarget",
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+
+			// Set status to simulate a previously-created ticket with a secret that no longer exists.
+			cr.Status.TicketID = "pre-ticket-id"
+			cr.Status.SecretRef = crName + "-secret"
+			Expect(k8sClient.Status().Update(ctx, cr)).To(Succeed())
+			// Deliberately do NOT create the secret - it's "already gone."
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: tokenSecret, Namespace: namespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should delete the ticket via API and tolerate missing secret gracefully", func() {
+			nn := types.NamespacedName{Name: crName, Namespace: namespace}
+
+			var cr warpgatev1alpha1.WarpgateTicket
+			Expect(k8sClient.Get(ctx, nn, &cr)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(deleteCalled).To(BeTrue())
+
+			// CR should be gone.
+			err = k8sClient.Get(ctx, nn, &cr)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+		})
+	})
+
 	Context("Secret creation failure", func() {
 		var (
 			mockServer  *httptest.Server

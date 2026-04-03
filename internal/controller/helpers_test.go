@@ -194,6 +194,139 @@ var _ = Describe("getWarpgateClient helper", func() {
 		})
 	})
 
+	Context("Custom UsernameKey", func() {
+		var (
+			connName   = "helper-conn-custom-ukey"
+			secretName = "helper-secret-custom-ukey"
+		)
+
+		BeforeEach(func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: helperNS},
+				Data:       map[string][]byte{"my-user": []byte("admin"), "password": []byte("pass")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host: "https://warpgate.example.com",
+					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{
+						Name:        secretName,
+						UsernameKey: "my-user",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: helperNS}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: helperNS}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should use the custom UsernameKey to look up the username", func() {
+			client, err := getWarpgateClient(ctx, k8sClient, helperNS, connName)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(client).NotTo(BeNil())
+		})
+	})
+
+	Context("Custom PasswordKey", func() {
+		var (
+			connName   = "helper-conn-custom-pkey"
+			secretName = "helper-secret-custom-pkey"
+		)
+
+		BeforeEach(func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: helperNS},
+				Data:       map[string][]byte{"username": []byte("admin"), "my-pass": []byte("secret")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host: "https://warpgate.example.com",
+					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{
+						Name:        secretName,
+						PasswordKey: "my-pass",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: helperNS}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: helperNS}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should use the custom PasswordKey to look up the password", func() {
+			client, err := getWarpgateClient(ctx, k8sClient, helperNS, connName)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(client).NotTo(BeNil())
+		})
+	})
+
+	Context("Custom UsernameKey and PasswordKey together", func() {
+		var (
+			connName   = "helper-conn-custom-both"
+			secretName = "helper-secret-custom-both"
+		)
+
+		BeforeEach(func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: helperNS},
+				Data:       map[string][]byte{"wg-user": []byte("admin"), "wg-pass": []byte("secret")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host: "https://warpgate.example.com",
+					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{
+						Name:        secretName,
+						UsernameKey: "wg-user",
+						PasswordKey: "wg-pass",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: helperNS}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: helperNS}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should use both custom keys successfully", func() {
+			client, err := getWarpgateClient(ctx, k8sClient, helperNS, connName)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(client).NotTo(BeNil())
+		})
+	})
+
 	Context("InsecureSkipVerify flag", func() {
 		var (
 			connName   = "helper-conn-insecure"

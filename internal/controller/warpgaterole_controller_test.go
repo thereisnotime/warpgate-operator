@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	warpgatev1alpha1 "github.com/thereisnotime/warpgate-operator/api/v1alpha1"
@@ -401,6 +402,159 @@ var _ = Describe("WarpgateRole Controller", func() {
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(readyCond.Reason).To(Equal("UpdateFailed"))
+		})
+	})
+
+	Context("Delete role with empty ExternalID", func() {
+		It("should remove the finalizer without calling Warpgate API delete", func() {
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			// No role endpoints needed — the delete should skip the API call entirely.
+			srv := setupMockAndConnection(mux, "-delempty")
+			defer srv.Close()
+
+			role := &warpgatev1alpha1.WarpgateRole{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-delempty-role",
+					Namespace: roleNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateRoleSpec{
+					ConnectionRef: connName + "-delempty",
+					Name:          "test-delempty-role",
+				},
+			}
+			Expect(k8sClient.Create(ctx, role)).To(Succeed())
+
+			nn := types.NamespacedName{Name: role.Name, Namespace: roleNamespace}
+
+			// Manually add the finalizer without creating in Warpgate (no ExternalID).
+			var fetched warpgatev1alpha1.WarpgateRole
+			Expect(k8sClient.Get(ctx, nn, &fetched)).To(Succeed())
+			controllerutil.AddFinalizer(&fetched, roleFinalizer)
+			Expect(k8sClient.Update(ctx, &fetched)).To(Succeed())
+
+			// Delete the CR.
+			Expect(k8sClient.Delete(ctx, &fetched)).To(Succeed())
+
+			// Reconcile the deletion — should skip the API delete and just remove the finalizer.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// The CR should be fully gone now.
+			var deleted warpgatev1alpha1.WarpgateRole
+			err = k8sClient.Get(ctx, nn, &deleted)
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Context("Delete role with Warpgate API error", func() {
+		It("should return an error when Warpgate API delete fails with non-404", func() {
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(warpgate.Role{ID: "role-delerr-001", Name: "test-delerr-role"})
+				}
+			})
+			mux.HandleFunc("/@warpgate/admin/api/role/", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodDelete {
+					w.WriteHeader(http.StatusInternalServerError)
+					_, _ = w.Write([]byte(`{"error":"internal"}`))
+					return
+				}
+			})
+			srv := setupMockAndConnection(mux, "-delerr")
+			defer srv.Close()
+
+			role := &warpgatev1alpha1.WarpgateRole{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-delerr-role",
+					Namespace: roleNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateRoleSpec{
+					ConnectionRef: connName + "-delerr",
+					Name:          "test-delerr-role",
+				},
+			}
+			Expect(k8sClient.Create(ctx, role)).To(Succeed())
+
+			nn := types.NamespacedName{Name: role.Name, Namespace: roleNamespace}
+
+			// Create the role first.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify ExternalID was set.
+			var created warpgatev1alpha1.WarpgateRole
+			Expect(k8sClient.Get(ctx, nn, &created)).To(Succeed())
+			Expect(created.Status.ExternalID).To(Equal("role-delerr-001"))
+
+			// Delete the CR.
+			Expect(k8sClient.Delete(ctx, &created)).To(Succeed())
+
+			// Reconcile the deletion — should return error since API delete failed.
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).To(HaveOccurred())
+
+			// The CR should still exist (finalizer not removed).
+			var still warpgatev1alpha1.WarpgateRole
+			Expect(k8sClient.Get(ctx, nn, &still)).To(Succeed())
+			Expect(controllerutil.ContainsFinalizer(&still, roleFinalizer)).To(BeTrue())
+		})
+	})
+
+	Context("Delete role already gone in Warpgate", func() {
+		It("should remove the finalizer when Warpgate returns 404 on delete", func() {
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(warpgate.Role{ID: "role-del404-001", Name: "test-del404-role"})
+				}
+			})
+			mux.HandleFunc("/@warpgate/admin/api/role/", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodDelete {
+					w.WriteHeader(http.StatusNotFound)
+					_, _ = w.Write([]byte(`"not found"`))
+					return
+				}
+			})
+			srv := setupMockAndConnection(mux, "-del404")
+			defer srv.Close()
+
+			role := &warpgatev1alpha1.WarpgateRole{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-del404-role",
+					Namespace: roleNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateRoleSpec{
+					ConnectionRef: connName + "-del404",
+					Name:          "test-del404-role",
+				},
+			}
+			Expect(k8sClient.Create(ctx, role)).To(Succeed())
+
+			nn := types.NamespacedName{Name: role.Name, Namespace: roleNamespace}
+
+			// Create the role first.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Delete the CR.
+			var created warpgatev1alpha1.WarpgateRole
+			Expect(k8sClient.Get(ctx, nn, &created)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &created)).To(Succeed())
+
+			// Reconcile the deletion — 404 from Warpgate should be ignored, finalizer removed.
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// The CR should be fully gone now.
+			var deleted warpgatev1alpha1.WarpgateRole
+			err = k8sClient.Get(ctx, nn, &deleted)
+			Expect(err).To(HaveOccurred())
 		})
 	})
 

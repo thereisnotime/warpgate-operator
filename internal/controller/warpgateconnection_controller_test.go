@@ -17,7 +17,9 @@ limitations under the License.
 package controller
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 
@@ -26,6 +28,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -475,6 +478,303 @@ var _ = Describe("WarpgateConnection Controller", func() {
 		})
 	})
 
+	Context("Custom PasswordKey fallback in buildClient", func() {
+		var (
+			mockServer *httptest.Server
+			secretName string
+			connName   string
+			namespace  string
+		)
+
+		BeforeEach(func() {
+			secretName = "wg-token-pwkey"
+			connName = "wg-conn-pwkey"
+			namespace = testNamespace
+
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode([]map[string]any{})
+			})
+			mockServer = httptest.NewServer(mux)
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"username":  []byte("admin"),
+					"password":  []byte("default-pass"),
+					"my-secret": []byte("custom-pass"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				controllerutil.RemoveFinalizer(conn, warpgateFinalizer)
+				_ = k8sClient.Update(ctx, conn)
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should default PasswordKey to 'password' when left empty", func() {
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      connName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host: mockServer.URL,
+					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{
+						Name:        secretName,
+						PasswordKey: "", // should fall back to "password"
+					},
+					InsecureSkipVerify: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+
+			nn := types.NamespacedName{Name: connName, Namespace: namespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateConnection
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+		})
+
+		It("should fail when custom PasswordKey is set but the key is missing from the secret", func() {
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      connName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host: mockServer.URL,
+					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{
+						Name:        secretName,
+						PasswordKey: "nonexistent-key",
+					},
+					InsecureSkipVerify: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+
+			nn := types.NamespacedName{Name: connName, Namespace: namespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateConnection
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("ConnectionFailed"))
+			Expect(readyCond.Message).To(ContainSubstring(`key "nonexistent-key" not found`))
+		})
+	})
+
+	Context("Status update failure after Ready=True", func() {
+		var (
+			mockServer *httptest.Server
+			secretName string
+			connName   string
+			namespace  string
+		)
+
+		BeforeEach(func() {
+			secretName = "wg-token-statusfail-true"
+			connName = "wg-conn-statusfail-true"
+			namespace = testNamespace
+
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode([]map[string]any{})
+			})
+			mockServer = httptest.NewServer(mux)
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"username": []byte("admin"),
+					"password": []byte("test-pass"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      connName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:                 mockServer.URL,
+					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
+					InsecureSkipVerify:   true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				controllerutil.RemoveFinalizer(conn, warpgateFinalizer)
+				_ = k8sClient.Update(ctx, conn)
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should return an error when status update fails after setting Ready=True", func() {
+			nn := types.NamespacedName{Name: connName, Namespace: namespace}
+
+			// Use a reconciler with a status client that will fail writes.
+			failReconciler := &WarpgateConnectionReconciler{
+				Client: &statusFailClient{Client: k8sClient},
+				Scheme: k8sClient.Scheme(),
+			}
+			_, err := failReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("status update injected failure"))
+		})
+	})
+
+	Context("Status update failure after Ready=False", func() {
+		var (
+			secretName string
+			connName   string
+			namespace  string
+		)
+
+		BeforeEach(func() {
+			secretName = "wg-token-statusfail-false"
+			connName = "wg-conn-statusfail-false"
+			namespace = testNamespace
+
+			// Secret exists but the connection host is unreachable, so buildClient succeeds
+			// but ListRoles fails, leading to Ready=False.
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"username": []byte("admin"),
+					"password": []byte("test-pass"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      connName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:                 "http://127.0.0.1:1",
+					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				controllerutil.RemoveFinalizer(conn, warpgateFinalizer)
+				_ = k8sClient.Update(ctx, conn)
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should return an error when status update fails after setting Ready=False (ListRoles path)", func() {
+			nn := types.NamespacedName{Name: connName, Namespace: namespace}
+
+			failReconciler := &WarpgateConnectionReconciler{
+				Client: &statusFailClient{Client: k8sClient},
+				Scheme: k8sClient.Scheme(),
+			}
+			_, err := failReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("status update injected failure"))
+		})
+	})
+
+	Context("Status update failure after buildClient fails", func() {
+		var (
+			connName  string
+			namespace string
+		)
+
+		BeforeEach(func() {
+			connName = "wg-conn-statusfail-build"
+			namespace = testNamespace
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      connName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:                 "https://warpgate.example.com",
+					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: "nonexistent-secret-statusfail"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				controllerutil.RemoveFinalizer(conn, warpgateFinalizer)
+				_ = k8sClient.Update(ctx, conn)
+				_ = k8sClient.Delete(ctx, conn)
+			}
+		})
+
+		It("should return the status update error when buildClient fails and status update also fails", func() {
+			nn := types.NamespacedName{Name: connName, Namespace: namespace}
+
+			failReconciler := &WarpgateConnectionReconciler{
+				Client: &statusFailClient{Client: k8sClient},
+				Scheme: k8sClient.Scheme(),
+			}
+			_, err := failReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("status update injected failure"))
+		})
+	})
+
 	Context("Resource not found", func() {
 		It("should return no error when the resource doesn't exist", func() {
 			nn := types.NamespacedName{
@@ -579,4 +879,29 @@ func findReadyCondition(conditions []metav1.Condition) *metav1.Condition {
 		}
 	}
 	return nil
+}
+
+// statusFailClient wraps a real client but makes Status().Update() always fail.
+type statusFailClient struct {
+	client.Client
+}
+
+type statusFailWriter struct {
+	client.SubResourceClient
+}
+
+func (s *statusFailClient) Status() client.SubResourceWriter {
+	return &statusFailWriter{}
+}
+
+func (w *statusFailWriter) Update(_ context.Context, _ client.Object, _ ...client.SubResourceUpdateOption) error {
+	return fmt.Errorf("status update injected failure")
+}
+
+func (w *statusFailWriter) Patch(_ context.Context, _ client.Object, _ client.Patch, _ ...client.SubResourcePatchOption) error {
+	return fmt.Errorf("status patch injected failure")
+}
+
+func (w *statusFailWriter) Create(_ context.Context, _ client.Object, _ client.Object, _ ...client.SubResourceCreateOption) error {
+	return fmt.Errorf("status create injected failure")
 }

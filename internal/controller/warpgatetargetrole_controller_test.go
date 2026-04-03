@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -629,6 +630,343 @@ var _ = Describe("WarpgateTargetRole Controller", func() {
 			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
+		})
+	})
+
+	Context("Delete binding with API error requeues", func() {
+		var (
+			mockServer *httptest.Server
+			secretName string
+			connName   string
+			crName     string
+			namespace  string
+		)
+
+		BeforeEach(func() {
+			secretName = "targetrole-delerr-token"
+			connName = "targetrole-delerr-conn"
+			crName = "targetrole-delerr-binding"
+			namespace = testNamespace
+
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode([]map[string]any{
+					{"id": "target-uuid-de", "name": "detarget", "options": json.RawMessage(`{"kind":"Ssh"}`)},
+				})
+			})
+			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode([]map[string]any{
+					{"id": "role-uuid-de", "name": "derole"},
+				})
+			})
+			mux.HandleFunc("/@warpgate/admin/api/targets/target-uuid-de/roles/role-uuid-de", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.WriteHeader(http.StatusCreated)
+					return
+				}
+				if r.Method == http.MethodDelete {
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+			})
+			mockServer = httptest.NewServer(mux)
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: namespace},
+				Data:       map[string][]byte{"username": []byte("admin"), "password": []byte("test-pass")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:                 mockServer.URL,
+					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
+					InsecureSkipVerify:   true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+
+			cr := &warpgatev1alpha1.WarpgateTargetRole{
+				ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateTargetRoleSpec{
+					ConnectionRef: connName,
+					TargetName:    "detarget",
+					RoleName:      "derole",
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cr := &warpgatev1alpha1.WarpgateTargetRole{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: namespace}, cr); err == nil {
+				controllerutil.RemoveFinalizer(cr, warpgateTargetRoleFinalizer)
+				_ = k8sClient.Update(ctx, cr)
+				_ = k8sClient.Delete(ctx, cr)
+			}
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should requeue when the Warpgate DELETE API returns a server error", func() {
+			nn := types.NamespacedName{Name: crName, Namespace: namespace}
+
+			// Add finalizer + create binding.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Delete the CR.
+			var cr warpgatev1alpha1.WarpgateTargetRole
+			Expect(k8sClient.Get(ctx, nn, &cr)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+
+			// Reconcile deletion — API returns 500, so it should requeue.
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(10 * time.Second))
+
+			// Finalizer should still be present.
+			Expect(k8sClient.Get(ctx, nn, &cr)).To(Succeed())
+			Expect(controllerutil.ContainsFinalizer(&cr, warpgateTargetRoleFinalizer)).To(BeTrue())
+		})
+	})
+
+	Context("Delete binding when API returns 404 (already gone)", func() {
+		var (
+			mockServer *httptest.Server
+			secretName string
+			connName   string
+			crName     string
+			namespace  string
+		)
+
+		BeforeEach(func() {
+			secretName = "targetrole-del404-token"
+			connName = "targetrole-del404-conn"
+			crName = "targetrole-del404-binding"
+			namespace = testNamespace
+
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode([]map[string]any{
+					{"id": "target-uuid-404", "name": "target404", "options": json.RawMessage(`{"kind":"Ssh"}`)},
+				})
+			})
+			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode([]map[string]any{
+					{"id": "role-uuid-404", "name": "role404"},
+				})
+			})
+			mux.HandleFunc("/@warpgate/admin/api/targets/target-uuid-404/roles/role-uuid-404", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.WriteHeader(http.StatusCreated)
+					return
+				}
+				if r.Method == http.MethodDelete {
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+			})
+			mockServer = httptest.NewServer(mux)
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: namespace},
+				Data:       map[string][]byte{"username": []byte("admin"), "password": []byte("test-pass")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:                 mockServer.URL,
+					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
+					InsecureSkipVerify:   true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+
+			cr := &warpgatev1alpha1.WarpgateTargetRole{
+				ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateTargetRoleSpec{
+					ConnectionRef: connName,
+					TargetName:    "target404",
+					RoleName:      "role404",
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should treat a 404 as success and remove the finalizer", func() {
+			nn := types.NamespacedName{Name: crName, Namespace: namespace}
+
+			// Add finalizer + create binding.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Delete the CR.
+			var cr warpgatev1alpha1.WarpgateTargetRole
+			Expect(k8sClient.Get(ctx, nn, &cr)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+
+			// Reconcile deletion — API returns 404, which is fine.
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// CR should be gone.
+			err = k8sClient.Get(ctx, nn, &cr)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+		})
+	})
+
+	Context("Recover from error condition to Ready", func() {
+		var (
+			mockServer *httptest.Server
+			secretName string
+			connName   string
+			crName     string
+			namespace  string
+			bindingOK  bool
+		)
+
+		BeforeEach(func() {
+			secretName = "targetrole-recover-token"
+			connName = "targetrole-recover-conn"
+			crName = "targetrole-recover-binding"
+			namespace = testNamespace
+			bindingOK = false
+
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode([]map[string]any{
+					{"id": "target-uuid-rc", "name": "rctarget", "options": json.RawMessage(`{"kind":"Ssh"}`)},
+				})
+			})
+			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode([]map[string]any{
+					{"id": "role-uuid-rc", "name": "rcrole"},
+				})
+			})
+			mux.HandleFunc("/@warpgate/admin/api/targets/target-uuid-rc/roles/role-uuid-rc", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					if bindingOK {
+						w.WriteHeader(http.StatusCreated)
+					} else {
+						w.WriteHeader(http.StatusInternalServerError)
+					}
+					return
+				}
+			})
+			mockServer = httptest.NewServer(mux)
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: namespace},
+				Data:       map[string][]byte{"username": []byte("admin"), "password": []byte("test-pass")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:                 mockServer.URL,
+					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
+					InsecureSkipVerify:   true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+
+			cr := &warpgatev1alpha1.WarpgateTargetRole{
+				ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateTargetRoleSpec{
+					ConnectionRef: connName,
+					TargetName:    "rctarget",
+					RoleName:      "rcrole",
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cr := &warpgatev1alpha1.WarpgateTargetRole{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: namespace}, cr); err == nil {
+				controllerutil.RemoveFinalizer(cr, warpgateTargetRoleFinalizer)
+				_ = k8sClient.Update(ctx, cr)
+				_ = k8sClient.Delete(ctx, cr)
+			}
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should transition condition from False/BindingFailed to True/Bound on retry", func() {
+			nn := types.NamespacedName{Name: crName, Namespace: namespace}
+
+			// Add finalizer.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Binding fails (500).
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTargetRole
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("BindingFailed"))
+
+			// Now the API starts working.
+			bindingOK = true
+
+			// Reconcile again — should succeed and flip to Ready=True.
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			readyCond = findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(readyCond.Reason).To(Equal("Bound"))
 		})
 	})
 

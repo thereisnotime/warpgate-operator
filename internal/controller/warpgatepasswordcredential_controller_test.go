@@ -792,6 +792,294 @@ var _ = Describe("WarpgatePasswordCredential Controller", func() {
 		})
 	})
 
+	Context("Client error", func() {
+		var (
+			crName    string
+			namespace string
+		)
+
+		BeforeEach(func() {
+			crName = "pwcred-clienterr-cred"
+			namespace = testNamespace
+
+			cr := &warpgatev1alpha1.WarpgatePasswordCredential{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      crName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgatePasswordCredentialSpec{
+					ConnectionRef: "nonexistent-pw-conn",
+					Username:      "someuser",
+					PasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: "some-secret",
+						Key:  "password",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			cr := &warpgatev1alpha1.WarpgatePasswordCredential{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: namespace}, cr); err == nil {
+				controllerutil.RemoveFinalizer(cr, passwordCredentialFinalizer)
+				_ = k8sClient.Update(ctx, cr)
+				_ = k8sClient.Delete(ctx, cr)
+			}
+		})
+
+		It("should set Ready=False with ClientError when the connection doesn't exist", func() {
+			nn := types.NamespacedName{Name: crName, Namespace: namespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).To(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgatePasswordCredential
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("ClientError"))
+		})
+	})
+
+	Context("Delete credential with populated credentialID", func() {
+		var (
+			mockServer     *httptest.Server
+			tokenSecret    string
+			passwordSecret string
+			connName       string
+			crName         string
+			namespace      string
+			deleteCalled   bool
+		)
+
+		BeforeEach(func() {
+			tokenSecret = "pwcred-delpop-token"
+			passwordSecret = "pwcred-delpop-password"
+			connName = "pwcred-delpop-conn"
+			crName = "pwcred-delpop-cred"
+			namespace = testNamespace
+			deleteCalled = false
+
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/users/pre-user-id/credentials/passwords/pre-cred-id", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodDelete {
+					deleteCalled = true
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: tokenSecret, Namespace: namespace},
+				Data:       map[string][]byte{"username": []byte("admin"), "password": []byte("test-pass")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			pwSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: passwordSecret, Namespace: namespace},
+				Data:       map[string][]byte{"password": []byte("pw")},
+			}
+			Expect(k8sClient.Create(ctx, pwSecret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:                 mockServer.URL,
+					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: tokenSecret},
+					InsecureSkipVerify:   true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+
+			// Create the CR with a finalizer and pre-populated status IDs, simulating
+			// a credential that was previously created.
+			cr := &warpgatev1alpha1.WarpgatePasswordCredential{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       crName,
+					Namespace:  namespace,
+					Finalizers: []string{passwordCredentialFinalizer},
+				},
+				Spec: warpgatev1alpha1.WarpgatePasswordCredentialSpec{
+					ConnectionRef: connName,
+					Username:      "someuser",
+					PasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: passwordSecret,
+						Key:  "password",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+
+			// Set the status fields to simulate an already-created credential.
+			cr.Status.UserID = "pre-user-id"
+			cr.Status.CredentialID = "pre-cred-id"
+			Expect(k8sClient.Status().Update(ctx, cr)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			for _, name := range []string{tokenSecret, passwordSecret} {
+				secret := &corev1.Secret{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, secret); err == nil {
+					_ = k8sClient.Delete(ctx, secret)
+				}
+			}
+		})
+
+		It("should call the Warpgate DELETE API and remove the finalizer", func() {
+			nn := types.NamespacedName{Name: crName, Namespace: namespace}
+
+			// Mark for deletion.
+			var cr warpgatev1alpha1.WarpgatePasswordCredential
+			Expect(k8sClient.Get(ctx, nn, &cr)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+
+			// Reconcile the deletion.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(deleteCalled).To(BeTrue())
+
+			// CR should be gone.
+			err = k8sClient.Get(ctx, nn, &cr)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+		})
+	})
+
+	Context("User resolution after username change", func() {
+		var (
+			mockServer     *httptest.Server
+			tokenSecret    string
+			passwordSecret string
+			connName       string
+			crName         string
+			namespace      string
+		)
+
+		BeforeEach(func() {
+			tokenSecret = "pwcred-userchg-token"
+			passwordSecret = "pwcred-userchg-password"
+			connName = "pwcred-userchg-conn"
+			crName = "pwcred-userchg-cred"
+			namespace = testNamespace
+
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode([]map[string]any{
+					{"id": "user-uuid-new", "username": "newuser"},
+				})
+			})
+			mux.HandleFunc("/@warpgate/admin/api/users/user-uuid-new/credentials/passwords", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":       "cred-uuid-new",
+						"password": "hashed",
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: tokenSecret, Namespace: namespace},
+				Data:       map[string][]byte{"username": []byte("admin"), "password": []byte("test-pass")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			pwSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: passwordSecret, Namespace: namespace},
+				Data:       map[string][]byte{"password": []byte("pw")},
+			}
+			Expect(k8sClient.Create(ctx, pwSecret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:                 mockServer.URL,
+					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: tokenSecret},
+					InsecureSkipVerify:   true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+
+			// Create CR with a finalizer and old UserID, simulating a previous reconcile
+			// where the username was different.
+			cr := &warpgatev1alpha1.WarpgatePasswordCredential{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       crName,
+					Namespace:  namespace,
+					Finalizers: []string{passwordCredentialFinalizer},
+				},
+				Spec: warpgatev1alpha1.WarpgatePasswordCredentialSpec{
+					ConnectionRef: connName,
+					Username:      "newuser",
+					PasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: passwordSecret,
+						Key:  "password",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+
+			// Set old UserID to simulate username having changed.
+			cr.Status.UserID = "user-uuid-old"
+			Expect(k8sClient.Status().Update(ctx, cr)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cr := &warpgatev1alpha1.WarpgatePasswordCredential{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: namespace}, cr); err == nil {
+				controllerutil.RemoveFinalizer(cr, passwordCredentialFinalizer)
+				_ = k8sClient.Update(ctx, cr)
+				_ = k8sClient.Delete(ctx, cr)
+			}
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			for _, name := range []string{tokenSecret, passwordSecret} {
+				secret := &corev1.Secret{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, secret); err == nil {
+					_ = k8sClient.Delete(ctx, secret)
+				}
+			}
+		})
+
+		It("should resolve the new user and update the UserID in status", func() {
+			nn := types.NamespacedName{Name: crName, Namespace: namespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgatePasswordCredential
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			// UserID should now reflect the new username resolution.
+			Expect(updated.Status.UserID).To(Equal("user-uuid-new"))
+			Expect(updated.Status.CredentialID).To(Equal("cred-uuid-new"))
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+		})
+	})
+
 	Context("Delete credential", func() {
 		var (
 			mockServer     *httptest.Server

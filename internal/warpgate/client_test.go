@@ -385,6 +385,61 @@ func TestDoNilResultWithBody(t *testing.T) {
 	}
 }
 
+func TestLoginSkippedWhenAlreadyAuthed(t *testing.T) {
+	// Verify that login() is a no-op when already authenticated.
+	c := NewTestClient("http://localhost")
+	if !c.authed {
+		t.Fatal("expected test client to be pre-authed")
+	}
+	err := c.login()
+	if err != nil {
+		t.Fatalf("expected nil from login() when already authed, got: %v", err)
+	}
+}
+
+func TestLoginHTTPPostFailure(t *testing.T) {
+	// Use a host with an invalid scheme to make httpClient.Post fail
+	// before getting a response (covers the "login request" error path).
+	c := NewClient(Config{
+		Host:     "http://[::1]:namedport", // invalid URL that will fail at Post time
+		Username: "admin",
+		Password: "secret",
+	})
+	err := c.login()
+	if err == nil {
+		t.Fatal("expected login request error, got nil")
+	}
+	if !strings.Contains(err.Error(), "login request") {
+		t.Errorf("expected 'login request' in error, got: %v", err)
+	}
+}
+
+func TestLoginHTTPErrorResponse(t *testing.T) {
+	// Cover the branch where login gets a response with status >= 400
+	// and reads the body into an APIError.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":"account disabled"}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Username: "admin", Password: "bad"})
+	err := c.login()
+	if err == nil {
+		t.Fatal("expected error from login, got nil")
+	}
+	apiErr, ok := err.(*APIError)
+	if !ok {
+		t.Fatalf("expected *APIError, got %T: %v", err, err)
+	}
+	if apiErr.StatusCode != http.StatusForbidden {
+		t.Errorf("expected status 403, got %d", apiErr.StatusCode)
+	}
+	if !strings.Contains(apiErr.Body, "account disabled") {
+		t.Errorf("expected body to contain 'account disabled', got: %s", apiErr.Body)
+	}
+}
+
 func TestAPIErrorString(t *testing.T) {
 	err := &APIError{StatusCode: 403, Body: "forbidden"}
 	expected := "warpgate API error (status 403): forbidden"

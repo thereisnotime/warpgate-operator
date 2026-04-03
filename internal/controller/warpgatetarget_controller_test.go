@@ -1351,4 +1351,463 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			Expect(strings.Contains(readyCond.Message, "recreating")).To(BeTrue())
 		})
 	})
+
+	Context("Delete target with empty ExternalID", func() {
+		var (
+			mockServer *httptest.Server
+			namespace  = testNamespace
+			secretName = "wg-token-target-delempty"
+			connName   = "wg-conn-target-delempty"
+			targetName = "target-delempty-test"
+		)
+
+		BeforeEach(func() {
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			// No targets endpoints needed — the delete should skip the API call.
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+		})
+
+		It("should remove the finalizer without calling Warpgate API delete", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "delempty-target",
+					SSH: &warpgatev1alpha1.SSHTargetSpec{
+						Host:     "10.0.0.99",
+						Port:     22,
+						Username: "admin",
+						AuthKind: "PublicKey",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+
+			// Manually add the finalizer without creating in Warpgate (no ExternalID).
+			var fetched warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &fetched)).To(Succeed())
+			controllerutil.AddFinalizer(&fetched, targetFinalizerName)
+			Expect(k8sClient.Update(ctx, &fetched)).To(Succeed())
+
+			// Delete the CR.
+			Expect(k8sClient.Delete(ctx, &fetched)).To(Succeed())
+
+			// Reconcile the deletion — should skip the API delete and just remove the finalizer.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// The CR should be fully gone.
+			var deleted warpgatev1alpha1.WarpgateTarget
+			err = k8sClient.Get(ctx, nn, &deleted)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+		})
+	})
+
+	Context("Create HTTP target with TLS config", func() {
+		var (
+			mockServer *httptest.Server
+			namespace  = testNamespace
+			secretName = "wg-token-target-httptls"
+			connName   = "wg-conn-target-httptls"
+			targetName = "target-httptls-test"
+		)
+
+		BeforeEach(func() {
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":      "target-httptls-001",
+						"name":    "my-httptls-target",
+						"options": json.RawMessage(`{"kind":"Http"}`),
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+		})
+
+		It("should create an HTTP target with TLS options set", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-httptls-target",
+					HTTP: &warpgatev1alpha1.HTTPTargetSpec{
+						URL:          "https://internal-app.example.com",
+						ExternalHost: "app.example.com",
+						TLS: &warpgatev1alpha1.TLSConfigSpec{
+							Mode:   "Required",
+							Verify: true,
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(Equal("target-httptls-001"))
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(readyCond.Reason).To(Equal("HTTP"))
+		})
+	})
+
+	Context("Create MySQL target without password or TLS", func() {
+		var (
+			mockServer *httptest.Server
+			namespace  = testNamespace
+			secretName = "wg-token-target-mysqlbare"
+			connName   = "wg-conn-target-mysqlbare"
+			targetName = "target-mysqlbare-test"
+		)
+
+		BeforeEach(func() {
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":      "target-mysqlbare-001",
+						"name":    "my-mysqlbare-target",
+						"options": json.RawMessage(`{"kind":"MySql"}`),
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+		})
+
+		It("should create a MySQL target without password secret ref or TLS", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-mysqlbare-target",
+					MySQL: &warpgatev1alpha1.MySQLTargetSpec{
+						Host:     "db.example.com",
+						Port:     3306,
+						Username: "root",
+						// No PasswordSecretRef, no TLS
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(Equal("target-mysqlbare-001"))
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(readyCond.Reason).To(Equal("MySQL"))
+		})
+	})
+
+	Context("Create PostgreSQL target without password or TLS", func() {
+		var (
+			mockServer *httptest.Server
+			namespace  = testNamespace
+			secretName = "wg-token-target-pgbare"
+			connName   = "wg-conn-target-pgbare"
+			targetName = "target-pgbare-test"
+		)
+
+		BeforeEach(func() {
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":      "target-pgbare-001",
+						"name":    "my-pgbare-target",
+						"options": json.RawMessage(`{"kind":"Postgres"}`),
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+		})
+
+		It("should create a PostgreSQL target without password secret ref or TLS", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-pgbare-target",
+					PostgreSQL: &warpgatev1alpha1.PostgreSQLTargetSpec{
+						Host:     "pgdb.example.com",
+						Port:     5432,
+						Username: "postgres",
+						// No PasswordSecretRef, no TLS
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(Equal("target-pgbare-001"))
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(readyCond.Reason).To(Equal("PostgreSQL"))
+		})
+	})
+
+	Context("Delete target with Warpgate API error", func() {
+		var (
+			mockServer *httptest.Server
+			namespace  = testNamespace
+			secretName = "wg-token-target-delerr"
+			connName   = "wg-conn-target-delerr"
+			targetName = "target-delerr-test"
+		)
+
+		BeforeEach(func() {
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":      "target-delerr-abc",
+						"name":    "my-delerr-target",
+						"options": json.RawMessage(`{"kind":"Ssh"}`),
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mux.HandleFunc("/@warpgate/admin/api/targets/", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodDelete {
+					w.WriteHeader(http.StatusInternalServerError)
+					_, _ = w.Write([]byte(`{"error":"internal"}`))
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+		})
+
+		It("should requeue when Warpgate API delete returns a non-404 error", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-delerr-target",
+					SSH: &warpgatev1alpha1.SSHTargetSpec{
+						Host:     "10.0.0.50",
+						Port:     22,
+						Username: "admin",
+						AuthKind: "PublicKey",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+
+			// Reconcile 1: adds finalizer + creates target.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify ExternalID was set.
+			var created warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &created)).To(Succeed())
+			Expect(created.Status.ExternalID).To(Equal("target-delerr-abc"))
+
+			// Delete the CR.
+			Expect(k8sClient.Delete(ctx, &created)).To(Succeed())
+
+			// Reconcile the deletion — should requeue due to API error.
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(targetRequeueAfter))
+
+			// The CR should still exist (finalizer not removed).
+			var still warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &still)).To(Succeed())
+			Expect(controllerutil.ContainsFinalizer(&still, targetFinalizerName)).To(BeTrue())
+		})
+	})
+
+	Context("MySQL target with missing password secret", func() {
+		var (
+			mockServer *httptest.Server
+			namespace  = testNamespace
+			secretName = "wg-token-target-mysqlnopw"
+			connName   = "wg-conn-target-mysqlnopw"
+			targetName = "target-mysqlnopw-test"
+		)
+
+		BeforeEach(func() {
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+		})
+
+		It("should set Ready=False with BuildError when the MySQL password secret doesn't exist", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "mysqlnopw-target",
+					MySQL: &warpgatev1alpha1.MySQLTargetSpec{
+						Host:     "db.example.com",
+						Port:     3306,
+						Username: "root",
+						PasswordSecretRef: &warpgatev1alpha1.SecretKeyRef{
+							Name: "nonexistent-mysql-secret",
+							Key:  "password",
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("BuildError"))
+			Expect(readyCond.Message).To(ContainSubstring("MySQL password"))
+		})
+	})
+
+	Context("PostgreSQL target with missing password secret", func() {
+		var (
+			mockServer *httptest.Server
+			namespace  = testNamespace
+			secretName = "wg-token-target-pgnopw"
+			connName   = "wg-conn-target-pgnopw"
+			targetName = "target-pgnopw-test"
+		)
+
+		BeforeEach(func() {
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+		})
+
+		It("should set Ready=False with BuildError when the PostgreSQL password secret doesn't exist", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "pgnopw-target",
+					PostgreSQL: &warpgatev1alpha1.PostgreSQLTargetSpec{
+						Host:     "pgdb.example.com",
+						Port:     5432,
+						Username: "postgres",
+						PasswordSecretRef: &warpgatev1alpha1.SecretKeyRef{
+							Name: "nonexistent-pg-secret",
+							Key:  "password",
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("BuildError"))
+			Expect(readyCond.Message).To(ContainSubstring("PostgreSQL password"))
+		})
+	})
 })
