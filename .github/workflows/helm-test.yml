@@ -46,11 +46,11 @@ jobs:
 
       - name: Validate with dry-run
         run: |
-          # Install kubectl for validation
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
-          kubectl apply --dry-run=client -f /tmp/rendered.yaml
+          # --validate=false since there's no cluster to fetch the OpenAPI schema from
+          kubectl apply --dry-run=client --validate=false -f /tmp/rendered.yaml
 
   install-test:
     name: Install Test (kind)
