@@ -104,7 +104,7 @@ jobs:
         uses: taiki-e/install-action@just
 
       - name: Build install manifest
-        run: just build-installer IMG=ghcr.io/thereisnotime/warpgate-operator:${{ needs.release-please.outputs.tag_name }}
+        run: IMG=ghcr.io/thereisnotime/warpgate-operator:${{ needs.release-please.outputs.tag_name }} just build-installer
 
       - name: Upload install.yaml as release asset
         env:
