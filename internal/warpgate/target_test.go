@@ -54,9 +54,9 @@ func TestCreateHTTPTarget(t *testing.T) {
 	defer srv.Close()
 
 	opts, _ := MarshalOptions(HTTPOptions{
-		Kind: "Http",
-		URL:  "https://internal.example.com",
-		TLS:  &TLSConfig{Mode: "Required", Verify: true},
+		Kind:    "Http",
+		URL:     "https://internal.example.com",
+		TLS:     &TLSConfig{Mode: "Required", Verify: true},
 		Headers: map[string]string{"X-Custom": "value"},
 	})
 

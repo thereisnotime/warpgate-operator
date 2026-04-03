@@ -7,18 +7,18 @@ import (
 
 // TLS configuration for targets.
 type TLSConfig struct {
-	Mode   string `json:"mode"`   // Disabled, Preferred, Required
+	Mode   string `json:"mode"` // Disabled, Preferred, Required
 	Verify bool   `json:"verify"`
 }
 
 // SSH target options.
 type SSHOptions struct {
-	Kind              string  `json:"kind"` // always "Ssh"
-	Host              string  `json:"host"`
-	Port              int     `json:"port"`
-	Username          string  `json:"username"`
-	AllowInsecureAlgos bool   `json:"allow_insecure_algos,omitempty"`
-	Auth              SSHAuth `json:"auth"`
+	Kind               string  `json:"kind"` // always "Ssh"
+	Host               string  `json:"host"`
+	Port               int     `json:"port"`
+	Username           string  `json:"username"`
+	AllowInsecureAlgos bool    `json:"allow_insecure_algos,omitempty"`
+	Auth               SSHAuth `json:"auth"`
 }
 
 type SSHAuth struct {
@@ -57,10 +57,10 @@ type PostgresOptions struct {
 
 // Kubernetes target options.
 type KubernetesOptions struct {
-	Kind       string          `json:"kind"` // always "Kubernetes"
-	ClusterURL string          `json:"cluster_url"`
-	TLS        *TLSConfig      `json:"tls,omitempty"`
-	Auth       KubernetesAuth  `json:"auth"`
+	Kind       string         `json:"kind"` // always "Kubernetes"
+	ClusterURL string         `json:"cluster_url"`
+	TLS        *TLSConfig     `json:"tls,omitempty"`
+	Auth       KubernetesAuth `json:"auth"`
 }
 
 type KubernetesAuth struct {
@@ -72,11 +72,11 @@ type KubernetesAuth struct {
 
 // Target represents a Warpgate target.
 type Target struct {
-	ID          string   `json:"id,omitempty"`
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	GroupID     string   `json:"group_id,omitempty"`
-	AllowRoles  []string `json:"allow_roles,omitempty"`
+	ID          string          `json:"id,omitempty"`
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	GroupID     string          `json:"group_id,omitempty"`
+	AllowRoles  []string        `json:"allow_roles,omitempty"`
 	Options     json.RawMessage `json:"options"`
 }
 

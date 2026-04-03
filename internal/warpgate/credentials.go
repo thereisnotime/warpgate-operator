@@ -24,15 +24,15 @@ func (c *Client) DeletePasswordCredential(userID, credentialID string) error {
 // Public key credential.
 
 type PublicKeyCredential struct {
-	ID              string `json:"id"`
-	Label           string `json:"label"`
+	ID               string `json:"id"`
+	Label            string `json:"label"`
 	OpenSSHPublicKey string `json:"openssh_public_key"`
-	DateAdded       string `json:"date_added,omitempty"`
-	LastUsed        string `json:"last_used,omitempty"`
+	DateAdded        string `json:"date_added,omitempty"`
+	LastUsed         string `json:"last_used,omitempty"`
 }
 
 type PublicKeyCredentialRequest struct {
-	Label           string `json:"label"`
+	Label            string `json:"label"`
 	OpenSSHPublicKey string `json:"openssh_public_key"`
 }
 

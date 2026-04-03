@@ -1,0 +1,13 @@
+default: true
+MD013:
+  line_length: 200
+  code_blocks: false
+  tables: false
+MD024:
+  siblings_only: true
+MD033:
+  allowed_elements:
+    - br
+    - details
+    - summary
+MD041: false  # First line heading - not needed for all md files
