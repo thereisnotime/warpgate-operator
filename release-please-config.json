@@ -1,15 +1,15 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
-  "release-type": "go",
   "packages": {
     ".": {
-      "changelog-path": "CHANGELOG.md",
       "release-type": "go",
+      "changelog-path": "CHANGELOG.md",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [
         "charts/warpgate-operator/Chart.yaml"
       ]
     }
-  }
+  },
+  "last-release-sha": "8703c9b623c3ca8538f1ddd12d358ebad2c16299"
 }
