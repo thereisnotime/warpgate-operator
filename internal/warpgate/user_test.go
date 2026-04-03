@@ -156,6 +156,27 @@ func TestGetUserByUsername_NotFound(t *testing.T) {
 	}
 }
 
+func TestGetUserByUsername_ListError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"internal"}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	_, err := c.GetUserByUsername("alice")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	apiErr, ok := err.(*APIError)
+	if !ok {
+		t.Fatalf("expected *APIError, got %T", err)
+	}
+	if apiErr.StatusCode != 500 {
+		t.Errorf("expected status 500, got %d", apiErr.StatusCode)
+	}
+}
+
 func TestCreateUser_Error(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusConflict)

@@ -495,6 +495,142 @@ var _ = Describe("WarpgateUserRole Controller", func() {
 		})
 	})
 
+	Context("Delete binding with empty UserID or RoleID", func() {
+		var (
+			mockServer *httptest.Server
+			secretName string
+			connName   string
+			crName     string
+			namespace  string
+		)
+
+		BeforeEach(func() {
+			secretName = "userrole-delempty-token"
+			connName = "userrole-delempty-conn"
+			crName = "userrole-delempty-binding"
+			namespace = testNamespace
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode([]map[string]any{})
+			})
+			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode([]map[string]any{})
+			})
+			mockServer = httptest.NewServer(mux)
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: namespace},
+				Data:       map[string][]byte{"token": []byte("test-token")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:               mockServer.URL,
+					TokenSecretRef:     warpgatev1alpha1.SecretKeyRef{Name: secretName, Key: "token"},
+					InsecureSkipVerify: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+
+			// Create a CR with a finalizer but no resolved IDs in status.
+			cr := &warpgatev1alpha1.WarpgateUserRole{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       crName,
+					Namespace:  namespace,
+					Finalizers: []string{warpgateUserRoleFinalizer},
+				},
+				Spec: warpgatev1alpha1.WarpgateUserRoleSpec{
+					ConnectionRef: connName,
+					Username:      "emptyuser",
+					RoleName:      "emptyrole",
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should skip Warpgate API delete and just remove the finalizer when IDs are empty", func() {
+			nn := types.NamespacedName{Name: crName, Namespace: namespace}
+
+			// Delete the CR.
+			var cr warpgatev1alpha1.WarpgateUserRole
+			Expect(k8sClient.Get(ctx, nn, &cr)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+
+			// Reconcile deletion: UserID and RoleID are empty, so skip API call.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// CR should be gone.
+			err = k8sClient.Get(ctx, nn, &cr)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+		})
+	})
+
+	Context("setUserRoleCondition updates existing condition reason without changing status", func() {
+		It("should update the reason/message when the status stays the same", func() {
+			ur := &warpgatev1alpha1.WarpgateUserRole{
+				Status: warpgatev1alpha1.WarpgateUserRoleStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    "Ready",
+							Status:  metav1.ConditionFalse,
+							Reason:  "FirstReason",
+							Message: "first message",
+						},
+					},
+				},
+			}
+
+			// Call with same status (False) but different reason.
+			setUserRoleCondition(ur, metav1.ConditionFalse, "SecondReason", "second message")
+
+			Expect(ur.Status.Conditions).To(HaveLen(1))
+			Expect(ur.Status.Conditions[0].Reason).To(Equal("SecondReason"))
+			Expect(ur.Status.Conditions[0].Message).To(Equal("second message"))
+			// Status should remain False.
+			Expect(ur.Status.Conditions[0].Status).To(Equal(metav1.ConditionFalse))
+		})
+
+		It("should replace the whole condition when status changes", func() {
+			ur := &warpgatev1alpha1.WarpgateUserRole{
+				Status: warpgatev1alpha1.WarpgateUserRoleStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    "Ready",
+							Status:  metav1.ConditionFalse,
+							Reason:  "WasFalse",
+							Message: "was false",
+						},
+					},
+				},
+			}
+
+			setUserRoleCondition(ur, metav1.ConditionTrue, "NowTrue", "now true")
+
+			Expect(ur.Status.Conditions).To(HaveLen(1))
+			Expect(ur.Status.Conditions[0].Status).To(Equal(metav1.ConditionTrue))
+			Expect(ur.Status.Conditions[0].Reason).To(Equal("NowTrue"))
+		})
+	})
+
 	Context("User not found", func() {
 		var (
 			mockServer *httptest.Server

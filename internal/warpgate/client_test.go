@@ -2,8 +2,11 @@ package warpgate
 
 import (
 	"encoding/json"
+	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -288,6 +291,69 @@ func TestConnectionRefused(t *testing.T) {
 	}
 	if _, ok := err.(*APIError); ok {
 		t.Error("expected a transport-level error, not *APIError")
+	}
+}
+
+func TestDoRequestMarshalError(t *testing.T) {
+	c := NewClient(Config{Host: "http://localhost", Token: "tok"})
+	// math.Inf cannot be marshaled to JSON
+	_, err := c.doRequest("POST", "/test", math.Inf(1))
+	if err == nil {
+		t.Fatal("expected marshal error, got nil")
+	}
+	if !strings.Contains(err.Error(), "marshaling request body") {
+		t.Errorf("expected marshaling error, got: %v", err)
+	}
+}
+
+type brokenReadCloser struct{}
+
+func (b *brokenReadCloser) Read([]byte) (int, error) {
+	return 0, errors.New("read exploded")
+}
+func (b *brokenReadCloser) Close() error { return nil }
+
+type brokenBodyTransport struct {
+	statusCode int
+}
+
+func (t *brokenBodyTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: t.statusCode,
+		Body:       &brokenReadCloser{},
+		Header:     make(http.Header),
+	}, nil
+}
+
+func TestDoReadAllError(t *testing.T) {
+	c := &Client{
+		baseURL: "http://localhost",
+		token:   "tok",
+		httpClient: &http.Client{
+			Transport: &brokenBodyTransport{statusCode: 200},
+		},
+	}
+	err := c.do("GET", "/test", nil, nil)
+	if err == nil {
+		t.Fatal("expected read error, got nil")
+	}
+	if !strings.Contains(err.Error(), "reading response body") {
+		t.Errorf("expected reading response body error, got: %v", err)
+	}
+}
+
+func TestDoNilResultWithBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"some":"data"}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	// result is nil — should not attempt unmarshal and should not error
+	err := c.do("GET", "/test", nil, nil)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
 	}
 }
 

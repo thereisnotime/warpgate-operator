@@ -672,6 +672,98 @@ var _ = Describe("WarpgateUser Controller", func() {
 		})
 	})
 
+	Context("Password credential API failure", func() {
+		It("should set Ready=False with PasswordCredentialFailed when the API rejects it", func() {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(warpgate.User{ID: "user-pwfail-001", Username: "pwfailuser"})
+				}
+			})
+			mux.HandleFunc("/@warpgate/admin/api/users/user-pwfail-001/credentials/passwords", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.WriteHeader(http.StatusInternalServerError)
+					_, _ = w.Write([]byte(`{"error":"internal"}`))
+					return
+				}
+			})
+			srv := setupMockAndConnection(mux, "-pwfail")
+			defer srv.Close()
+
+			user := &warpgatev1alpha1.WarpgateUser{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pwfail-user",
+					Namespace: userNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateUserSpec{
+					ConnectionRef:    connName + "-pwfail",
+					Username:         "pwfailuser",
+					GeneratePassword: boolPtr(true),
+				},
+			}
+			Expect(k8sClient.Create(ctx, user)).To(Succeed())
+
+			nn := types.NamespacedName{Name: user.Name, Namespace: userNamespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).To(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateUser
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("PasswordCredentialFailed"))
+		})
+	})
+
+	Context("Resource not found", func() {
+		It("should return no error when the resource doesn't exist", func() {
+			nn := types.NamespacedName{Name: "user-nonexistent", Namespace: userNamespace}
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+		})
+	})
+
+	Context("generateRandomPassword", func() {
+		It("should generate a password of the requested length", func() {
+			pw, err := generateRandomPassword(16)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(pw).To(HaveLen(16))
+		})
+
+		It("should generate different passwords each time", func() {
+			pw1, err := generateRandomPassword(32)
+			Expect(err).NotTo(HaveOccurred())
+			pw2, err := generateRandomPassword(32)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(pw1).NotTo(Equal(pw2))
+		})
+	})
+
+	Context("toWarpgateCredentialPolicy", func() {
+		It("should return nil when spec is nil", func() {
+			result := toWarpgateCredentialPolicy(nil)
+			Expect(result).To(BeNil())
+		})
+
+		It("should convert all fields correctly", func() {
+			spec := &warpgatev1alpha1.CredentialPolicySpec{
+				HTTP:     []string{"Password"},
+				SSH:      []string{"PublicKey"},
+				MySQL:    []string{"Password"},
+				Postgres: []string{"Password"},
+			}
+			result := toWarpgateCredentialPolicy(spec)
+			Expect(result).NotTo(BeNil())
+			Expect(result.HTTP).To(Equal([]string{"Password"}))
+			Expect(result.SSH).To(Equal([]string{"PublicKey"}))
+			Expect(result.MySQL).To(Equal([]string{"Password"}))
+			Expect(result.Postgres).To(Equal([]string{"Password"}))
+		})
+	})
+
 	Context("Missing connection", func() {
 		It("should return an error when the WarpgateConnection does not exist", func() {
 			user := &warpgatev1alpha1.WarpgateUser{

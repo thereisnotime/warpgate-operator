@@ -480,6 +480,314 @@ var _ = Describe("WarpgatePasswordCredential Controller", func() {
 		})
 	})
 
+	Context("Delete credential with empty credentialID", func() {
+		var (
+			mockServer     *httptest.Server
+			tokenSecret    string
+			passwordSecret string
+			connName       string
+			crName         string
+			namespace      string
+		)
+
+		BeforeEach(func() {
+			tokenSecret = "pwcred-delempty-token"
+			passwordSecret = "pwcred-delempty-password"
+			connName = "pwcred-delempty-conn"
+			crName = "pwcred-delempty-cred"
+			namespace = testNamespace
+
+			mux := http.NewServeMux()
+			mockServer = httptest.NewServer(mux)
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: tokenSecret, Namespace: namespace},
+				Data:       map[string][]byte{"token": []byte("test-token")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			pwSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: passwordSecret, Namespace: namespace},
+				Data:       map[string][]byte{"password": []byte("pw")},
+			}
+			Expect(k8sClient.Create(ctx, pwSecret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:               mockServer.URL,
+					TokenSecretRef:     warpgatev1alpha1.SecretKeyRef{Name: tokenSecret, Key: "token"},
+					InsecureSkipVerify: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+
+			// Create CR with finalizer but no CredentialID or UserID in status.
+			cr := &warpgatev1alpha1.WarpgatePasswordCredential{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       crName,
+					Namespace:  namespace,
+					Finalizers: []string{passwordCredentialFinalizer},
+				},
+				Spec: warpgatev1alpha1.WarpgatePasswordCredentialSpec{
+					ConnectionRef: connName,
+					Username:      "emptyuser",
+					PasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: passwordSecret,
+						Key:  "password",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			for _, name := range []string{tokenSecret, passwordSecret} {
+				secret := &corev1.Secret{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, secret); err == nil {
+					_ = k8sClient.Delete(ctx, secret)
+				}
+			}
+		})
+
+		It("should skip Warpgate API delete and just remove the finalizer when IDs are empty", func() {
+			nn := types.NamespacedName{Name: crName, Namespace: namespace}
+
+			var cr warpgatev1alpha1.WarpgatePasswordCredential
+			Expect(k8sClient.Get(ctx, nn, &cr)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			err = k8sClient.Get(ctx, nn, &cr)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+		})
+	})
+
+	Context("Default password key", func() {
+		var (
+			mockServer     *httptest.Server
+			tokenSecret    string
+			passwordSecret string
+			connName       string
+			crName         string
+			namespace      string
+		)
+
+		BeforeEach(func() {
+			tokenSecret = "pwcred-defkey-token"
+			passwordSecret = "pwcred-defkey-password"
+			connName = "pwcred-defkey-conn"
+			crName = "pwcred-defkey-cred"
+			namespace = testNamespace
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode([]map[string]any{
+					{"id": "user-uuid-defkey", "username": "defkeyuser"},
+				})
+			})
+			mux.HandleFunc("/@warpgate/admin/api/users/user-uuid-defkey/credentials/passwords", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":       "cred-uuid-defkey",
+						"password": "hashed",
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: tokenSecret, Namespace: namespace},
+				Data:       map[string][]byte{"token": []byte("test-token")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			// The password secret uses the default key "password".
+			pwSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: passwordSecret, Namespace: namespace},
+				Data:       map[string][]byte{"password": []byte("default-key-pw")},
+			}
+			Expect(k8sClient.Create(ctx, pwSecret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:               mockServer.URL,
+					TokenSecretRef:     warpgatev1alpha1.SecretKeyRef{Name: tokenSecret, Key: "token"},
+					InsecureSkipVerify: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+
+			cr := &warpgatev1alpha1.WarpgatePasswordCredential{
+				ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgatePasswordCredentialSpec{
+					ConnectionRef: connName,
+					Username:      "defkeyuser",
+					PasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: passwordSecret,
+						// Key is empty, should default to "password".
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cr := &warpgatev1alpha1.WarpgatePasswordCredential{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: namespace}, cr); err == nil {
+				controllerutil.RemoveFinalizer(cr, passwordCredentialFinalizer)
+				_ = k8sClient.Update(ctx, cr)
+				_ = k8sClient.Delete(ctx, cr)
+			}
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			for _, name := range []string{tokenSecret, passwordSecret} {
+				secret := &corev1.Secret{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, secret); err == nil {
+					_ = k8sClient.Delete(ctx, secret)
+				}
+			}
+		})
+
+		It("should use default 'password' key when Key is empty in PasswordSecretRef", func() {
+			nn := types.NamespacedName{Name: crName, Namespace: namespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgatePasswordCredential
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.CredentialID).To(Equal("cred-uuid-defkey"))
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+		})
+	})
+
+	Context("Create credential API failure", func() {
+		var (
+			mockServer     *httptest.Server
+			tokenSecret    string
+			passwordSecret string
+			connName       string
+			crName         string
+			namespace      string
+		)
+
+		BeforeEach(func() {
+			tokenSecret = "pwcred-createfail-token"
+			passwordSecret = "pwcred-createfail-password"
+			connName = "pwcred-createfail-conn"
+			crName = "pwcred-createfail-cred"
+			namespace = testNamespace
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode([]map[string]any{
+					{"id": "user-uuid-cf", "username": "cfuser"},
+				})
+			})
+			mux.HandleFunc("/@warpgate/admin/api/users/user-uuid-cf/credentials/passwords", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.WriteHeader(http.StatusInternalServerError)
+					_, _ = w.Write([]byte(`{"error":"internal"}`))
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: tokenSecret, Namespace: namespace},
+				Data:       map[string][]byte{"token": []byte("test-token")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			pwSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: passwordSecret, Namespace: namespace},
+				Data:       map[string][]byte{"password": []byte("pw")},
+			}
+			Expect(k8sClient.Create(ctx, pwSecret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:               mockServer.URL,
+					TokenSecretRef:     warpgatev1alpha1.SecretKeyRef{Name: tokenSecret, Key: "token"},
+					InsecureSkipVerify: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+
+			cr := &warpgatev1alpha1.WarpgatePasswordCredential{
+				ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgatePasswordCredentialSpec{
+					ConnectionRef: connName,
+					Username:      "cfuser",
+					PasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: passwordSecret,
+						Key:  "password",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cr := &warpgatev1alpha1.WarpgatePasswordCredential{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: namespace}, cr); err == nil {
+				controllerutil.RemoveFinalizer(cr, passwordCredentialFinalizer)
+				_ = k8sClient.Update(ctx, cr)
+				_ = k8sClient.Delete(ctx, cr)
+			}
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			for _, name := range []string{tokenSecret, passwordSecret} {
+				secret := &corev1.Secret{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, secret); err == nil {
+					_ = k8sClient.Delete(ctx, secret)
+				}
+			}
+		})
+
+		It("should set Ready=False with CreateFailed when the API returns an error", func() {
+			nn := types.NamespacedName{Name: crName, Namespace: namespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).To(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgatePasswordCredential
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("CreateFailed"))
+		})
+	})
+
 	Context("Delete credential", func() {
 		var (
 			mockServer     *httptest.Server

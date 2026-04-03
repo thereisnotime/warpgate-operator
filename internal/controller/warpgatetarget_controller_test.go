@@ -1029,6 +1029,228 @@ var _ = Describe("WarpgateTarget Controller", func() {
 		})
 	})
 
+	Context("SSH target with missing password secret", func() {
+		var (
+			mockServer *httptest.Server
+			namespace  = testNamespace
+			secretName = "wg-token-target-nosshpw"
+			connName   = "wg-conn-target-nosshpw"
+			targetName = "target-nosshpw-test"
+		)
+
+		BeforeEach(func() {
+			mux := http.NewServeMux()
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+		})
+
+		It("should set Ready=False with BuildError when the password secret doesn't exist", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "nosshpw-target",
+					SSH: &warpgatev1alpha1.SSHTargetSpec{
+						Host:     "10.0.0.1",
+						Port:     22,
+						Username: "admin",
+						AuthKind: "Password",
+						PasswordSecretRef: &warpgatev1alpha1.SecretKeyRef{
+							Name: "nonexistent-sshpw-secret",
+							Key:  "password",
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("BuildError"))
+			Expect(readyCond.Message).To(ContainSubstring("nonexistent-sshpw-secret"))
+		})
+	})
+
+	Context("SSH target with missing key in password secret", func() {
+		var (
+			mockServer   *httptest.Server
+			namespace    = testNamespace
+			secretName   = "wg-token-target-badkey"
+			connName     = "wg-conn-target-badkey"
+			targetName   = "target-badkey-test"
+			pwSecretName = "ssh-badkey-secret"
+		)
+
+		BeforeEach(func() {
+			mux := http.NewServeMux()
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+
+			pwSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      pwSecretName,
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"wrong-key": []byte("some-pw"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, pwSecret)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+			pwSecret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: pwSecretName, Namespace: namespace}, pwSecret); err == nil {
+				_ = k8sClient.Delete(ctx, pwSecret)
+			}
+		})
+
+		It("should set Ready=False with BuildError when the key is missing from the secret", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "badkey-target",
+					SSH: &warpgatev1alpha1.SSHTargetSpec{
+						Host:     "10.0.0.1",
+						Port:     22,
+						Username: "admin",
+						AuthKind: "Password",
+						PasswordSecretRef: &warpgatev1alpha1.SecretKeyRef{
+							Name: pwSecretName,
+							Key:  "password",
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("BuildError"))
+			Expect(readyCond.Message).To(ContainSubstring(`key "password" not found`))
+		})
+	})
+
+	Context("readSecretValue default key", func() {
+		var (
+			mockServer   *httptest.Server
+			namespace    = testNamespace
+			secretName   = "wg-token-target-defkey"
+			connName     = "wg-conn-target-defkey"
+			targetName   = "target-defkey-test"
+			pwSecretName = "ssh-defkey-secret"
+		)
+
+		BeforeEach(func() {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":      "target-defkey-001",
+						"name":    "defkey-target",
+						"options": json.RawMessage(`{"kind":"Ssh"}`),
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+
+			// Secret with "password" key (the default).
+			pwSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      pwSecretName,
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"password": []byte("default-key-pw"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, pwSecret)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+			pwSecret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: pwSecretName, Namespace: namespace}, pwSecret); err == nil {
+				_ = k8sClient.Delete(ctx, pwSecret)
+			}
+		})
+
+		It("should use default 'password' key when Key is empty in SecretKeyRef", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "defkey-target",
+					SSH: &warpgatev1alpha1.SSHTargetSpec{
+						Host:     "10.0.0.1",
+						Port:     22,
+						Username: "admin",
+						AuthKind: "Password",
+						PasswordSecretRef: &warpgatev1alpha1.SecretKeyRef{
+							Name: pwSecretName,
+							// Key is empty, should default to "password".
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(Equal("target-defkey-001"))
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+		})
+	})
+
+	Context("Resource not found", func() {
+		It("should return no error when the resource doesn't exist", func() {
+			nn := types.NamespacedName{Name: "target-nonexistent", Namespace: testNamespace}
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+		})
+	})
+
 	Context("Target not found on update", func() {
 		var (
 			mockServer *httptest.Server

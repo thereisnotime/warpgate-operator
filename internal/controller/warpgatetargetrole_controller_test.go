@@ -171,6 +171,128 @@ var _ = Describe("WarpgateTargetRole Controller", func() {
 		})
 	})
 
+	Context("Delete binding with empty TargetID or RoleID", func() {
+		var (
+			mockServer *httptest.Server
+			secretName string
+			connName   string
+			crName     string
+			namespace  string
+		)
+
+		BeforeEach(func() {
+			secretName = "targetrole-delempty-token"
+			connName = "targetrole-delempty-conn"
+			crName = "targetrole-delempty-binding"
+			namespace = testNamespace
+
+			mux := http.NewServeMux()
+			mockServer = httptest.NewServer(mux)
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: namespace},
+				Data:       map[string][]byte{"token": []byte("test-token")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:               mockServer.URL,
+					TokenSecretRef:     warpgatev1alpha1.SecretKeyRef{Name: secretName, Key: "token"},
+					InsecureSkipVerify: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+
+			cr := &warpgatev1alpha1.WarpgateTargetRole{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       crName,
+					Namespace:  namespace,
+					Finalizers: []string{warpgateTargetRoleFinalizer},
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetRoleSpec{
+					ConnectionRef: connName,
+					TargetName:    "emptytarget",
+					RoleName:      "emptyrole",
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should skip Warpgate API delete and just remove the finalizer when IDs are empty", func() {
+			nn := types.NamespacedName{Name: crName, Namespace: namespace}
+
+			var cr warpgatev1alpha1.WarpgateTargetRole
+			Expect(k8sClient.Get(ctx, nn, &cr)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			err = k8sClient.Get(ctx, nn, &cr)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+		})
+	})
+
+	Context("setTargetRoleCondition updates existing condition", func() {
+		It("should update reason/message when status stays the same", func() {
+			tr := &warpgatev1alpha1.WarpgateTargetRole{
+				Status: warpgatev1alpha1.WarpgateTargetRoleStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    "Ready",
+							Status:  metav1.ConditionFalse,
+							Reason:  "FirstReason",
+							Message: "first message",
+						},
+					},
+				},
+			}
+
+			setTargetRoleCondition(tr, metav1.ConditionFalse, "SecondReason", "second message")
+
+			Expect(tr.Status.Conditions).To(HaveLen(1))
+			Expect(tr.Status.Conditions[0].Reason).To(Equal("SecondReason"))
+			Expect(tr.Status.Conditions[0].Message).To(Equal("second message"))
+			Expect(tr.Status.Conditions[0].Status).To(Equal(metav1.ConditionFalse))
+		})
+
+		It("should replace the whole condition when status changes", func() {
+			tr := &warpgatev1alpha1.WarpgateTargetRole{
+				Status: warpgatev1alpha1.WarpgateTargetRoleStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    "Ready",
+							Status:  metav1.ConditionFalse,
+							Reason:  "WasFalse",
+							Message: "was false",
+						},
+					},
+				},
+			}
+
+			setTargetRoleCondition(tr, metav1.ConditionTrue, "NowTrue", "now true")
+
+			Expect(tr.Status.Conditions).To(HaveLen(1))
+			Expect(tr.Status.Conditions[0].Status).To(Equal(metav1.ConditionTrue))
+			Expect(tr.Status.Conditions[0].Reason).To(Equal("NowTrue"))
+		})
+	})
+
 	Context("Target not found", func() {
 		var (
 			mockServer *httptest.Server

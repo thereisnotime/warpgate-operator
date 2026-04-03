@@ -270,6 +270,285 @@ var _ = Describe("WarpgateTicket Controller", func() {
 		})
 	})
 
+	Context("Ticket already exists (TicketID set)", func() {
+		var (
+			mockServer  *httptest.Server
+			tokenSecret string
+			connName    string
+			crName      string
+			namespace   string
+		)
+
+		BeforeEach(func() {
+			tokenSecret = "ticket-noop-token"
+			connName = "ticket-noop-conn"
+			crName = "ticket-noop-tkt"
+			namespace = testNamespace
+
+			mux := http.NewServeMux()
+			// No POST handler needed - ticket should NOT be created again.
+			mockServer = httptest.NewServer(mux)
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: tokenSecret, Namespace: namespace},
+				Data:       map[string][]byte{"token": []byte("test-token")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:               mockServer.URL,
+					TokenSecretRef:     warpgatev1alpha1.SecretKeyRef{Name: tokenSecret, Key: "token"},
+					InsecureSkipVerify: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+
+			cr := &warpgatev1alpha1.WarpgateTicket{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       crName,
+					Namespace:  namespace,
+					Finalizers: []string{ticketFinalizer},
+				},
+				Spec: warpgatev1alpha1.WarpgateTicketSpec{
+					ConnectionRef: connName,
+					Username:      "existinguser",
+					TargetName:    "existingtarget",
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+
+			// Manually set the TicketID and SecretRef in status to simulate an already-created ticket.
+			cr.Status.TicketID = "already-exists-id"
+			cr.Status.SecretRef = crName + "-secret"
+			Expect(k8sClient.Status().Update(ctx, cr)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cr := &warpgatev1alpha1.WarpgateTicket{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: namespace}, cr); err == nil {
+				controllerutil.RemoveFinalizer(cr, ticketFinalizer)
+				_ = k8sClient.Update(ctx, cr)
+				_ = k8sClient.Delete(ctx, cr)
+			}
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: tokenSecret, Namespace: namespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should be a no-op and just mark Ready=True without creating a new ticket", func() {
+			nn := types.NamespacedName{Name: crName, Namespace: namespace}
+
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).NotTo(BeZero())
+
+			var updated warpgatev1alpha1.WarpgateTicket
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.TicketID).To(Equal("already-exists-id"))
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(readyCond.Reason).To(Equal("Reconciled"))
+		})
+	})
+
+	Context("Delete ticket with empty TicketID", func() {
+		var (
+			mockServer  *httptest.Server
+			tokenSecret string
+			connName    string
+			crName      string
+			namespace   string
+		)
+
+		BeforeEach(func() {
+			tokenSecret = "ticket-delempty-token"
+			connName = "ticket-delempty-conn"
+			crName = "ticket-delempty-tkt"
+			namespace = testNamespace
+
+			mux := http.NewServeMux()
+			mockServer = httptest.NewServer(mux)
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: tokenSecret, Namespace: namespace},
+				Data:       map[string][]byte{"token": []byte("test-token")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:               mockServer.URL,
+					TokenSecretRef:     warpgatev1alpha1.SecretKeyRef{Name: tokenSecret, Key: "token"},
+					InsecureSkipVerify: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+
+			cr := &warpgatev1alpha1.WarpgateTicket{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       crName,
+					Namespace:  namespace,
+					Finalizers: []string{ticketFinalizer},
+				},
+				Spec: warpgatev1alpha1.WarpgateTicketSpec{
+					ConnectionRef: connName,
+					Username:      "emptyuser",
+					TargetName:    "emptytarget",
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: tokenSecret, Namespace: namespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should skip Warpgate API delete and just remove the finalizer", func() {
+			nn := types.NamespacedName{Name: crName, Namespace: namespace}
+
+			// Delete the CR (finalizer holds it).
+			var cr warpgatev1alpha1.WarpgateTicket
+			Expect(k8sClient.Get(ctx, nn, &cr)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+
+			// Reconcile deletion: TicketID is empty so no API call, no SecretRef so no secret cleanup.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// CR should be gone.
+			err = k8sClient.Get(ctx, nn, &cr)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+		})
+	})
+
+	Context("Secret creation failure", func() {
+		var (
+			mockServer  *httptest.Server
+			tokenSecret string
+			connName    string
+			crName      string
+			namespace   string
+		)
+
+		BeforeEach(func() {
+			tokenSecret = "ticket-secfail-token"
+			connName = "ticket-secfail-conn"
+			crName = "ticket-secfail-tkt"
+			namespace = testNamespace
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/tickets", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"ticket": map[string]any{
+							"id": "tsf1",
+						},
+						"secret": "secfail-ticket-secret",
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: tokenSecret, Namespace: namespace},
+				Data:       map[string][]byte{"token": []byte("test-token")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:               mockServer.URL,
+					TokenSecretRef:     warpgatev1alpha1.SecretKeyRef{Name: tokenSecret, Key: "token"},
+					InsecureSkipVerify: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+
+			// Pre-create the secret that the controller will try to create, causing a conflict.
+			conflictSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      crName + "-secret",
+					Namespace: namespace,
+					// Different owner / no owner ref, so it's a conflict for the controller.
+				},
+				Data: map[string][]byte{"secret": []byte("pre-existing")},
+			}
+			Expect(k8sClient.Create(ctx, conflictSecret)).To(Succeed())
+
+			cr := &warpgatev1alpha1.WarpgateTicket{
+				ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateTicketSpec{
+					ConnectionRef: connName,
+					Username:      "secfailuser",
+					TargetName:    "secfailtarget",
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cr := &warpgatev1alpha1.WarpgateTicket{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: namespace}, cr); err == nil {
+				controllerutil.RemoveFinalizer(cr, ticketFinalizer)
+				_ = k8sClient.Update(ctx, cr)
+				_ = k8sClient.Delete(ctx, cr)
+			}
+			conflictSecret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: crName + "-secret", Namespace: namespace}, conflictSecret); err == nil {
+				_ = k8sClient.Delete(ctx, conflictSecret)
+			}
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: tokenSecret, Namespace: namespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should set Ready=False with SecretCreateFailed when the secret already exists", func() {
+			nn := types.NamespacedName{Name: crName, Namespace: namespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).To(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTicket
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("SecretCreateFailed"))
+		})
+	})
+
 	Context("Delete ticket", func() {
 		var (
 			mockServer   *httptest.Server
