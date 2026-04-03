@@ -1,0 +1,317 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: warpgatetargets.warpgate.warpgate.warp.tech
+spec:
+  group: warpgate.warpgate.warp.tech
+  names:
+    kind: WarpgateTarget
+    listKind: WarpgateTargetList
+    plural: warpgatetargets
+    singular: warpgatetarget
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.name
+      name: Name
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Type
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: WarpgateTarget is the Schema for the warpgatetargets API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of WarpgateTarget.
+            properties:
+              connectionRef:
+                description: connectionRef is the name of the WarpgateConnection to
+                  use.
+                type: string
+              description:
+                description: description is a human-readable description of the target.
+                type: string
+              http:
+                description: http configures an HTTP target. Exactly one target type
+                  must be set.
+                properties:
+                  externalHost:
+                    description: externalHost overrides the Host header sent to the
+                      upstream.
+                    type: string
+                  headers:
+                    additionalProperties:
+                      type: string
+                    description: headers are additional HTTP headers sent to the upstream.
+                    type: object
+                  tls:
+                    description: tls configures TLS settings for the HTTP connection.
+                    properties:
+                      mode:
+                        description: 'mode is the TLS mode: Disabled, Preferred, or
+                          Required.'
+                        enum:
+                        - Disabled
+                        - Preferred
+                        - Required
+                        type: string
+                      verify:
+                        description: verify enables TLS certificate verification.
+                        type: boolean
+                    required:
+                    - mode
+                    type: object
+                  url:
+                    description: url is the upstream URL of the HTTP target.
+                    type: string
+                required:
+                - url
+                type: object
+              mysql:
+                description: mysql configures a MySQL target. Exactly one target type
+                  must be set.
+                properties:
+                  host:
+                    description: host is the hostname or IP of the MySQL server.
+                    type: string
+                  passwordSecretRef:
+                    description: passwordSecretRef references a Secret containing
+                      the MySQL password.
+                    properties:
+                      key:
+                        description: key is the key within the Secret. Defaults to
+                          "token".
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  port:
+                    description: port is the MySQL port.
+                    type: integer
+                  tls:
+                    description: tls configures TLS settings for the MySQL connection.
+                    properties:
+                      mode:
+                        description: 'mode is the TLS mode: Disabled, Preferred, or
+                          Required.'
+                        enum:
+                        - Disabled
+                        - Preferred
+                        - Required
+                        type: string
+                      verify:
+                        description: verify enables TLS certificate verification.
+                        type: boolean
+                    required:
+                    - mode
+                    type: object
+                  username:
+                    description: username is the MySQL username.
+                    type: string
+                required:
+                - host
+                - port
+                - username
+                type: object
+              name:
+                description: name is the target name in Warpgate.
+                type: string
+              postgresql:
+                description: postgresql configures a PostgreSQL target. Exactly one
+                  target type must be set.
+                properties:
+                  host:
+                    description: host is the hostname or IP of the PostgreSQL server.
+                    type: string
+                  passwordSecretRef:
+                    description: passwordSecretRef references a Secret containing
+                      the PostgreSQL password.
+                    properties:
+                      key:
+                        description: key is the key within the Secret. Defaults to
+                          "token".
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  port:
+                    description: port is the PostgreSQL port.
+                    type: integer
+                  tls:
+                    description: tls configures TLS settings for the PostgreSQL connection.
+                    properties:
+                      mode:
+                        description: 'mode is the TLS mode: Disabled, Preferred, or
+                          Required.'
+                        enum:
+                        - Disabled
+                        - Preferred
+                        - Required
+                        type: string
+                      verify:
+                        description: verify enables TLS certificate verification.
+                        type: boolean
+                    required:
+                    - mode
+                    type: object
+                  username:
+                    description: username is the PostgreSQL username.
+                    type: string
+                required:
+                - host
+                - port
+                - username
+                type: object
+              ssh:
+                description: ssh configures an SSH target. Exactly one target type
+                  must be set.
+                properties:
+                  allowInsecureAlgos:
+                    description: allowInsecureAlgos permits the use of insecure SSH
+                      algorithms.
+                    type: boolean
+                  authKind:
+                    description: authKind is the SSH authentication method.
+                    enum:
+                    - Password
+                    - PublicKey
+                    type: string
+                  host:
+                    description: host is the hostname or IP of the SSH target.
+                    type: string
+                  passwordSecretRef:
+                    description: passwordSecretRef references a Secret containing
+                      the SSH password (for Password auth).
+                    properties:
+                      key:
+                        description: key is the key within the Secret. Defaults to
+                          "token".
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  port:
+                    description: port is the SSH port.
+                    type: integer
+                  username:
+                    description: username is the SSH username.
+                    type: string
+                required:
+                - authKind
+                - host
+                - port
+                - username
+                type: object
+            required:
+            - connectionRef
+            - name
+            type: object
+          status:
+            description: status defines the observed state of WarpgateTarget.
+            properties:
+              conditions:
+                description: conditions represent the current state of the WarpgateTarget
+                  resource.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              externalID:
+                description: externalID is the target's ID in Warpgate.
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

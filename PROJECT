@@ -8,4 +8,86 @@ layout:
 - go.kubebuilder.io/v4
 projectName: warpgate-operator
 repo: github.com/thereisnotime/warpgate-operator
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: warpgate.warp.tech
+  group: warpgate
+  kind: WarpgateConnection
+  path: github.com/thereisnotime/warpgate-operator/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: warpgate.warp.tech
+  group: warpgate
+  kind: WarpgateRole
+  path: github.com/thereisnotime/warpgate-operator/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: warpgate.warp.tech
+  group: warpgate
+  kind: WarpgateUser
+  path: github.com/thereisnotime/warpgate-operator/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: warpgate.warp.tech
+  group: warpgate
+  kind: WarpgateTarget
+  path: github.com/thereisnotime/warpgate-operator/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: warpgate.warp.tech
+  group: warpgate
+  kind: WarpgateUserRole
+  path: github.com/thereisnotime/warpgate-operator/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: warpgate.warp.tech
+  group: warpgate
+  kind: WarpgateTargetRole
+  path: github.com/thereisnotime/warpgate-operator/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: warpgate.warp.tech
+  group: warpgate
+  kind: WarpgatePasswordCredential
+  path: github.com/thereisnotime/warpgate-operator/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: warpgate.warp.tech
+  group: warpgate
+  kind: WarpgatePublicKeyCredential
+  path: github.com/thereisnotime/warpgate-operator/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: warpgate.warp.tech
+  group: warpgate
+  kind: WarpgateTicket
+  path: github.com/thereisnotime/warpgate-operator/api/v1alpha1
+  version: v1alpha1
 version: "3"

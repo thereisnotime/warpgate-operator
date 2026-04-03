@@ -1,0 +1,16 @@
+apiVersion: warpgate.warpgate.warp.tech/v1alpha1
+kind: WarpgateUser
+metadata:
+  labels:
+    app.kubernetes.io/name: warpgate-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: warpgateuser-sample
+spec:
+  connectionRef: warpgateconnection-sample
+  username: john.doe
+  description: Developer user
+  credentialPolicy:
+    ssh:
+      - PublicKey
+    http:
+      - Password

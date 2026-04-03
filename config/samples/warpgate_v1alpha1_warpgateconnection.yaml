@@ -1,0 +1,13 @@
+apiVersion: warpgate.warpgate.warp.tech/v1alpha1
+kind: WarpgateConnection
+metadata:
+  labels:
+    app.kubernetes.io/name: warpgate-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: warpgateconnection-sample
+spec:
+  host: https://warpgate.example.com
+  tokenSecretRef:
+    name: warpgate-token
+    key: token
+  insecureSkipVerify: false

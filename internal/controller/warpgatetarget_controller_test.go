@@ -1,0 +1,653 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package controller
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	warpgatev1alpha1 "github.com/thereisnotime/warpgate-operator/api/v1alpha1"
+)
+
+var _ = Describe("WarpgateTarget Controller", func() {
+
+	var (
+		reconciler *WarpgateTargetReconciler
+	)
+
+	BeforeEach(func() {
+		reconciler = &WarpgateTargetReconciler{
+			Client: k8sClient,
+			Scheme: k8sClient.Scheme(),
+		}
+	})
+
+	// helper: create a token secret and WarpgateConnection pointing at the mock server
+	setupConnection := func(namespace, secretName, connName, serverURL string) {
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      secretName,
+				Namespace: namespace,
+			},
+			Data: map[string][]byte{
+				"token": []byte("test-api-token"),
+			},
+		}
+		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+		conn := &warpgatev1alpha1.WarpgateConnection{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      connName,
+				Namespace: namespace,
+			},
+			Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+				Host: serverURL,
+				TokenSecretRef: warpgatev1alpha1.SecretKeyRef{
+					Name: secretName,
+					Key:  "token",
+				},
+				InsecureSkipVerify: true,
+			},
+		}
+		Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+	}
+
+	// helper: tear down connection resources
+	cleanupConnection := func(namespace, secretName, connName string) {
+		conn := &warpgatev1alpha1.WarpgateConnection{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+			controllerutil.RemoveFinalizer(conn, warpgateFinalizer)
+			_ = k8sClient.Update(ctx, conn)
+			_ = k8sClient.Delete(ctx, conn)
+		}
+
+		secret := &corev1.Secret{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, secret); err == nil {
+			_ = k8sClient.Delete(ctx, secret)
+		}
+	}
+
+	// helper: tear down a target CR
+	cleanupTarget := func(namespace, name string) {
+		target := &warpgatev1alpha1.WarpgateTarget{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, target); err == nil {
+			controllerutil.RemoveFinalizer(target, targetFinalizerName)
+			_ = k8sClient.Update(ctx, target)
+			_ = k8sClient.Delete(ctx, target)
+		}
+	}
+
+	Context("Create SSH target", func() {
+		var (
+			mockServer *httptest.Server
+			namespace  = "default"
+			secretName = "wg-token-target-ssh"
+			connName   = "wg-conn-target-ssh"
+			targetName = "target-ssh-test"
+		)
+
+		BeforeEach(func() {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":      "target-ssh-123",
+						"name":    "my-ssh-target",
+						"options": json.RawMessage(`{"kind":"Ssh"}`),
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+		})
+
+		It("should create the target and set ExternalID and Ready=True", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      targetName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-ssh-target",
+					SSH: &warpgatev1alpha1.SSHTargetSpec{
+						Host:     "10.0.0.1",
+						Port:     22,
+						Username: "admin",
+						AuthKind: "PublicKey",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+
+			// Single reconcile: adds finalizer + creates target — all in one pass.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(Equal("target-ssh-123"))
+
+			readyCond := findCondition(updated.Status.Conditions, "Ready")
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(readyCond.Reason).To(Equal("SSH"))
+		})
+	})
+
+	Context("Create HTTP target", func() {
+		var (
+			mockServer *httptest.Server
+			namespace  = "default"
+			secretName = "wg-token-target-http"
+			connName   = "wg-conn-target-http"
+			targetName = "target-http-test"
+		)
+
+		BeforeEach(func() {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					// Read the request body and verify options marshalled correctly.
+					body, _ := io.ReadAll(r.Body)
+					var req map[string]json.RawMessage
+					Expect(json.Unmarshal(body, &req)).To(Succeed())
+
+					var opts map[string]any
+					Expect(json.Unmarshal(req["options"], &opts)).To(Succeed())
+					Expect(opts["kind"]).To(Equal("Http"))
+					Expect(opts["url"]).To(Equal("https://internal-app.example.com"))
+
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":      "target-http-456",
+						"name":    "my-http-target",
+						"options": json.RawMessage(`{"kind":"Http"}`),
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+		})
+
+		It("should create an HTTP target with correct options", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      targetName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-http-target",
+					HTTP: &warpgatev1alpha1.HTTPTargetSpec{
+						URL: "https://internal-app.example.com",
+						Headers: map[string]string{
+							"X-Custom": "value",
+						},
+						ExternalHost: "app.example.com",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+
+			// Single reconcile: adds finalizer + creates target — all in one pass.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(Equal("target-http-456"))
+
+			readyCond := findCondition(updated.Status.Conditions, "Ready")
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(readyCond.Reason).To(Equal("HTTP"))
+		})
+	})
+
+	Context("Update target", func() {
+		var (
+			mockServer *httptest.Server
+			namespace  = "default"
+			secretName = "wg-token-target-update"
+			connName   = "wg-conn-target-update"
+			targetName = "target-update-test"
+			callCount  int
+			mu         sync.Mutex
+		)
+
+		BeforeEach(func() {
+			callCount = 0
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":      "target-upd-789",
+						"name":    "my-update-target",
+						"options": json.RawMessage(`{"kind":"Ssh"}`),
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mux.HandleFunc("/@warpgate/admin/api/targets/", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPut {
+					mu.Lock()
+					callCount++
+					mu.Unlock()
+
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":      "target-upd-789",
+						"name":    "my-update-target",
+						"options": json.RawMessage(`{"kind":"Ssh"}`),
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+		})
+
+		It("should update an existing target and keep Ready=True", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      targetName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-update-target",
+					SSH: &warpgatev1alpha1.SSHTargetSpec{
+						Host:     "10.0.0.2",
+						Port:     22,
+						Username: "admin",
+						AuthKind: "PublicKey",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+
+			// Reconcile 1: adds finalizer + creates the target (POST) in one pass.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Reconcile 2: ExternalID is set, triggers update path (PUT).
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			mu.Lock()
+			Expect(callCount).To(Equal(1))
+			mu.Unlock()
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(Equal("target-upd-789"))
+
+			readyCond := findCondition(updated.Status.Conditions, "Ready")
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+		})
+	})
+
+	Context("Delete target", func() {
+		var (
+			mockServer   *httptest.Server
+			namespace    = "default"
+			secretName   = "wg-token-target-del"
+			connName     = "wg-conn-target-del"
+			targetName   = "target-delete-test"
+			deleteCalled bool
+			mu           sync.Mutex
+		)
+
+		BeforeEach(func() {
+			deleteCalled = false
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":      "target-del-abc",
+						"name":    "my-del-target",
+						"options": json.RawMessage(`{"kind":"Ssh"}`),
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mux.HandleFunc("/@warpgate/admin/api/targets/", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodDelete {
+					mu.Lock()
+					deleteCalled = true
+					mu.Unlock()
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+		})
+
+		It("should delete the target in Warpgate and remove the finalizer", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      targetName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-del-target",
+					SSH: &warpgatev1alpha1.SSHTargetSpec{
+						Host:     "10.0.0.3",
+						Port:     22,
+						Username: "admin",
+						AuthKind: "PublicKey",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+
+			// Single reconcile: adds finalizer + creates the target in one pass.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify target was created.
+			var created warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &created)).To(Succeed())
+			Expect(created.Status.ExternalID).To(Equal("target-del-abc"))
+
+			// Delete the CR (finalizer will hold it).
+			Expect(k8sClient.Delete(ctx, &created)).To(Succeed())
+
+			// Reconcile 3: processes deletion.
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// The Warpgate API DELETE should have been called.
+			mu.Lock()
+			Expect(deleteCalled).To(BeTrue())
+			mu.Unlock()
+
+			// The resource should be fully gone.
+			var deleted warpgatev1alpha1.WarpgateTarget
+			err = k8sClient.Get(ctx, nn, &deleted)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+		})
+	})
+
+	Context("SSH target with password from secret", func() {
+		var (
+			mockServer   *httptest.Server
+			namespace    = "default"
+			secretName   = "wg-token-target-sshpw"
+			connName     = "wg-conn-target-sshpw"
+			targetName   = "target-sshpw-test"
+			pwSecretName = "ssh-password-secret"
+			capturedBody []byte
+			mu           sync.Mutex
+		)
+
+		BeforeEach(func() {
+			capturedBody = nil
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					mu.Lock()
+					capturedBody, _ = io.ReadAll(r.Body)
+					mu.Unlock()
+
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":      "target-sshpw-999",
+						"name":    "my-sshpw-target",
+						"options": json.RawMessage(`{"kind":"Ssh"}`),
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+
+			// Create the password secret that the target will reference.
+			pwSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      pwSecretName,
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"password": []byte("super-secret-pw"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, pwSecret)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+
+			pwSecret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: pwSecretName, Namespace: namespace}, pwSecret); err == nil {
+				_ = k8sClient.Delete(ctx, pwSecret)
+			}
+		})
+
+		It("should read the password from the referenced secret and include it in the API call", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      targetName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-sshpw-target",
+					SSH: &warpgatev1alpha1.SSHTargetSpec{
+						Host:     "10.0.0.4",
+						Port:     22,
+						Username: "admin",
+						AuthKind: "Password",
+						PasswordSecretRef: &warpgatev1alpha1.SecretKeyRef{
+							Name: pwSecretName,
+							Key:  "password",
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+
+			// Single reconcile: adds finalizer + creates target in one pass.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(Equal("target-sshpw-999"))
+
+			// Verify the password was sent in the API request body.
+			mu.Lock()
+			defer mu.Unlock()
+			Expect(capturedBody).NotTo(BeNil())
+
+			var req map[string]json.RawMessage
+			Expect(json.Unmarshal(capturedBody, &req)).To(Succeed())
+
+			var opts map[string]any
+			Expect(json.Unmarshal(req["options"], &opts)).To(Succeed())
+			Expect(opts["kind"]).To(Equal("Ssh"))
+
+			auth, ok := opts["auth"].(map[string]any)
+			Expect(ok).To(BeTrue())
+			Expect(auth["kind"]).To(Equal("Password"))
+			Expect(auth["password"]).To(Equal("super-secret-pw"))
+		})
+	})
+
+	Context("Target not found on update", func() {
+		var (
+			mockServer *httptest.Server
+			namespace  = "default"
+			secretName = "wg-token-target-notfound"
+			connName   = "wg-conn-target-notfound"
+			targetName = "target-notfound-test"
+		)
+
+		BeforeEach(func() {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":      "target-nf-000",
+						"name":    "my-notfound-target",
+						"options": json.RawMessage(`{"kind":"Ssh"}`),
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mux.HandleFunc("/@warpgate/admin/api/targets/", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPut {
+					// Simulate target deleted out-of-band.
+					w.WriteHeader(http.StatusNotFound)
+					_, _ = w.Write([]byte(`{"error":"not found"}`))
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+		})
+
+		It("should clear ExternalID and requeue when PUT returns 404", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      targetName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-notfound-target",
+					SSH: &warpgatev1alpha1.SSHTargetSpec{
+						Host:     "10.0.0.5",
+						Port:     22,
+						Username: "admin",
+						AuthKind: "PublicKey",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+
+			// Reconcile 1: adds finalizer + creates the target (POST succeeds) in one pass.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify ExternalID was set.
+			var created warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &created)).To(Succeed())
+			Expect(created.Status.ExternalID).To(Equal("target-nf-000"))
+
+			// Reconcile 2: update (PUT returns 404) — should clear ExternalID and requeue.
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Requeue).To(BeTrue())
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(BeEmpty())
+
+			readyCond := findCondition(updated.Status.Conditions, "Ready")
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("NotFound"))
+			Expect(strings.Contains(readyCond.Message, "recreating")).To(BeTrue())
+		})
+	})
+})

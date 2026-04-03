@@ -34,6 +34,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	warpgatev1alpha1 "github.com/thereisnotime/warpgate-operator/api/v1alpha1"
+	"github.com/thereisnotime/warpgate-operator/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -45,6 +48,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
+	utilruntime.Must(warpgatev1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -174,6 +178,77 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := (&controller.WarpgateConnectionReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "WarpgateConnection")
+		os.Exit(1)
+	}
+
+	if err := (&controller.WarpgateRoleReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "WarpgateRole")
+		os.Exit(1)
+	}
+
+	if err := (&controller.WarpgateUserReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "WarpgateUser")
+		os.Exit(1)
+	}
+
+	if err := (&controller.WarpgateTargetReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "WarpgateTarget")
+		os.Exit(1)
+	}
+
+	if err := (&controller.WarpgateUserRoleReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "WarpgateUserRole")
+		os.Exit(1)
+	}
+
+	if err := (&controller.WarpgateTargetRoleReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "WarpgateTargetRole")
+		os.Exit(1)
+	}
+
+	if err := (&controller.WarpgatePasswordCredentialReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "WarpgatePasswordCredential")
+		os.Exit(1)
+	}
+
+	if err := (&controller.WarpgatePublicKeyCredentialReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "WarpgatePublicKeyCredential")
+		os.Exit(1)
+	}
+
+	if err := (&controller.WarpgateTicketReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "WarpgateTicket")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

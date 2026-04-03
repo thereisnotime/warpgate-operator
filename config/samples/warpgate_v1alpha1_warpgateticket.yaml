@@ -1,0 +1,13 @@
+apiVersion: warpgate.warpgate.warp.tech/v1alpha1
+kind: WarpgateTicket
+metadata:
+  labels:
+    app.kubernetes.io/name: warpgate-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: warpgateticket-sample
+spec:
+  connectionRef: warpgateconnection-sample
+  username: john.doe
+  targetName: production-ssh
+  numberOfUses: 1
+  description: One-time access ticket

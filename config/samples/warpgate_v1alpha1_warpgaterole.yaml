@@ -1,0 +1,11 @@
+apiVersion: warpgate.warpgate.warp.tech/v1alpha1
+kind: WarpgateRole
+metadata:
+  labels:
+    app.kubernetes.io/name: warpgate-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: warpgaterole-sample
+spec:
+  connectionRef: warpgateconnection-sample
+  name: developers
+  description: Role for developer access

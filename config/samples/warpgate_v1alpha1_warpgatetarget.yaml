@@ -1,0 +1,16 @@
+apiVersion: warpgate.warpgate.warp.tech/v1alpha1
+kind: WarpgateTarget
+metadata:
+  labels:
+    app.kubernetes.io/name: warpgate-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: warpgatetarget-sample
+spec:
+  connectionRef: warpgateconnection-sample
+  name: production-ssh
+  description: Production SSH bastion target
+  ssh:
+    host: 10.0.1.100
+    port: 22
+    username: admin
+    authKind: PublicKey
