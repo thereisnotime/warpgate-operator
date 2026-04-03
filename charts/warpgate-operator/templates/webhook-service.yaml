@@ -1,0 +1,16 @@
+{{- if .Values.webhooks.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "warpgate-operator.fullname" . }}-webhook
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "warpgate-operator.labels" . | nindent 4 }}
+spec:
+  ports:
+    - port: 443
+      protocol: TCP
+      targetPort: {{ .Values.webhooks.port }}
+  selector:
+    {{- include "warpgate-operator.selectorLabels" . | nindent 4 }}
+{{- end }}

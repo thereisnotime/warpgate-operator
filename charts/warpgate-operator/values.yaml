@@ -73,3 +73,9 @@ health:
 leaderElection:
   # -- Enable leader election for HA deployments.
   enabled: true
+
+webhooks:
+  # -- Enable admission webhooks (validation and defaulting).
+  enabled: true
+  # -- Port the webhook server listens on.
+  port: 9443

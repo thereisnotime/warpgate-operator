@@ -249,6 +249,42 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "WarpgateTicket")
 		os.Exit(1)
 	}
+	if err := (&warpgatev1alpha1.WarpgateConnection{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create webhook", "webhook", "WarpgateConnection")
+		os.Exit(1)
+	}
+	if err := (&warpgatev1alpha1.WarpgateRole{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create webhook", "webhook", "WarpgateRole")
+		os.Exit(1)
+	}
+	if err := (&warpgatev1alpha1.WarpgateUser{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create webhook", "webhook", "WarpgateUser")
+		os.Exit(1)
+	}
+	if err := (&warpgatev1alpha1.WarpgateTarget{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create webhook", "webhook", "WarpgateTarget")
+		os.Exit(1)
+	}
+	if err := (&warpgatev1alpha1.WarpgateUserRole{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create webhook", "webhook", "WarpgateUserRole")
+		os.Exit(1)
+	}
+	if err := (&warpgatev1alpha1.WarpgateTargetRole{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create webhook", "webhook", "WarpgateTargetRole")
+		os.Exit(1)
+	}
+	if err := (&warpgatev1alpha1.WarpgatePasswordCredential{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create webhook", "webhook", "WarpgatePasswordCredential")
+		os.Exit(1)
+	}
+	if err := (&warpgatev1alpha1.WarpgatePublicKeyCredential{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create webhook", "webhook", "WarpgatePublicKeyCredential")
+		os.Exit(1)
+	}
+	if err := (&warpgatev1alpha1.WarpgateTicket{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create webhook", "webhook", "WarpgateTicket")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

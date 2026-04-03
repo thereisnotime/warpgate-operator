@@ -40,11 +40,15 @@ linters:
     rules:
       - linters:
           - lll
+          - dupl
         path: api/*
       - linters:
           - dupl
           - lll
         path: internal/*
+      - linters:
+          - goconst
+        path: _test\.go$
     paths:
       - third_party$
       - builtin$
