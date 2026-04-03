@@ -40,6 +40,27 @@ spec:
           spec:
             description: spec defines the desired state of WarpgateConnection
             properties:
+              credentialsSecretRef:
+                description: |-
+                  credentialsSecretRef references a Kubernetes Secret containing Warpgate admin credentials.
+                  The Secret must have keys for the username and password (configurable, defaults to "username" and "password").
+                properties:
+                  name:
+                    description: name is the name of the Secret.
+                    type: string
+                  passwordKey:
+                    default: password
+                    description: passwordKey is the key in the Secret that holds the
+                      password. Defaults to "password".
+                    type: string
+                  usernameKey:
+                    default: username
+                    description: usernameKey is the key in the Secret that holds the
+                      username. Defaults to "username".
+                    type: string
+                required:
+                - name
+                type: object
               host:
                 description: host is the URL of the Warpgate instance (e.g. https://warpgate.example.com).
                 type: string
@@ -47,25 +68,9 @@ spec:
                 description: insecureSkipVerify disables TLS certificate verification.
                   Not recommended for production.
                 type: boolean
-              tokenSecretRef:
-                description: |-
-                  tokenSecretRef references a Kubernetes Secret containing Warpgate admin credentials.
-                  The Secret must have "username" and "password" keys.
-                properties:
-                  key:
-                    description: |-
-                      key is the key within the Secret. Defaults to "password" for password refs.
-                      Unused by tokenSecretRef (which always reads "username" and "password" keys).
-                    type: string
-                  name:
-                    description: name is the name of the Secret.
-                    type: string
-                required:
-                - name
-                type: object
             required:
+            - credentialsSecretRef
             - host
-            - tokenSecretRef
             type: object
           status:
             description: status defines the observed state of WarpgateConnection

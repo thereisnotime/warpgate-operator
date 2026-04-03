@@ -72,7 +72,7 @@ metadata:
   name: my-warpgate
 spec:
   host: https://warpgate.example.com
-  tokenSecretRef:
+  credentialsSecretRef:
     name: warpgate-credentials
 ```
 
@@ -120,7 +120,7 @@ All resources belong to the API group `warpgate.warpgate.warp.tech/v1alpha1`.
 flowchart TD
     A[User creates Resource CR\nRole / User / Target / etc.] --> B{CR spec includes\nconnectionRef}
     B --> C[Operator looks up\nWarpgateConnection CR]
-    C --> D[Read host URL +\ntokenSecretRef from connection]
+    C --> D[Read host URL +\ncredentials from connection]
     D --> E[Fetch credentials from\nKubernetes Secret]
     E --> F[Call Warpgate REST API\nCreate / Update / Delete]
     F --> G[Write status back to CR]

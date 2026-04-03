@@ -46,9 +46,9 @@ var _ = Describe("getWarpgateClient helper", func() {
 			conn := &warpgatev1alpha1.WarpgateConnection{
 				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:               "https://warpgate.example.com",
-					TokenSecretRef:     warpgatev1alpha1.SecretKeyRef{Name: secretName},
-					InsecureSkipVerify: false,
+					Host:                 "https://warpgate.example.com",
+					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
+					InsecureSkipVerify:   false,
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -88,8 +88,8 @@ var _ = Describe("getWarpgateClient helper", func() {
 			conn := &warpgatev1alpha1.WarpgateConnection{
 				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:           "https://warpgate.example.com",
-					TokenSecretRef: warpgatev1alpha1.SecretKeyRef{Name: "ghost-secret"},
+					Host:                 "https://warpgate.example.com",
+					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: "ghost-secret"},
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -126,8 +126,8 @@ var _ = Describe("getWarpgateClient helper", func() {
 			conn := &warpgatev1alpha1.WarpgateConnection{
 				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:           "https://warpgate.example.com",
-					TokenSecretRef: warpgatev1alpha1.SecretKeyRef{Name: secretName},
+					Host:                 "https://warpgate.example.com",
+					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -168,8 +168,8 @@ var _ = Describe("getWarpgateClient helper", func() {
 			conn := &warpgatev1alpha1.WarpgateConnection{
 				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:           "https://warpgate.example.com",
-					TokenSecretRef: warpgatev1alpha1.SecretKeyRef{Name: secretName},
+					Host:                 "https://warpgate.example.com",
+					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -210,9 +210,9 @@ var _ = Describe("getWarpgateClient helper", func() {
 			conn := &warpgatev1alpha1.WarpgateConnection{
 				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:               "https://warpgate.example.com",
-					TokenSecretRef:     warpgatev1alpha1.SecretKeyRef{Name: secretName},
-					InsecureSkipVerify: true,
+					Host:                 "https://warpgate.example.com",
+					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
+					InsecureSkipVerify:   true,
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())

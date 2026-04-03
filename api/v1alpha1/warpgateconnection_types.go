@@ -31,15 +31,30 @@ type SecretKeyRef struct {
 	Key string `json:"key,omitempty"`
 }
 
+// CredentialsSecretRef references a Kubernetes Secret containing login credentials.
+type CredentialsSecretRef struct {
+	// name is the name of the Secret.
+	// +required
+	Name string `json:"name"`
+	// usernameKey is the key in the Secret that holds the username. Defaults to "username".
+	// +optional
+	// +kubebuilder:default="username"
+	UsernameKey string `json:"usernameKey,omitempty"`
+	// passwordKey is the key in the Secret that holds the password. Defaults to "password".
+	// +optional
+	// +kubebuilder:default="password"
+	PasswordKey string `json:"passwordKey,omitempty"`
+}
+
 // WarpgateConnectionSpec defines the desired state of WarpgateConnection
 type WarpgateConnectionSpec struct {
 	// host is the URL of the Warpgate instance (e.g. https://warpgate.example.com).
 	// +required
 	Host string `json:"host"`
-	// tokenSecretRef references a Kubernetes Secret containing Warpgate admin credentials.
-	// The Secret must have "username" and "password" keys.
+	// credentialsSecretRef references a Kubernetes Secret containing Warpgate admin credentials.
+	// The Secret must have keys for the username and password (configurable, defaults to "username" and "password").
 	// +required
-	TokenSecretRef SecretKeyRef `json:"tokenSecretRef"`
+	CredentialsSecretRef CredentialsSecretRef `json:"credentialsSecretRef"`
 	// insecureSkipVerify disables TLS certificate verification. Not recommended for production.
 	// +optional
 	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
