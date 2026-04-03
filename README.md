@@ -1,0 +1,1 @@
+README.md has been generated at `/home/usr100/Private/Projects/P/warpgate-operator/README.md`. It covers the project goal, architecture diagram, all 12 CRDs, component breakdown, tech stack, and a quick-start guide with example manifests.
