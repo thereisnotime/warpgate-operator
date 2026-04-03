@@ -186,7 +186,7 @@ lint-md:
 
 # Lint YAML files
 lint-yaml:
-    npx --yes yamllint -c .yamllint.yaml $(find . -name '*.yaml' -o -name '*.yml' | grep -v node_modules | grep -v bin/ | grep -v charts/warpgate-operator/templates)
+    yamllint -c .yamllint.yaml $(find . -name '*.yaml' -o -name '*.yml' | grep -v node_modules | grep -v bin/ | grep -v charts/warpgate-operator/templates)
 
 # Lint Helm chart
 lint-helm:
@@ -237,39 +237,39 @@ _kustomize:
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p "{{localbin}}"
-    if [ ! -f "{{kustomize}}-{{kustomize_version}}" ] || [ "$(readlink -- "{{kustomize}}" 2>/dev/null)" != "{{kustomize}}-{{kustomize_version}}" ]; then
+    if [ ! -f "{{kustomize}}-{{kustomize_version}}" ]; then
         echo "Downloading kustomize {{kustomize_version}}"
         rm -f "{{kustomize}}"
         GOBIN="{{localbin}}" go install sigs.k8s.io/kustomize/kustomize/v5@{{kustomize_version}}
-        mv "{{localbin}}/kustomize" "{{kustomize}}-{{kustomize_version}}"
+        mv -n "{{localbin}}/kustomize" "{{kustomize}}-{{kustomize_version}}" 2>/dev/null || true
     fi
-    ln -sf "$(realpath "{{kustomize}}-{{kustomize_version}}")" "{{kustomize}}"
+    ln -sf "{{kustomize}}-{{kustomize_version}}" "{{kustomize}}"
 
 [private]
 _controller-gen:
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p "{{localbin}}"
-    if [ ! -f "{{controller_gen}}-{{controller_tools_version}}" ] || [ "$(readlink -- "{{controller_gen}}" 2>/dev/null)" != "{{controller_gen}}-{{controller_tools_version}}" ]; then
+    if [ ! -f "{{controller_gen}}-{{controller_tools_version}}" ]; then
         echo "Downloading controller-gen {{controller_tools_version}}"
         rm -f "{{controller_gen}}"
         GOBIN="{{localbin}}" go install sigs.k8s.io/controller-tools/cmd/controller-gen@{{controller_tools_version}}
-        mv "{{localbin}}/controller-gen" "{{controller_gen}}-{{controller_tools_version}}"
+        mv -n "{{localbin}}/controller-gen" "{{controller_gen}}-{{controller_tools_version}}" 2>/dev/null || true
     fi
-    ln -sf "$(realpath "{{controller_gen}}-{{controller_tools_version}}")" "{{controller_gen}}"
+    ln -sf "{{controller_gen}}-{{controller_tools_version}}" "{{controller_gen}}"
 
 [private]
 _envtest:
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p "{{localbin}}"
-    if [ ! -f "{{envtest}}-{{envtest_version}}" ] || [ "$(readlink -- "{{envtest}}" 2>/dev/null)" != "{{envtest}}-{{envtest_version}}" ]; then
+    if [ ! -f "{{envtest}}-{{envtest_version}}" ]; then
         echo "Downloading setup-envtest {{envtest_version}}"
         rm -f "{{envtest}}"
         GOBIN="{{localbin}}" go install sigs.k8s.io/controller-runtime/tools/setup-envtest@{{envtest_version}}
-        mv "{{localbin}}/setup-envtest" "{{envtest}}-{{envtest_version}}"
+        mv -n "{{localbin}}/setup-envtest" "{{envtest}}-{{envtest_version}}" 2>/dev/null || true
     fi
-    ln -sf "$(realpath "{{envtest}}-{{envtest_version}}")" "{{envtest}}"
+    ln -sf "{{envtest}}-{{envtest_version}}" "{{envtest}}"
 
 [private]
 _setup-envtest: _envtest
@@ -286,15 +286,18 @@ _golangci-lint:
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p "{{localbin}}"
-    if [ ! -f "{{golangci_lint}}-{{golangci_lint_version}}" ] || [ "$(readlink -- "{{golangci_lint}}" 2>/dev/null)" != "{{golangci_lint}}-{{golangci_lint_version}}" ]; then
+    if [ ! -f "{{golangci_lint}}-{{golangci_lint_version}}" ]; then
         echo "Downloading golangci-lint {{golangci_lint_version}}"
         rm -f "{{golangci_lint}}"
         GOBIN="{{localbin}}" go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{golangci_lint_version}}
-        mv "{{localbin}}/golangci-lint" "{{golangci_lint}}-{{golangci_lint_version}}"
-    fi
-    ln -sf "$(realpath "{{golangci_lint}}-{{golangci_lint_version}}")" "{{golangci_lint}}"
-    if [ -f .custom-gcl.yml ]; then
-        echo "Building custom golangci-lint with plugins..."
-        "{{golangci_lint}}" custom --destination "{{localbin}}" --name golangci-lint-custom
-        mv -f "{{localbin}}/golangci-lint-custom" "{{golangci_lint}}"
+        mv -n "{{localbin}}/golangci-lint" "{{golangci_lint}}-{{golangci_lint_version}}" 2>/dev/null || true
+        ln -sf "{{golangci_lint}}-{{golangci_lint_version}}" "{{golangci_lint}}"
+        if [ -f .custom-gcl.yml ]; then
+            echo "Building custom golangci-lint with plugins..."
+            "{{golangci_lint}}" custom --destination "{{localbin}}" --name golangci-lint-custom
+            mv -f "{{localbin}}/golangci-lint-custom" "{{golangci_lint}}-{{golangci_lint_version}}"
+            ln -sf "{{golangci_lint}}-{{golangci_lint_version}}" "{{golangci_lint}}"
+        fi
+    else
+        ln -sf "{{golangci_lint}}-{{golangci_lint_version}}" "{{golangci_lint}}"
     fi

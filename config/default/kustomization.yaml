@@ -9,8 +9,8 @@ namespace: warpgate-operator-system
 namePrefix: warpgate-operator-
 
 # Labels to add to all resources and selectors.
-#labels:
-#- includeSelectors: true
+# labels:
+# - includeSelectors: true
 #  pairs:
 #    someName: someValue
 
@@ -20,18 +20,18 @@ resources:
 - ../manager
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix including the one in
 # crd/kustomization.yaml
-#- ../webhook
+# - ../webhook
 # [CERTMANAGER] To enable cert-manager, uncomment all sections with 'CERTMANAGER'. 'WEBHOOK' components are required.
-#- ../certmanager
+# - ../certmanager
 # [PROMETHEUS] To enable prometheus monitor, uncomment all sections with 'PROMETHEUS'.
-#- ../prometheus
+# - ../prometheus
 # [METRICS] Expose the controller manager metrics service.
 - metrics_service.yaml
 # [NETWORK POLICY] Protect the /metrics endpoint and Webhook Server with NetworkPolicy.
 # Only Pod(s) running a namespace labeled with 'metrics: enabled' will be able to gather the metrics.
 # Only CR(s) which requires webhooks and are applied on namespaces labeled with 'webhooks: enabled' will
 # be able to communicate with the Webhook Server.
-#- ../network-policy
+# - ../network-policy
 
 # Uncomment the patches line if you enable Metrics
 patches:
@@ -44,19 +44,19 @@ patches:
 # Uncomment the patches line if you enable Metrics and CertManager
 # [METRICS-WITH-CERTS] To enable metrics protected with certManager, uncomment the following line.
 # This patch will protect the metrics with certManager self-signed certs.
-#- path: cert_metrics_manager_patch.yaml
+# - path: cert_metrics_manager_patch.yaml
 #  target:
 #    kind: Deployment
 
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix including the one in
 # crd/kustomization.yaml
-#- path: manager_webhook_patch.yaml
+# - path: manager_webhook_patch.yaml
 #  target:
 #    kind: Deployment
 
 # [CERTMANAGER] To enable cert-manager, uncomment all sections with 'CERTMANAGER' prefix.
 # Uncomment the following replacements to add the cert-manager CA injection annotations
-#replacements:
+# replacements:
 # - source: # Uncomment the following block to enable certificates for metrics
 #     kind: Service
 #     version: v1

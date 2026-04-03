@@ -25,4 +25,3 @@ resources:
 - warpgateconnection_admin_role.yaml
 - warpgateconnection_editor_role.yaml
 - warpgateconnection_viewer_role.yaml
-
