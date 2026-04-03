@@ -25,7 +25,7 @@ type SecretKeyRef struct {
 	// name is the name of the Secret.
 	// +required
 	Name string `json:"name"`
-	// key is the key within the Secret. Defaults to "token".
+	// key is unused but retained for backward compatibility.
 	// +optional
 	Key string `json:"key,omitempty"`
 }
@@ -35,7 +35,8 @@ type WarpgateConnectionSpec struct {
 	// host is the URL of the Warpgate instance (e.g. https://warpgate.example.com).
 	// +required
 	Host string `json:"host"`
-	// tokenSecretRef references a Kubernetes Secret containing the Warpgate API token.
+	// tokenSecretRef references a Kubernetes Secret containing Warpgate admin credentials.
+	// The Secret must have "username" and "password" keys.
 	// +required
 	TokenSecretRef SecretKeyRef `json:"tokenSecretRef"`
 	// insecureSkipVerify disables TLS certificate verification. Not recommended for production.

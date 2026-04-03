@@ -24,33 +24,20 @@ import (
 func TestWarpgateConnectionDefaulter(t *testing.T) {
 	d := &WarpgateConnectionCustomDefaulter{}
 
-	t.Run("defaults tokenSecretRef.key to token", func(t *testing.T) {
+	t.Run("defaulter is a no-op", func(t *testing.T) {
 		conn := &WarpgateConnection{
 			Spec: WarpgateConnectionSpec{
 				Host:           "https://warpgate.example.com",
-				TokenSecretRef: SecretKeyRef{Name: "my-secret"},
+				TokenSecretRef: SecretKeyRef{Name: "warpgate-credentials"},
 			},
 		}
 		if err := d.Default(context.Background(), conn); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if conn.Spec.TokenSecretRef.Key != "token" {
-			t.Errorf("expected key 'token', got %q", conn.Spec.TokenSecretRef.Key)
-		}
-	})
-
-	t.Run("preserves explicit tokenSecretRef.key", func(t *testing.T) {
-		conn := &WarpgateConnection{
-			Spec: WarpgateConnectionSpec{
-				Host:           "https://warpgate.example.com",
-				TokenSecretRef: SecretKeyRef{Name: "my-secret", Key: "api-token"},
-			},
-		}
-		if err := d.Default(context.Background(), conn); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if conn.Spec.TokenSecretRef.Key != "api-token" {
-			t.Errorf("expected key 'api-token', got %q", conn.Spec.TokenSecretRef.Key)
+		// The Secret is expected to have "username" and "password" keys;
+		// no key defaulting should occur.
+		if conn.Spec.TokenSecretRef.Key != "" {
+			t.Errorf("expected key to remain empty, got %q", conn.Spec.TokenSecretRef.Key)
 		}
 	})
 }
@@ -63,7 +50,7 @@ func TestWarpgateConnectionValidator(t *testing.T) {
 		return &WarpgateConnection{
 			Spec: WarpgateConnectionSpec{
 				Host:           "https://warpgate.example.com",
-				TokenSecretRef: SecretKeyRef{Name: "my-secret", Key: "token"},
+				TokenSecretRef: SecretKeyRef{Name: "warpgate-credentials"},
 			},
 		}
 	}

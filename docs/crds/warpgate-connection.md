@@ -9,9 +9,7 @@ The operator uses the connection details to authenticate against the Warpgate RE
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `host` | `string` | Yes | - | URL of the Warpgate instance (e.g. `https://warpgate.example.com`) |
-| `credentialSecretRef.name` | `string` | Yes | - | Name of the Kubernetes Secret containing the login credentials |
-| `credentialSecretRef.usernameKey` | `string` | No | `username` | Key within the Secret that holds the username |
-| `credentialSecretRef.passwordKey` | `string` | No | `password` | Key within the Secret that holds the password |
+| `tokenSecretRef.name` | `string` | Yes | - | Name of the Kubernetes Secret containing the login credentials |
 | `insecureSkipVerify` | `bool` | No | `false` | Disable TLS certificate verification (not recommended for production) |
 
 ## Status Fields
@@ -41,10 +39,8 @@ metadata:
   name: my-warpgate
 spec:
   host: https://warpgate.example.com
-  credentialSecretRef:
+  tokenSecretRef:
     name: warpgate-credentials
-    usernameKey: username
-    passwordKey: password
   insecureSkipVerify: false
 ```
 
@@ -53,18 +49,15 @@ spec:
 The following rules are enforced by the admission webhook on create and update:
 
 - `spec.host` must not be empty and must start with `http://` or `https://`
-- `spec.credentialSecretRef.name` must not be empty
+- `spec.tokenSecretRef.name` must not be empty
 
 ## Defaults
 
-The following defaults are applied on create and update:
-
-- `spec.credentialSecretRef.usernameKey` defaults to `"username"` if not set
-- `spec.credentialSecretRef.passwordKey` defaults to `"password"` if not set
+No defaults are applied. The referenced Secret must contain `username` and `password` keys.
 
 ## Notes
 
 - The credentials Secret must exist in the same namespace as the `WarpgateConnection` CR.
-- If `usernameKey` or `passwordKey` are omitted, the operator defaults to looking up the keys `username` and `password` in the referenced Secret.
+- The operator reads the `username` and `password` keys from the referenced Secret for session-based authentication.
 - The `insecureSkipVerify` flag is provided for development/testing environments with self-signed certificates. Avoid using it in production.
 - Multiple `WarpgateConnection` resources can coexist in the same namespace, each pointing to a different Warpgate instance. Other CRDs select which instance to use via `connectionRef`.

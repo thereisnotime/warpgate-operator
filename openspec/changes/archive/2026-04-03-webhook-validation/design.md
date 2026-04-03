@@ -6,7 +6,7 @@ Each CRD gets a `ValidateCreate` and `ValidateUpdate` webhook. `ValidateDelete` 
 
 ### WarpgateConnection
 - `spec.host` must be a valid URL (https scheme, no trailing slash)
-- `spec.tokenSecretRef` must reference a non-empty secret name and key
+- `spec.tokenSecretRef` must reference a non-empty secret name (the Secret must contain `username` and `password` keys)
 - Immutable fields: `spec.host` cannot change after creation (forces delete + recreate to avoid orphaned resources)
 
 ### WarpgateTarget

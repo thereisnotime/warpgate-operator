@@ -43,10 +43,8 @@ func (r *WarpgateConnection) SetupWebhookWithManager(mgr ctrl.Manager) error {
 }
 
 // Default sets sensible defaults for WarpgateConnection fields.
+// The referenced Secret is expected to contain "username" and "password" keys.
 func (d *WarpgateConnectionCustomDefaulter) Default(ctx context.Context, conn *WarpgateConnection) error {
-	if conn.Spec.TokenSecretRef.Key == "" {
-		conn.Spec.TokenSecretRef.Key = "token"
-	}
 	return nil
 }
 
@@ -65,6 +63,9 @@ func (v *WarpgateConnectionCustomValidator) ValidateDelete(ctx context.Context, 
 	return nil, nil
 }
 
+// validateConnection checks that the connection spec has the required fields.
+// The referenced Secret must contain "username" and "password" keys for
+// session-based authentication against Warpgate.
 func validateConnection(conn *WarpgateConnection) (admission.Warnings, error) {
 	if conn.Spec.Host == "" {
 		return nil, fmt.Errorf("spec.host must not be empty")

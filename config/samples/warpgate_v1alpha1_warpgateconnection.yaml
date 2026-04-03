@@ -7,8 +7,6 @@ metadata:
   name: warpgateconnection-sample
 spec:
   host: https://warpgate.example.com
-  credentialSecretRef:
+  tokenSecretRef:
     name: warpgate-credentials
-    usernameKey: username
-    passwordKey: password
   insecureSkipVerify: false

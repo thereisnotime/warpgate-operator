@@ -6,15 +6,15 @@ Kubebuilder was chosen over alternatives like Operator SDK (which wraps Kubebuil
 
 ## Multi-Instance via WarpgateConnection CRD
 
-Rather than configuring a single Warpgate instance per operator deployment (via env vars or a ConfigMap), the operator uses a dedicated `WarpgateConnection` CRD. Each connection resource points to a different Warpgate instance with its own URL and token secret reference. All other CRDs reference a connection by name, so a single operator deployment can manage resources across multiple Warpgate instances. This avoids the need to deploy separate operator instances per Warpgate server.
+Rather than configuring a single Warpgate instance per operator deployment (via env vars or a ConfigMap), the operator uses a dedicated `WarpgateConnection` CRD. Each connection resource points to a different Warpgate instance with its own URL and credential secret reference. All other CRDs reference a connection by name, so a single operator deployment can manage resources across multiple Warpgate instances. This avoids the need to deploy separate operator instances per Warpgate server.
 
 ## REST API Client (Not DB Access)
 
-The operator communicates with Warpgate through its REST API using token authentication, the same interface the Terraform provider uses. This keeps the operator decoupled from Warpgate internals -- no need to understand the database schema, handle migrations, or require direct database connectivity. The API client implements full CRUD for all resource types and is tested independently with 100% coverage using HTTP test servers.
+The operator communicates with Warpgate through its REST API using session-based authentication (username/password), the same interface the Terraform provider uses. This keeps the operator decoupled from Warpgate internals -- no need to understand the database schema, handle migrations, or require direct database connectivity. The API client implements full CRUD for all resource types and is tested independently with 100% coverage using HTTP test servers.
 
 ## Secret References (Not Inline)
 
-Sensitive fields like API tokens, user passwords, and SSH keys are never stored directly in CRD specs. Instead, specs contain references to Kubernetes Secrets (secret name + key). The controller resolves these at reconciliation time. This keeps secrets out of etcd CRD storage, works naturally with external secret operators (e.g., External Secrets, Sealed Secrets), and follows Kubernetes conventions.
+Sensitive fields like credentials, user passwords, and SSH keys are never stored directly in CRD specs. Instead, specs contain references to Kubernetes Secrets. The controller resolves these at reconciliation time. This keeps secrets out of etcd CRD storage, works naturally with external secret operators (e.g., External Secrets, Sealed Secrets), and follows Kubernetes conventions.
 
 ## Finalizer-Based Cleanup
 

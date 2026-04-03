@@ -14,8 +14,8 @@ A Kubernetes operator written in Go that manages [Warpgate](https://github.com/w
 - **Multi-instance support:** Dedicated `WarpgateConnection` CRD pointing to different Warpgate instances (not single-instance-per-cluster)
 - **Drift handling:** Full reconciliation — overwrite drift back to CRD spec (Kubernetes-native pattern)
 - **Distribution:** Helm chart
-- **API communication:** REST API with token auth (same as the Terraform provider), not direct DB access
-- **Secrets:** Sensitive fields (tokens, passwords, SSH keys) reference Kubernetes Secrets, not inline CRD specs
+- **API communication:** REST API with session-based auth (username/password), not direct DB access
+- **Secrets:** Sensitive fields (credentials, passwords, SSH keys) reference Kubernetes Secrets, not inline CRD specs
 - **Cleanup:** Finalizer-based — deleting a CR deletes the corresponding Warpgate resource
 - **Scope:** Operator is cluster-scoped, CRs are namespace-scoped
 
@@ -73,4 +73,5 @@ make undeploy
 | Variable | Description |
 | --- | --- |
 | `WARPGATE_HOST` | Warpgate instance URL (e.g. `https://warpgate.example.com`) |
-| `WARPGATE_TOKEN` | Admin-level API token from Warpgate |
+| `WARPGATE_USERNAME` | Admin username for Warpgate |
+| `WARPGATE_PASSWORD` | Admin password for Warpgate |
