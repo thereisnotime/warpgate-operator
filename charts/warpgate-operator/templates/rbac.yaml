@@ -1,0 +1,102 @@
+{{- if .Values.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "warpgate-operator.fullname" . }}-manager
+  labels:
+    {{- include "warpgate-operator.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - update
+      - watch
+  - apiGroups:
+      - warpgate.warpgate.warp.tech
+    resources:
+      - warpgateconnections
+      - warpgatepasswordcredentials
+      - warpgatepublickeycredentials
+      - warpgateroles
+      - warpgatetargetroles
+      - warpgatetargets
+      - warpgatetickets
+      - warpgateuserroles
+      - warpgateusers
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - warpgate.warpgate.warp.tech
+    resources:
+      - warpgateconnections/finalizers
+      - warpgatepasswordcredentials/finalizers
+      - warpgatepublickeycredentials/finalizers
+      - warpgateroles/finalizers
+      - warpgatetargetroles/finalizers
+      - warpgatetargets/finalizers
+      - warpgatetickets/finalizers
+      - warpgateuserroles/finalizers
+      - warpgateusers/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - warpgate.warpgate.warp.tech
+    resources:
+      - warpgateconnections/status
+      - warpgatepasswordcredentials/status
+      - warpgatepublickeycredentials/status
+      - warpgateroles/status
+      - warpgatetargetroles/status
+      - warpgatetargets/status
+      - warpgatetickets/status
+      - warpgateuserroles/status
+      - warpgateusers/status
+    verbs:
+      - get
+      - patch
+      - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "warpgate-operator.fullname" . }}-manager
+  labels:
+    {{- include "warpgate-operator.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "warpgate-operator.fullname" . }}-manager
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "warpgate-operator.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

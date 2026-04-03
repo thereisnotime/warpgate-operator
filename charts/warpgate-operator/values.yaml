@@ -1,0 +1,75 @@
+# Default values for warpgate-operator.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/thereisnotime/warpgate-operator
+  # -- Overrides the image tag. Defaults to the chart appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # -- Whether to create a ServiceAccount for the operator.
+  create: true
+  # -- Annotations to add to the ServiceAccount.
+  annotations: {}
+  # -- Override the ServiceAccount name. If not set, uses the fullname template.
+  name: ""
+
+rbac:
+  # -- Whether to create ClusterRole and ClusterRoleBinding for the operator.
+  create: true
+
+crds:
+  # -- Whether to install CRDs as part of the Helm release.
+  install: true
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+podAnnotations: {}
+
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+metrics:
+  # -- Enable the metrics endpoint and Service.
+  enabled: true
+  # -- Serve metrics over HTTPS with authn/authz.
+  secure: true
+  # -- Port the metrics endpoint listens on.
+  port: 8443
+
+health:
+  # -- Port the health probe endpoint listens on.
+  port: 8081
+
+leaderElection:
+  # -- Enable leader election for HA deployments.
+  enabled: true

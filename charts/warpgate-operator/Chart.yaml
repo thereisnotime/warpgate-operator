@@ -1,0 +1,17 @@
+apiVersion: v2
+name: warpgate-operator
+description: Kubernetes operator for managing Warpgate bastion host resources
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/thereisnotime/warpgate-operator
+sources:
+  - https://github.com/thereisnotime/warpgate-operator
+maintainers:
+  - name: thereisnotime
+keywords:
+  - warpgate
+  - operator
+  - bastion
+  - kubernetes
+  - access-management
