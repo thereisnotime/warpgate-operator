@@ -50,6 +50,12 @@ jobs:
       - name: Run tests
         run: just test
 
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: cover.out
+          fail_ci_if_error: false
+
   build:
     name: Build
     runs-on: ubuntu-latest

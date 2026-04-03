@@ -1,6 +1,7 @@
 # Warpgate Operator
 
 [![CI](https://github.com/thereisnotime/warpgate-operator/actions/workflows/ci.yml/badge.svg)](https://github.com/thereisnotime/warpgate-operator/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/thereisnotime/warpgate-operator/graph/badge.svg)](https://codecov.io/gh/thereisnotime/warpgate-operator)
 [![Go Report Card](https://goreportcard.com/badge/github.com/thereisnotime/warpgate-operator)](https://goreportcard.com/report/github.com/thereisnotime/warpgate-operator)
 [![License](https://img.shields.io/github/license/thereisnotime/warpgate-operator)](LICENSE)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/thereisnotime/warpgate-operator)](go.mod)
