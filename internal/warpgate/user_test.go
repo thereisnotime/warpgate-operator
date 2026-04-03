@@ -17,7 +17,7 @@ func TestCreateUser(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	user, err := c.CreateUser(UserCreateRequest{Username: "alice"})
 	if err != nil {
 		t.Fatal(err)
@@ -35,7 +35,7 @@ func TestUpdateUserWithCredentialPolicy(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	user, err := c.UpdateUser("u1", UserUpdateRequest{
 		Username: "alice",
 		CredentialPolicy: &CredentialPolicy{
@@ -63,7 +63,7 @@ func TestGetUserByUsername(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	user, err := c.GetUserByUsername("bob")
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +82,7 @@ func TestDeleteUser(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	if err := c.DeleteUser("u1"); err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestListUsers(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	users, err := c.ListUsers("")
 	if err != nil {
 		t.Fatal(err)
@@ -113,7 +113,7 @@ func TestGetUser(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	user, err := c.GetUser("u1")
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +130,7 @@ func TestGetUser_NotFound(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.GetUser("missing")
 	if err == nil {
 		t.Fatal("expected error")
@@ -146,7 +146,7 @@ func TestGetUserByUsername_NotFound(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.GetUserByUsername("ghost")
 	if err == nil {
 		t.Fatal("expected error")
@@ -163,7 +163,7 @@ func TestGetUserByUsername_ListError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.GetUserByUsername("alice")
 	if err == nil {
 		t.Fatal("expected error")
@@ -184,7 +184,7 @@ func TestCreateUser_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.CreateUser(UserCreateRequest{Username: "dup"})
 	if err == nil {
 		t.Fatal("expected error")
@@ -198,7 +198,7 @@ func TestUpdateUser_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.UpdateUser("u1", UserUpdateRequest{Username: "alice"})
 	if err == nil {
 		t.Fatal("expected error")
@@ -214,7 +214,7 @@ func TestListUsers_WithSearch(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	users, err := c.ListUsers("bob")
 	if err != nil {
 		t.Fatal(err)
@@ -231,7 +231,7 @@ func TestListUsers_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.ListUsers("")
 	if err == nil {
 		t.Fatal("expected error")

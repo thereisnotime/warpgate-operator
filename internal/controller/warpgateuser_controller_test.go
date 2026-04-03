@@ -39,8 +39,10 @@ var _ = Describe("WarpgateUser Controller", func() {
 		userNamespace = "user-test-ns"
 		connName      = "user-test-conn"
 		secretName    = "user-test-token"
-		tokenKey      = "token"
-		tokenValue    = "test-api-token"
+		usernameKey   = "username"
+		usernameValue = "admin"
+		passwordKey   = "password"
+		passwordValue = "test-pass"
 	)
 
 	var (
@@ -71,7 +73,8 @@ var _ = Describe("WarpgateUser Controller", func() {
 				Namespace: userNamespace,
 			},
 			StringData: map[string]string{
-				tokenKey: tokenValue,
+				usernameKey: usernameValue,
+				passwordKey: passwordValue,
 			},
 		}
 		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
@@ -83,7 +86,7 @@ var _ = Describe("WarpgateUser Controller", func() {
 			},
 			Spec: warpgatev1alpha1.WarpgateConnectionSpec{
 				Host:               srv.URL,
-				TokenSecretRef:     warpgatev1alpha1.SecretKeyRef{Name: secretName + suffix, Key: tokenKey},
+				TokenSecretRef:     warpgatev1alpha1.SecretKeyRef{Name: secretName + suffix, Key: "token"},
 				InsecureSkipVerify: true,
 			},
 		}
@@ -97,6 +100,7 @@ var _ = Describe("WarpgateUser Controller", func() {
 	Context("Create user", func() {
 		It("should create the user in Warpgate and set ExternalID and Ready condition", func() {
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
@@ -146,6 +150,7 @@ var _ = Describe("WarpgateUser Controller", func() {
 	Context("Create user with auto-generated password", func() {
 		It("should create the user, generate a password credential, and store it in a Secret", func() {
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
 				// Handle both POST /users (create) and other list calls.
 				if r.Method == http.MethodPost {
@@ -214,6 +219,7 @@ var _ = Describe("WarpgateUser Controller", func() {
 	Context("Create user with generatePassword=false", func() {
 		It("should not create a password credential or Secret", func() {
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			passwordEndpointCalled := false
 			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
@@ -262,6 +268,7 @@ var _ = Describe("WarpgateUser Controller", func() {
 		It("should update the user in Warpgate with credential policy", func() {
 			var receivedBody map[string]any
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
@@ -331,6 +338,7 @@ var _ = Describe("WarpgateUser Controller", func() {
 			userDeleteCalled := false
 			credDeleteCalled := false
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
@@ -416,6 +424,7 @@ var _ = Describe("WarpgateUser Controller", func() {
 	Context("Create user with custom passwordLength", func() {
 		It("should generate a password of the specified length", func() {
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
@@ -474,6 +483,7 @@ var _ = Describe("WarpgateUser Controller", func() {
 	Context("Password secret already exists", func() {
 		It("should not fail when the password Secret already exists (AlreadyExists is tolerated)", func() {
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
@@ -531,6 +541,7 @@ var _ = Describe("WarpgateUser Controller", func() {
 	Context("Create user API error", func() {
 		It("should set Ready=False with CreateFailed when the API returns an error", func() {
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.WriteHeader(http.StatusInternalServerError)
@@ -570,6 +581,7 @@ var _ = Describe("WarpgateUser Controller", func() {
 	Context("Update user 404 triggers recreate", func() {
 		It("should clear ExternalID and requeue when update returns 404", func() {
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
@@ -624,6 +636,7 @@ var _ = Describe("WarpgateUser Controller", func() {
 	Context("Update user non-404 error", func() {
 		It("should set Ready=False with UpdateFailed for non-404 API errors", func() {
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
@@ -675,6 +688,7 @@ var _ = Describe("WarpgateUser Controller", func() {
 	Context("Password credential API failure", func() {
 		It("should set Ready=False with PasswordCredentialFailed when the API rejects it", func() {
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")

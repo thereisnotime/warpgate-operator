@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"strings"
 )
 
@@ -15,7 +16,8 @@ const apiBasePath = "/@warpgate/admin/api"
 // Config holds the configuration for a Warpgate API client.
 type Config struct {
 	Host               string
-	Token              string
+	Username           string
+	Password           string
 	InsecureSkipVerify bool
 }
 
@@ -29,16 +31,21 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("warpgate API error (status %d): %s", e.StatusCode, e.Body)
 }
 
-// Client is a Warpgate REST API client.
+// Client is a Warpgate REST API client using session-based cookie authentication.
 type Client struct {
+	host       string
 	baseURL    string
-	token      string
+	username   string
+	password   string
 	httpClient *http.Client
+	authed     bool
 }
 
 // NewClient creates a new Warpgate API client from the given config.
 func NewClient(cfg Config) *Client {
 	host := strings.TrimRight(cfg.Host, "/")
+
+	jar, _ := cookiejar.New(nil)
 
 	transport := &http.Transport{}
 	if cfg.InsecureSkipVerify {
@@ -48,15 +55,68 @@ func NewClient(cfg Config) *Client {
 	}
 
 	return &Client{
-		baseURL: host + apiBasePath,
-		token:   cfg.Token,
+		host:     host,
+		baseURL:  host + apiBasePath,
+		username: cfg.Username,
+		password: cfg.Password,
 		httpClient: &http.Client{
 			Transport: transport,
+			Jar:       jar,
 		},
 	}
 }
 
+// NewTestClient creates a pre-authenticated client for unit tests with httptest servers.
+// It skips the login flow so mock servers don't need a login endpoint.
+func NewTestClient(host string) *Client {
+	host = strings.TrimRight(host, "/")
+	jar, _ := cookiejar.New(nil)
+	return &Client{
+		host:       host,
+		baseURL:    host + apiBasePath,
+		authed:     true,
+		httpClient: &http.Client{Jar: jar},
+	}
+}
+
+// login authenticates with Warpgate and stores the session cookie.
+func (c *Client) login() error {
+	if c.authed {
+		return nil
+	}
+
+	loginURL := c.host + "/@warpgate/api/auth/login"
+	body, err := json.Marshal(map[string]string{
+		"username": c.username,
+		"password": c.password,
+	})
+	if err != nil {
+		return fmt.Errorf("marshaling login body: %w", err)
+	}
+
+	resp, err := c.httpClient.Post(loginURL, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("login request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return &APIError{
+			StatusCode: resp.StatusCode,
+			Body:       string(respBody),
+		}
+	}
+
+	c.authed = true
+	return nil
+}
+
 func (c *Client) doRequest(method, path string, body any) (*http.Response, error) {
+	if err := c.login(); err != nil {
+		return nil, fmt.Errorf("authenticating: %w", err)
+	}
+
 	url := c.baseURL + path
 
 	var reqBody io.Reader
@@ -73,7 +133,6 @@ func (c *Client) doRequest(method, path string, body any) (*http.Response, error
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	req.Header.Set("X-Warpgate-Token", c.token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 

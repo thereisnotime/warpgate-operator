@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -115,4 +116,13 @@ func getFirstFoundEnvTestBinaryDir() string {
 		}
 	}
 	return ""
+}
+
+// mockLogin adds a Warpgate login endpoint to an http.ServeMux.
+// Call this on every mux used in controller tests.
+func mockLogin(mux *http.ServeMux) {
+	mux.HandleFunc("/@warpgate/api/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		http.SetCookie(w, &http.Cookie{Name: "warpgate", Value: "test-session", Path: "/"})
+		w.WriteHeader(http.StatusCreated)
+	})
 }

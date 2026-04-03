@@ -39,7 +39,7 @@ var _ = Describe("getWarpgateClient helper", func() {
 		BeforeEach(func() {
 			secret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: helperNS},
-				Data:       map[string][]byte{"token": []byte("valid-token")},
+				Data:       map[string][]byte{"username": []byte("admin"), "password": []byte("pass")},
 			}
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 
@@ -47,7 +47,7 @@ var _ = Describe("getWarpgateClient helper", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
 					Host:               "https://warpgate.example.com",
-					TokenSecretRef:     warpgatev1alpha1.SecretKeyRef{Name: secretName, Key: "token"},
+					TokenSecretRef:     warpgatev1alpha1.SecretKeyRef{Name: secretName},
 					InsecureSkipVerify: false,
 				},
 			}
@@ -72,48 +72,6 @@ var _ = Describe("getWarpgateClient helper", func() {
 		})
 	})
 
-	Context("Happy path with default key", func() {
-		var (
-			connName   = "helper-conn-defkey"
-			secretName = "helper-secret-defkey"
-		)
-
-		BeforeEach(func() {
-			secret := &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: helperNS},
-				Data:       map[string][]byte{"token": []byte("default-key-token")},
-			}
-			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
-
-			conn := &warpgatev1alpha1.WarpgateConnection{
-				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
-				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host: "https://warpgate.example.com",
-					// Key is empty, so it should default to "token"
-					TokenSecretRef: warpgatev1alpha1.SecretKeyRef{Name: secretName},
-				},
-			}
-			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
-		})
-
-		AfterEach(func() {
-			conn := &warpgatev1alpha1.WarpgateConnection{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: helperNS}, conn); err == nil {
-				_ = k8sClient.Delete(ctx, conn)
-			}
-			secret := &corev1.Secret{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: helperNS}, secret); err == nil {
-				_ = k8sClient.Delete(ctx, secret)
-			}
-		})
-
-		It("should default to the 'token' key when SecretKeyRef.Key is empty", func() {
-			client, err := getWarpgateClient(ctx, k8sClient, helperNS, connName)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(client).NotTo(BeNil())
-		})
-	})
-
 	Context("Missing connection", func() {
 		It("should return an error when the WarpgateConnection does not exist", func() {
 			client, err := getWarpgateClient(ctx, k8sClient, helperNS, "nonexistent-connection")
@@ -131,7 +89,7 @@ var _ = Describe("getWarpgateClient helper", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
 					Host:           "https://warpgate.example.com",
-					TokenSecretRef: warpgatev1alpha1.SecretKeyRef{Name: "ghost-secret", Key: "token"},
+					TokenSecretRef: warpgatev1alpha1.SecretKeyRef{Name: "ghost-secret"},
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -152,7 +110,7 @@ var _ = Describe("getWarpgateClient helper", func() {
 		})
 	})
 
-	Context("Missing key in secret", func() {
+	Context("Missing username key in secret", func() {
 		var (
 			connName   = "helper-conn-badkey"
 			secretName = "helper-secret-badkey"
@@ -161,7 +119,7 @@ var _ = Describe("getWarpgateClient helper", func() {
 		BeforeEach(func() {
 			secret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: helperNS},
-				Data:       map[string][]byte{"wrong-key": []byte("some-value")},
+				Data:       map[string][]byte{"password": []byte("pass")},
 			}
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 
@@ -169,7 +127,7 @@ var _ = Describe("getWarpgateClient helper", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
 					Host:           "https://warpgate.example.com",
-					TokenSecretRef: warpgatev1alpha1.SecretKeyRef{Name: secretName, Key: "token"},
+					TokenSecretRef: warpgatev1alpha1.SecretKeyRef{Name: secretName},
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -186,10 +144,52 @@ var _ = Describe("getWarpgateClient helper", func() {
 			}
 		})
 
-		It("should return an error when the expected key is missing from the secret", func() {
+		It("should return an error when the username key is missing from the secret", func() {
 			client, err := getWarpgateClient(ctx, k8sClient, helperNS, connName)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring(`key "token" not found`))
+			Expect(err.Error()).To(ContainSubstring(`key "username" not found`))
+			Expect(client).To(BeNil())
+		})
+	})
+
+	Context("Missing password key in secret", func() {
+		var (
+			connName   = "helper-conn-nopass"
+			secretName = "helper-secret-nopass"
+		)
+
+		BeforeEach(func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: helperNS},
+				Data:       map[string][]byte{"username": []byte("admin")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:           "https://warpgate.example.com",
+					TokenSecretRef: warpgatev1alpha1.SecretKeyRef{Name: secretName},
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: helperNS}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: helperNS}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should return an error when the password key is missing from the secret", func() {
+			client, err := getWarpgateClient(ctx, k8sClient, helperNS, connName)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(`key "password" not found`))
 			Expect(client).To(BeNil())
 		})
 	})
@@ -203,7 +203,7 @@ var _ = Describe("getWarpgateClient helper", func() {
 		BeforeEach(func() {
 			secret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: helperNS},
-				Data:       map[string][]byte{"token": []byte("tok")},
+				Data:       map[string][]byte{"username": []byte("admin"), "password": []byte("pass")},
 			}
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 
@@ -211,7 +211,7 @@ var _ = Describe("getWarpgateClient helper", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
 					Host:               "https://warpgate.example.com",
-					TokenSecretRef:     warpgatev1alpha1.SecretKeyRef{Name: secretName, Key: "token"},
+					TokenSecretRef:     warpgatev1alpha1.SecretKeyRef{Name: secretName},
 					InsecureSkipVerify: true,
 				},
 			}

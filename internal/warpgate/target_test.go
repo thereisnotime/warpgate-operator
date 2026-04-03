@@ -30,7 +30,7 @@ func TestCreateSSHTarget(t *testing.T) {
 		Auth:     SSHAuth{Kind: "Password", Password: "secret"},
 	})
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	target, err := c.CreateTarget(TargetRequest{Name: "ssh-server", Options: opts})
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +60,7 @@ func TestCreateHTTPTarget(t *testing.T) {
 		Headers: map[string]string{"X-Custom": "value"},
 	})
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	target, err := c.CreateTarget(TargetRequest{Name: "http-app", Options: opts})
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +91,7 @@ func TestCreateMySQLTarget(t *testing.T) {
 		Password: "dbpass",
 	})
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	target, err := c.CreateTarget(TargetRequest{Name: "mysql-db", Options: opts})
 	if err != nil {
 		t.Fatal(err)
@@ -122,7 +122,7 @@ func TestCreatePostgresTarget(t *testing.T) {
 		TLS:      &TLSConfig{Mode: "Preferred", Verify: false},
 	})
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	target, err := c.CreateTarget(TargetRequest{Name: "pg-db", Options: opts})
 	if err != nil {
 		t.Fatal(err)
@@ -151,7 +151,7 @@ func TestCreateKubernetesTarget(t *testing.T) {
 		Auth:       KubernetesAuth{Kind: "Token", Token: "k8s-token"},
 	})
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	target, err := c.CreateTarget(TargetRequest{Name: "k8s", Options: opts})
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +168,7 @@ func TestGetTarget(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	target, err := c.GetTarget("t1")
 	if err != nil {
 		t.Fatal(err)
@@ -184,7 +184,7 @@ func TestListTargets(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	targets, err := c.ListTargets("")
 	if err != nil {
 		t.Fatal(err)
@@ -200,7 +200,7 @@ func TestDeleteTarget(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	if err := c.DeleteTarget("t1"); err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +216,7 @@ func TestGetTargetByName(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	target, err := c.GetTargetByName("beta")
 	if err != nil {
 		t.Fatal(err)
@@ -233,7 +233,7 @@ func TestGetTargetByName_ListError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.GetTargetByName("myhost")
 	if err == nil {
 		t.Fatal("expected error")
@@ -253,7 +253,7 @@ func TestGetTargetByName_NotFound(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.GetTargetByName("missing")
 	if err == nil {
 		t.Fatal("expected error")
@@ -275,7 +275,7 @@ func TestUpdateTarget(t *testing.T) {
 	defer srv.Close()
 
 	opts, _ := MarshalOptions(SSHOptions{Kind: "Ssh", Host: "10.0.0.1", Port: 22, Username: "root", Auth: SSHAuth{Kind: "Password"}})
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	target, err := c.UpdateTarget("t1", TargetRequest{Name: "updated-target", Options: opts})
 	if err != nil {
 		t.Fatal(err)
@@ -293,7 +293,7 @@ func TestUpdateTarget_NotFound(t *testing.T) {
 	defer srv.Close()
 
 	opts, _ := MarshalOptions(SSHOptions{Kind: "Ssh", Host: "h", Port: 22, Username: "u", Auth: SSHAuth{Kind: "PublicKey"}})
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.UpdateTarget("gone", TargetRequest{Name: "x", Options: opts})
 	if err == nil {
 		t.Fatal("expected error")
@@ -312,7 +312,7 @@ func TestListTargets_WithSearch(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	targets, err := c.ListTargets("myhost")
 	if err != nil {
 		t.Fatal(err)
@@ -330,7 +330,7 @@ func TestCreateTarget_Error(t *testing.T) {
 	defer srv.Close()
 
 	opts, _ := MarshalOptions(SSHOptions{Kind: "Ssh"})
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.CreateTarget(TargetRequest{Name: "x", Options: opts})
 	if err == nil {
 		t.Fatal("expected error")
@@ -344,7 +344,7 @@ func TestGetTarget_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.GetTarget("missing")
 	if err == nil {
 		t.Fatal("expected error")
@@ -361,7 +361,7 @@ func TestListTargets_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.ListTargets("")
 	if err == nil {
 		t.Fatal("expected error")

@@ -61,6 +61,11 @@ var _ = Describe("WarpgateConnection Controller", func() {
 			namespace = testNamespace
 
 			mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/@warpgate/api/auth/login" && r.Method == "POST" {
+					http.SetCookie(w, &http.Cookie{Name: "warpgate", Value: "test-session", Path: "/"})
+					w.WriteHeader(http.StatusCreated)
+					return
+				}
 				if r.URL.Path == "/@warpgate/admin/api/roles" {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
@@ -78,7 +83,8 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Namespace: namespace,
 				},
 				Data: map[string][]byte{
-					"token": []byte("test-api-token"),
+					"username": []byte("admin"),
+					"password": []byte("test-pass"),
 				},
 			}
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
@@ -92,7 +98,6 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Host: mockServer.URL,
 					TokenSecretRef: warpgatev1alpha1.SecretKeyRef{
 						Name: secretName,
-						Key:  "token",
 					},
 					InsecureSkipVerify: true,
 				},
@@ -154,7 +159,6 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Host: "https://warpgate.example.com",
 					TokenSecretRef: warpgatev1alpha1.SecretKeyRef{
 						Name: "nonexistent-secret",
-						Key:  "token",
 					},
 				},
 			}
@@ -206,7 +210,8 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Namespace: namespace,
 				},
 				Data: map[string][]byte{
-					"token": []byte("some-token"),
+					"username": []byte("admin"),
+					"password": []byte("some-pass"),
 				},
 			}
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
@@ -220,7 +225,6 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Host: "http://127.0.0.1:1", // unreachable port
 					TokenSecretRef: warpgatev1alpha1.SecretKeyRef{
 						Name: secretName,
-						Key:  "token",
 					},
 				},
 			}
@@ -272,6 +276,11 @@ var _ = Describe("WarpgateConnection Controller", func() {
 			namespace = testNamespace
 
 			mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/@warpgate/api/auth/login" && r.Method == "POST" {
+					http.SetCookie(w, &http.Cookie{Name: "warpgate", Value: "test-session", Path: "/"})
+					w.WriteHeader(http.StatusCreated)
+					return
+				}
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
 				_ = json.NewEncoder(w).Encode([]map[string]any{})
@@ -283,7 +292,8 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Namespace: namespace,
 				},
 				Data: map[string][]byte{
-					"token": []byte("delete-test-token"),
+					"username": []byte("admin"),
+					"password": []byte("delete-test-pass"),
 				},
 			}
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
@@ -297,7 +307,6 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Host: mockServer.URL,
 					TokenSecretRef: warpgatev1alpha1.SecretKeyRef{
 						Name: secretName,
-						Key:  "token",
 					},
 					InsecureSkipVerify: true,
 				},
@@ -340,7 +349,7 @@ var _ = Describe("WarpgateConnection Controller", func() {
 		})
 	})
 
-	Context("Missing key in secret", func() {
+	Context("Missing username key in secret", func() {
 		var (
 			secretName string
 			connName   string
@@ -358,7 +367,7 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Namespace: namespace,
 				},
 				Data: map[string][]byte{
-					"wrong-key": []byte("some-token"),
+					"password": []byte("some-pass"),
 				},
 			}
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
@@ -372,7 +381,6 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Host: "https://warpgate.example.com",
 					TokenSecretRef: warpgatev1alpha1.SecretKeyRef{
 						Name: secretName,
-						Key:  "token",
 					},
 				},
 			}
@@ -393,7 +401,7 @@ var _ = Describe("WarpgateConnection Controller", func() {
 			}
 		})
 
-		It("should set Ready=False when the expected key is missing from the secret", func() {
+		It("should set Ready=False when the username key is missing from the secret", func() {
 			nn := types.NamespacedName{Name: connName, Namespace: namespace}
 
 			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
@@ -406,28 +414,21 @@ var _ = Describe("WarpgateConnection Controller", func() {
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(readyCond.Reason).To(Equal("ConnectionFailed"))
-			Expect(readyCond.Message).To(ContainSubstring(`key "token" not found`))
+			Expect(readyCond.Message).To(ContainSubstring(`key "username" not found`))
 		})
 	})
 
-	Context("Default token key", func() {
+	Context("Missing password key in secret", func() {
 		var (
-			mockServer *httptest.Server
 			secretName string
 			connName   string
 			namespace  string
 		)
 
 		BeforeEach(func() {
-			secretName = "wg-token-defaultkey"
-			connName = "wg-conn-defaultkey"
+			secretName = "wg-token-nopass"
+			connName = "wg-conn-nopass"
 			namespace = testNamespace
-
-			mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusOK)
-				_ = json.NewEncoder(w).Encode([]map[string]any{})
-			}))
 
 			secret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
@@ -435,7 +436,7 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Namespace: namespace,
 				},
 				Data: map[string][]byte{
-					"token": []byte("default-key-token"),
+					"username": []byte("admin"),
 				},
 			}
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
@@ -446,20 +447,16 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host: mockServer.URL,
+					Host: "https://warpgate.example.com",
 					TokenSecretRef: warpgatev1alpha1.SecretKeyRef{
 						Name: secretName,
-						// Key is empty, should default to "token"
 					},
-					InsecureSkipVerify: true,
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
 		})
 
 		AfterEach(func() {
-			mockServer.Close()
-
 			conn := &warpgatev1alpha1.WarpgateConnection{}
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
 				controllerutil.RemoveFinalizer(conn, warpgateFinalizer)
@@ -473,7 +470,7 @@ var _ = Describe("WarpgateConnection Controller", func() {
 			}
 		})
 
-		It("should use the default 'token' key when Key is empty in the SecretKeyRef", func() {
+		It("should set Ready=False when the password key is missing from the secret", func() {
 			nn := types.NamespacedName{Name: connName, Namespace: namespace}
 
 			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
@@ -484,8 +481,9 @@ var _ = Describe("WarpgateConnection Controller", func() {
 
 			readyCond := findReadyCondition(updated.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil())
-			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
-			Expect(readyCond.Reason).To(Equal("Connected"))
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("ConnectionFailed"))
+			Expect(readyCond.Message).To(ContainSubstring(`key "password" not found`))
 		})
 	})
 
@@ -516,6 +514,11 @@ var _ = Describe("WarpgateConnection Controller", func() {
 			namespace = testNamespace
 
 			mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/@warpgate/api/auth/login" && r.Method == "POST" {
+					http.SetCookie(w, &http.Cookie{Name: "warpgate", Value: "test-session", Path: "/"})
+					w.WriteHeader(http.StatusCreated)
+					return
+				}
 				w.WriteHeader(http.StatusInternalServerError)
 				_, _ = w.Write([]byte(`{"error":"internal server error"}`))
 			}))
@@ -526,7 +529,8 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Namespace: namespace,
 				},
 				Data: map[string][]byte{
-					"token": []byte("test-token"),
+					"username": []byte("admin"),
+					"password": []byte("test-pass"),
 				},
 			}
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
@@ -540,7 +544,6 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Host: mockServer.URL,
 					TokenSecretRef: warpgatev1alpha1.SecretKeyRef{
 						Name: secretName,
-						Key:  "token",
 					},
 					InsecureSkipVerify: true,
 				},

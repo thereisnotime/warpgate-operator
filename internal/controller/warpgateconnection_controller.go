@@ -112,29 +112,30 @@ func (r *WarpgateConnectionReconciler) Reconcile(ctx context.Context, req ctrl.R
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
-// buildClient reads the token Secret and creates a Warpgate API client.
+// buildClient reads the credentials Secret and creates a Warpgate API client.
 func (r *WarpgateConnectionReconciler) buildClient(ctx context.Context, conn *warpgatev1alpha1.WarpgateConnection) (*warpgate.Client, error) {
 	var secret corev1.Secret
 	if err := r.Get(ctx, types.NamespacedName{
 		Name:      conn.Spec.TokenSecretRef.Name,
 		Namespace: conn.Namespace,
 	}, &secret); err != nil {
-		return nil, fmt.Errorf("getting token secret %q: %w", conn.Spec.TokenSecretRef.Name, err)
+		return nil, fmt.Errorf("getting credentials secret %q: %w", conn.Spec.TokenSecretRef.Name, err)
 	}
 
-	key := conn.Spec.TokenSecretRef.Key
-	if key == "" {
-		key = "token"
-	}
-
-	token, ok := secret.Data[key]
+	username, ok := secret.Data["username"]
 	if !ok {
-		return nil, fmt.Errorf("key %q not found in secret %q", key, conn.Spec.TokenSecretRef.Name)
+		return nil, fmt.Errorf("key %q not found in credentials secret %q", "username", conn.Spec.TokenSecretRef.Name)
+	}
+
+	password, ok := secret.Data["password"]
+	if !ok {
+		return nil, fmt.Errorf("key %q not found in credentials secret %q", "password", conn.Spec.TokenSecretRef.Name)
 	}
 
 	return warpgate.NewClient(warpgate.Config{
 		Host:               conn.Spec.Host,
-		Token:              string(token),
+		Username:           string(username),
+		Password:           string(password),
 		InsecureSkipVerify: conn.Spec.InsecureSkipVerify,
 	}), nil
 }

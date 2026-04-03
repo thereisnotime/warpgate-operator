@@ -39,8 +39,10 @@ var _ = Describe("WarpgateRole Controller", func() {
 		roleNamespace = "role-test-ns"
 		connName      = "role-test-conn"
 		secretName    = "role-test-token"
-		tokenKey      = "token"
-		tokenValue    = "test-api-token"
+		usernameKey   = "username"
+		usernameValue = "admin"
+		passwordKey   = "password"
+		passwordValue = "test-pass"
 	)
 
 	var (
@@ -73,7 +75,8 @@ var _ = Describe("WarpgateRole Controller", func() {
 				Namespace: roleNamespace,
 			},
 			StringData: map[string]string{
-				tokenKey: tokenValue,
+				usernameKey: usernameValue,
+				passwordKey: passwordValue,
 			},
 		}
 		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
@@ -85,7 +88,7 @@ var _ = Describe("WarpgateRole Controller", func() {
 			},
 			Spec: warpgatev1alpha1.WarpgateConnectionSpec{
 				Host:               srv.URL,
-				TokenSecretRef:     warpgatev1alpha1.SecretKeyRef{Name: secretName + suffix, Key: tokenKey},
+				TokenSecretRef:     warpgatev1alpha1.SecretKeyRef{Name: secretName + suffix, Key: "token"},
 				InsecureSkipVerify: true,
 			},
 		}
@@ -97,6 +100,7 @@ var _ = Describe("WarpgateRole Controller", func() {
 	Context("Create role", func() {
 		It("should create the role in Warpgate and set ExternalID and Ready condition", func() {
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
@@ -140,6 +144,7 @@ var _ = Describe("WarpgateRole Controller", func() {
 	Context("Update role", func() {
 		It("should update the role in Warpgate after creation", func() {
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
@@ -193,6 +198,7 @@ var _ = Describe("WarpgateRole Controller", func() {
 		It("should delete the role in Warpgate and remove the finalizer", func() {
 			deleteCalled := false
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
@@ -250,6 +256,7 @@ var _ = Describe("WarpgateRole Controller", func() {
 		It("should clear ExternalID and requeue", func() {
 			callCount := 0
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
@@ -308,6 +315,7 @@ var _ = Describe("WarpgateRole Controller", func() {
 	Context("Create role API error", func() {
 		It("should set Ready=False with CreateFailed when the API returns an error", func() {
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.WriteHeader(http.StatusInternalServerError)
@@ -347,6 +355,7 @@ var _ = Describe("WarpgateRole Controller", func() {
 	Context("Update role non-404 error", func() {
 		It("should set Ready=False with UpdateFailed for non-404 API errors", func() {
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")

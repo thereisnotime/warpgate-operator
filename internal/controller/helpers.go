@@ -29,7 +29,7 @@ import (
 )
 
 // getWarpgateClient builds a Warpgate API client by looking up the named WarpgateConnection
-// CR and its referenced token Secret.
+// CR and its referenced credentials Secret.
 func getWarpgateClient(ctx context.Context, r client.Reader, namespace, connectionName string) (*warpgate.Client, error) {
 	var conn warpgatev1alpha1.WarpgateConnection
 	if err := r.Get(ctx, types.NamespacedName{Name: connectionName, Namespace: namespace}, &conn); err != nil {
@@ -41,22 +41,23 @@ func getWarpgateClient(ctx context.Context, r client.Reader, namespace, connecti
 		Name:      conn.Spec.TokenSecretRef.Name,
 		Namespace: namespace,
 	}, &secret); err != nil {
-		return nil, fmt.Errorf("getting token secret %q: %w", conn.Spec.TokenSecretRef.Name, err)
+		return nil, fmt.Errorf("getting credentials secret %q: %w", conn.Spec.TokenSecretRef.Name, err)
 	}
 
-	key := conn.Spec.TokenSecretRef.Key
-	if key == "" {
-		key = "token"
-	}
-
-	token, ok := secret.Data[key]
+	username, ok := secret.Data["username"]
 	if !ok {
-		return nil, fmt.Errorf("key %q not found in secret %q", key, conn.Spec.TokenSecretRef.Name)
+		return nil, fmt.Errorf("key %q not found in credentials secret %q", "username", conn.Spec.TokenSecretRef.Name)
+	}
+
+	password, ok := secret.Data["password"]
+	if !ok {
+		return nil, fmt.Errorf("key %q not found in credentials secret %q", "password", conn.Spec.TokenSecretRef.Name)
 	}
 
 	return warpgate.NewClient(warpgate.Config{
 		Host:               conn.Spec.Host,
-		Token:              string(token),
+		Username:           string(username),
+		Password:           string(password),
 		InsecureSkipVerify: conn.Spec.InsecureSkipVerify,
 	}), nil
 }

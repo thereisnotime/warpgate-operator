@@ -61,6 +61,7 @@ var _ = Describe("WarpgateTicket Controller", func() {
 			namespace = testNamespace
 
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/tickets", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
@@ -85,7 +86,7 @@ var _ = Describe("WarpgateTicket Controller", func() {
 					Namespace: namespace,
 				},
 				Data: map[string][]byte{
-					"token": []byte("test-token"),
+					"username": []byte("admin"), "password": []byte("test-pass"),
 				},
 			}
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
@@ -190,6 +191,7 @@ var _ = Describe("WarpgateTicket Controller", func() {
 			namespace = testNamespace
 
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/tickets", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.WriteHeader(http.StatusInternalServerError)
@@ -202,7 +204,7 @@ var _ = Describe("WarpgateTicket Controller", func() {
 
 			secret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: tokenSecret, Namespace: namespace},
-				Data:       map[string][]byte{"token": []byte("test-token")},
+				Data:       map[string][]byte{"username": []byte("admin"), "password": []byte("test-pass")},
 			}
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 
@@ -335,12 +337,13 @@ var _ = Describe("WarpgateTicket Controller", func() {
 			namespace = testNamespace
 
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			// No POST handler needed - ticket should NOT be created again.
 			mockServer = httptest.NewServer(mux)
 
 			secret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: tokenSecret, Namespace: namespace},
-				Data:       map[string][]byte{"token": []byte("test-token")},
+				Data:       map[string][]byte{"username": []byte("admin"), "password": []byte("test-pass")},
 			}
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 
@@ -426,11 +429,12 @@ var _ = Describe("WarpgateTicket Controller", func() {
 			namespace = testNamespace
 
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mockServer = httptest.NewServer(mux)
 
 			secret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: tokenSecret, Namespace: namespace},
-				Data:       map[string][]byte{"token": []byte("test-token")},
+				Data:       map[string][]byte{"username": []byte("admin"), "password": []byte("test-pass")},
 			}
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 
@@ -506,6 +510,7 @@ var _ = Describe("WarpgateTicket Controller", func() {
 			namespace = testNamespace
 
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/tickets", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
@@ -524,7 +529,7 @@ var _ = Describe("WarpgateTicket Controller", func() {
 
 			secret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: tokenSecret, Namespace: namespace},
-				Data:       map[string][]byte{"token": []byte("test-token")},
+				Data:       map[string][]byte{"username": []byte("admin"), "password": []byte("test-pass")},
 			}
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 
@@ -616,6 +621,7 @@ var _ = Describe("WarpgateTicket Controller", func() {
 			deleteCalled = false
 
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/tickets", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
@@ -644,7 +650,7 @@ var _ = Describe("WarpgateTicket Controller", func() {
 					Namespace: namespace,
 				},
 				Data: map[string][]byte{
-					"token": []byte("test-token"),
+					"username": []byte("admin"), "password": []byte("test-pass"),
 				},
 			}
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())

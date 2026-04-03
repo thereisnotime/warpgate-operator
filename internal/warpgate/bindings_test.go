@@ -16,7 +16,7 @@ func TestCreateUserRole(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	if err := c.CreateUserRole("u1", "r1"); err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func TestDeleteUserRole(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	if err := c.DeleteUserRole("u1", "r1"); err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestListUserRoles(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	roles, err := c.ListUserRoles("u1")
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +62,7 @@ func TestCreateTargetRole(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	if err := c.CreateTargetRole("t1", "r1"); err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestDeleteTargetRole(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	if err := c.DeleteTargetRole("t1", "r1"); err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestListTargetRoles(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	roles, err := c.ListTargetRoles("t1")
 	if err != nil {
 		t.Fatal(err)
@@ -102,7 +102,7 @@ func TestCreateUserRole_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	err := c.CreateUserRole("u1", "r1")
 	if err == nil {
 		t.Fatal("expected error")
@@ -115,7 +115,7 @@ func TestCreateTargetRole_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	err := c.CreateTargetRole("t1", "r1")
 	if err == nil {
 		t.Fatal("expected error")
@@ -128,7 +128,7 @@ func TestCreateUserRole_ServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	err := c.CreateUserRole("u1", "r1")
 	if err == nil {
 		t.Fatal("expected error")
@@ -143,7 +143,7 @@ func TestCreateUserRole_ServerError(t *testing.T) {
 }
 
 func TestCreateUserRole_RequestError(t *testing.T) {
-	c := NewClient(Config{Host: "http://127.0.0.1:1", Token: "tok"})
+	c := NewClient(Config{Host: "http://127.0.0.1:1", Username: "u", Password: "p"})
 	err := c.CreateUserRole("u1", "r1")
 	if err == nil {
 		t.Fatal("expected error")
@@ -151,7 +151,7 @@ func TestCreateUserRole_RequestError(t *testing.T) {
 }
 
 func TestCreateTargetRole_RequestError(t *testing.T) {
-	c := NewClient(Config{Host: "http://127.0.0.1:1", Token: "tok"})
+	c := NewClient(Config{Host: "http://127.0.0.1:1", Username: "u", Password: "p"})
 	err := c.CreateTargetRole("t1", "r1")
 	if err == nil {
 		t.Fatal("expected error")
@@ -164,7 +164,7 @@ func TestCreateTargetRole_ServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	err := c.CreateTargetRole("t1", "r1")
 	if err == nil {
 		t.Fatal("expected error")
@@ -185,7 +185,7 @@ func TestListUserRoles_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.ListUserRoles("u1")
 	if err == nil {
 		t.Fatal("expected error")
@@ -199,7 +199,7 @@ func TestListTargetRoles_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.ListTargetRoles("t1")
 	if err == nil {
 		t.Fatal("expected error")

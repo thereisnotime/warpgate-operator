@@ -61,6 +61,7 @@ var _ = Describe("WarpgatePublicKeyCredential Controller", func() {
 			namespace = testNamespace
 
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode([]map[string]any{
@@ -88,7 +89,7 @@ var _ = Describe("WarpgatePublicKeyCredential Controller", func() {
 					Namespace: namespace,
 				},
 				Data: map[string][]byte{
-					"token": []byte("test-token"),
+					"username": []byte("admin"), "password": []byte("test-pass"),
 				},
 			}
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
@@ -182,6 +183,7 @@ var _ = Describe("WarpgatePublicKeyCredential Controller", func() {
 			updateSeen = false
 
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode([]map[string]any{
@@ -226,7 +228,7 @@ var _ = Describe("WarpgatePublicKeyCredential Controller", func() {
 					Namespace: namespace,
 				},
 				Data: map[string][]byte{
-					"token": []byte("test-token"),
+					"username": []byte("admin"), "password": []byte("test-pass"),
 				},
 			}
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
@@ -330,6 +332,7 @@ var _ = Describe("WarpgatePublicKeyCredential Controller", func() {
 			namespace = testNamespace
 
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode([]map[string]any{
@@ -347,7 +350,7 @@ var _ = Describe("WarpgatePublicKeyCredential Controller", func() {
 
 			secret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: tokenSecret, Namespace: namespace},
-				Data:       map[string][]byte{"token": []byte("test-token")},
+				Data:       map[string][]byte{"username": []byte("admin"), "password": []byte("test-pass")},
 			}
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 
@@ -423,6 +426,7 @@ var _ = Describe("WarpgatePublicKeyCredential Controller", func() {
 			namespace = testNamespace
 
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode([]map[string]any{
@@ -452,7 +456,7 @@ var _ = Describe("WarpgatePublicKeyCredential Controller", func() {
 
 			secret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: tokenSecret, Namespace: namespace},
-				Data:       map[string][]byte{"token": []byte("test-token")},
+				Data:       map[string][]byte{"username": []byte("admin"), "password": []byte("test-pass")},
 			}
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 
@@ -533,6 +537,7 @@ var _ = Describe("WarpgatePublicKeyCredential Controller", func() {
 			namespace = testNamespace
 
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode([]map[string]any{})
@@ -541,7 +546,7 @@ var _ = Describe("WarpgatePublicKeyCredential Controller", func() {
 
 			secret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: tokenSecret, Namespace: namespace},
-				Data:       map[string][]byte{"token": []byte("test-token")},
+				Data:       map[string][]byte{"username": []byte("admin"), "password": []byte("test-pass")},
 			}
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 
@@ -617,6 +622,7 @@ var _ = Describe("WarpgatePublicKeyCredential Controller", func() {
 			namespace = testNamespace
 
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode([]map[string]any{
@@ -647,7 +653,7 @@ var _ = Describe("WarpgatePublicKeyCredential Controller", func() {
 
 			secret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: tokenSecret, Namespace: namespace},
-				Data:       map[string][]byte{"token": []byte("test-token")},
+				Data:       map[string][]byte{"username": []byte("admin"), "password": []byte("test-pass")},
 			}
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 
@@ -745,6 +751,7 @@ var _ = Describe("WarpgatePublicKeyCredential Controller", func() {
 			deleteCalled = false
 
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode([]map[string]any{
@@ -778,7 +785,7 @@ var _ = Describe("WarpgatePublicKeyCredential Controller", func() {
 					Namespace: namespace,
 				},
 				Data: map[string][]byte{
-					"token": []byte("test-token"),
+					"username": []byte("admin"), "password": []byte("test-pass"),
 				},
 			}
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())

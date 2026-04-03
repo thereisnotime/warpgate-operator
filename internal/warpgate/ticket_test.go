@@ -25,7 +25,7 @@ func TestCreateTicket(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	uses := 5
 	result, err := c.CreateTicket(TicketCreateRequest{
 		Username:     "alice",
@@ -52,7 +52,7 @@ func TestDeleteTicket(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	if err := c.DeleteTicket("tk1"); err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestCreateTicket_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.CreateTicket(TicketCreateRequest{Username: "x", TargetName: "y"})
 	if err == nil {
 		t.Fatal("expected error")

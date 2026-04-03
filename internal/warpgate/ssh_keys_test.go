@@ -14,7 +14,7 @@ func TestGetSSHOwnKeys_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.GetSSHOwnKeys()
 	if err == nil {
 		t.Fatal("expected error")
@@ -40,7 +40,7 @@ func TestGetSSHOwnKeys(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	keys, err := c.GetSSHOwnKeys()
 	if err != nil {
 		t.Fatal(err)

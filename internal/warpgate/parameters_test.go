@@ -20,7 +20,7 @@ func TestGetParameters(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	params, err := c.GetParameters()
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +44,7 @@ func TestUpdateParameters(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	err := c.UpdateParameters(Parameters{
 		AllowOwnCredentialManagement: true,
 		MinimizePasswordLogin:        true,
@@ -61,7 +61,7 @@ func TestGetParameters_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.GetParameters()
 	if err == nil {
 		t.Fatal("expected error")

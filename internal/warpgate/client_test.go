@@ -12,8 +12,8 @@ import (
 
 func TestNewClient(t *testing.T) {
 	c := NewClient(Config{
-		Host:  "https://warpgate.example.com",
-		Token: "test-token",
+		Host:     "https://warpgate.example.com",
+		Username: "u", Password: "p",
 	})
 	if c.baseURL != "https://warpgate.example.com/@warpgate/admin/api" {
 		t.Errorf("unexpected baseURL: %s", c.baseURL)
@@ -29,19 +29,47 @@ func TestNewClientTrailingSlash(t *testing.T) {
 	}
 }
 
-func TestAuthHeader(t *testing.T) {
-	var gotHeader string
+func TestSessionLogin(t *testing.T) {
+	var loginCalled bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/@warpgate/api/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		loginCalled = true
+		var body map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body["username"] != "admin" || body["password"] != "secret" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		http.SetCookie(w, &http.Cookie{Name: "warpgate", Value: "session-123", Path: "/"})
+		w.WriteHeader(http.StatusCreated)
+	})
+	mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]string{})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Username: "admin", Password: "secret"})
+	err := c.Get("/roles", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !loginCalled {
+		t.Error("expected login to be called")
+	}
+}
+
+func TestLoginFailure(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotHeader = r.Header.Get("X-Warpgate-Token")
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"bad credentials"}`))
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "my-secret-token"})
-	_ = c.Get("/test", nil)
-
-	if gotHeader != "my-secret-token" {
-		t.Errorf("expected X-Warpgate-Token=my-secret-token, got %q", gotHeader)
+	c := NewClient(Config{Host: srv.URL, Username: "bad", Password: "bad"})
+	err := c.Get("/roles", nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
 }
 
@@ -54,7 +82,7 @@ func TestContentTypeHeaders(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_ = c.Post("/test", map[string]string{"key": "val"}, nil)
 
 	if gotContentType != "application/json" {
@@ -74,7 +102,7 @@ func TestGetUnmarshal(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	var result map[string]string
 	err := c.Get("/roles", &result)
 	if err != nil {
@@ -97,7 +125,7 @@ func TestPostWithBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	var result map[string]string
 	err := c.Post("/roles", map[string]string{"name": "admin"}, &result)
 	if err != nil {
@@ -120,7 +148,7 @@ func TestPut(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	err := c.Put("/role/123", map[string]string{"name": "updated"}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -136,7 +164,7 @@ func TestDelete(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	err := c.Delete("/role/123")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -150,7 +178,7 @@ func TestAPIErrorParsing(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	err := c.Get("/role/nonexistent", nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -182,8 +210,8 @@ func TestIsNotFound(t *testing.T) {
 
 func TestInsecureSkipVerify(t *testing.T) {
 	c := NewClient(Config{
-		Host:               "https://localhost",
-		Token:              "tok",
+		Host:     "https://localhost",
+		Username: "u", Password: "p",
 		InsecureSkipVerify: true,
 	})
 	transport := c.httpClient.Transport.(*http.Transport)
@@ -200,7 +228,7 @@ func TestNonJSONErrorBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	err := c.Get("/failing-endpoint", nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -220,8 +248,8 @@ func TestNonJSONErrorBody(t *testing.T) {
 
 func TestInvalidURLRequestCreation(t *testing.T) {
 	c := &Client{
-		baseURL:    "://bad-url",
-		token:      "tok",
+		baseURL:  "://bad-url",
+		username: "u", password: "p", authed: true,
 		httpClient: &http.Client{},
 	}
 	err := c.Get("/test", nil)
@@ -235,8 +263,8 @@ func TestInvalidURLRequestCreation(t *testing.T) {
 
 func TestSecureClientNoTLSConfig(t *testing.T) {
 	c := NewClient(Config{
-		Host:               "https://localhost",
-		Token:              "tok",
+		Host:     "https://localhost",
+		Username: "u", Password: "p",
 		InsecureSkipVerify: false,
 	})
 	transport := c.httpClient.Transport.(*http.Transport)
@@ -253,7 +281,7 @@ func TestUnmarshalErrorOnBadJSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	var result map[string]string
 	err := c.Get("/bad-json", &result)
 	if err == nil {
@@ -271,7 +299,7 @@ func TestEmptyBodyNoUnmarshalError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	var result map[string]string
 	// Even with a non-nil result pointer, empty body should not error.
 	err := c.Get("/empty", &result)
@@ -282,8 +310,8 @@ func TestEmptyBodyNoUnmarshalError(t *testing.T) {
 
 func TestConnectionRefused(t *testing.T) {
 	c := NewClient(Config{
-		Host:  "http://127.0.0.1:1",
-		Token: "tok",
+		Host:     "http://127.0.0.1:1",
+		Username: "u", Password: "p",
 	})
 	err := c.Get("/test", nil)
 	if err == nil {
@@ -295,7 +323,7 @@ func TestConnectionRefused(t *testing.T) {
 }
 
 func TestDoRequestMarshalError(t *testing.T) {
-	c := NewClient(Config{Host: "http://localhost", Token: "tok"})
+	c := NewTestClient("http://localhost")
 	// math.Inf cannot be marshaled to JSON
 	_, err := c.doRequest("POST", "/test", math.Inf(1))
 	if err == nil {
@@ -327,8 +355,8 @@ func (t *brokenBodyTransport) RoundTrip(*http.Request) (*http.Response, error) {
 
 func TestDoReadAllError(t *testing.T) {
 	c := &Client{
-		baseURL: "http://localhost",
-		token:   "tok",
+		baseURL:  "http://localhost",
+		username: "u", password: "p", authed: true,
 		httpClient: &http.Client{
 			Transport: &brokenBodyTransport{statusCode: 200},
 		},
@@ -349,7 +377,7 @@ func TestDoNilResultWithBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	// result is nil — should not attempt unmarshal and should not error
 	err := c.do("GET", "/test", nil, nil)
 	if err != nil {

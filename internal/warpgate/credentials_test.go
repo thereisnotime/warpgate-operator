@@ -17,7 +17,7 @@ func TestCreatePasswordCredential(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	cred, err := c.CreatePasswordCredential("u1", "secret123")
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +36,7 @@ func TestDeletePasswordCredential(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	if err := c.DeletePasswordCredential("u1", "pc1"); err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestCreatePublicKeyCredential(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	cred, err := c.CreatePublicKeyCredential("u1", PublicKeyCredentialRequest{Label: "laptop", OpenSSHPublicKey: "ssh-ed25519 AAAA..."})
 	if err != nil {
 		t.Fatal(err)
@@ -70,7 +70,7 @@ func TestListPublicKeyCredentials(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	creds, err := c.ListPublicKeyCredentials("u1")
 	if err != nil {
 		t.Fatal(err)
@@ -86,7 +86,7 @@ func TestDeletePublicKeyCredential(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	if err := c.DeletePublicKeyCredential("u1", "pk1"); err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestCreateSsoCredential(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	cred, err := c.CreateSsoCredential("u1", SsoCredentialRequest{Provider: "google", Email: "alice@example.com"})
 	if err != nil {
 		t.Fatal(err)
@@ -117,7 +117,7 @@ func TestDeleteSsoCredential(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	if err := c.DeleteSsoCredential("u1", "sso1"); err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestUpdatePublicKeyCredential(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	cred, err := c.UpdatePublicKeyCredential("u1", "pk1", PublicKeyCredentialRequest{Label: "updated", OpenSSHPublicKey: "ssh-ed25519 AAAA..."})
 	if err != nil {
 		t.Fatal(err)
@@ -151,7 +151,7 @@ func TestUpdatePublicKeyCredential_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.UpdatePublicKeyCredential("u1", "pk-gone", PublicKeyCredentialRequest{Label: "x"})
 	if err == nil {
 		t.Fatal("expected error")
@@ -173,7 +173,7 @@ func TestListSsoCredentials(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	creds, err := c.ListSsoCredentials("u1")
 	if err != nil {
 		t.Fatal(err)
@@ -194,7 +194,7 @@ func TestUpdateSsoCredential(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	cred, err := c.UpdateSsoCredential("u1", "sso1", SsoCredentialRequest{Provider: "github", Email: "new@example.com"})
 	if err != nil {
 		t.Fatal(err)
@@ -211,7 +211,7 @@ func TestCreatePasswordCredential_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.CreatePasswordCredential("u1", "pw")
 	if err == nil {
 		t.Fatal("expected error")
@@ -232,7 +232,7 @@ func TestCreatePublicKeyCredential_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.CreatePublicKeyCredential("u1", PublicKeyCredentialRequest{Label: "x"})
 	if err == nil {
 		t.Fatal("expected error")
@@ -246,7 +246,7 @@ func TestListPublicKeyCredentials_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.ListPublicKeyCredentials("u1")
 	if err == nil {
 		t.Fatal("expected error")
@@ -260,7 +260,7 @@ func TestCreateSsoCredential_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.CreateSsoCredential("u1", SsoCredentialRequest{Provider: "google", Email: "x@y.com"})
 	if err == nil {
 		t.Fatal("expected error")
@@ -274,7 +274,7 @@ func TestListSsoCredentials_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.ListSsoCredentials("u1")
 	if err == nil {
 		t.Fatal("expected error")
@@ -288,7 +288,7 @@ func TestUpdateSsoCredential_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.UpdateSsoCredential("u1", "gone", SsoCredentialRequest{Provider: "x", Email: "y"})
 	if err == nil {
 		t.Fatal("expected error")

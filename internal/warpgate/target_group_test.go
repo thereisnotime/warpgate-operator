@@ -19,7 +19,7 @@ func TestCreateTargetGroup(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	tg, err := c.CreateTargetGroup(TargetGroupRequest{Name: "production", Color: "Primary"})
 	if err != nil {
 		t.Fatal(err)
@@ -35,7 +35,7 @@ func TestGetTargetGroup(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	tg, err := c.GetTargetGroup("tg1")
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +51,7 @@ func TestUpdateTargetGroup(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	tg, err := c.UpdateTargetGroup("tg1", TargetGroupRequest{Name: "updated", Color: "Danger"})
 	if err != nil {
 		t.Fatal(err)
@@ -67,7 +67,7 @@ func TestDeleteTargetGroup(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	if err := c.DeleteTargetGroup("tg1"); err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestCreateTargetGroup_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.CreateTargetGroup(TargetGroupRequest{Name: "dup"})
 	if err == nil {
 		t.Fatal("expected error")
@@ -94,7 +94,7 @@ func TestGetTargetGroup_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.GetTargetGroup("missing")
 	if err == nil {
 		t.Fatal("expected error")
@@ -108,7 +108,7 @@ func TestUpdateTargetGroup_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	c := NewTestClient(srv.URL)
 	_, err := c.UpdateTargetGroup("tg1", TargetGroupRequest{Name: "x"})
 	if err == nil {
 		t.Fatal("expected error")

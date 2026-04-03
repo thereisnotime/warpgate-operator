@@ -56,7 +56,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 				Namespace: namespace,
 			},
 			Data: map[string][]byte{
-				"token": []byte("test-api-token"),
+				"username": []byte("admin"), "password": []byte("test-pass"),
 			},
 		}
 		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
@@ -114,6 +114,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 
 		BeforeEach(func() {
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
@@ -184,6 +185,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 
 		BeforeEach(func() {
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					// Read the request body and verify options marshalled correctly.
@@ -269,6 +271,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			callCount = 0
 
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
@@ -366,6 +369,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			deleteCalled = false
 
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
@@ -465,6 +469,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			capturedBody = nil
 
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					mu.Lock()
@@ -577,6 +582,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			capturedBody = nil
 
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					mu.Lock()
@@ -697,6 +703,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			capturedBody = nil
 
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					mu.Lock()
@@ -812,6 +819,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 
 		BeforeEach(func() {
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mockServer = httptest.NewServer(mux)
 			setupConnection(namespace, secretName, connName, mockServer.URL)
 		})
@@ -863,6 +871,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 
 		BeforeEach(func() {
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.WriteHeader(http.StatusInternalServerError)
@@ -922,6 +931,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 
 		BeforeEach(func() {
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
@@ -1040,6 +1050,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 
 		BeforeEach(func() {
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mockServer = httptest.NewServer(mux)
 			setupConnection(namespace, secretName, connName, mockServer.URL)
 		})
@@ -1097,6 +1108,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 
 		BeforeEach(func() {
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mockServer = httptest.NewServer(mux)
 			setupConnection(namespace, secretName, connName, mockServer.URL)
 
@@ -1169,6 +1181,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 
 		BeforeEach(func() {
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
@@ -1262,6 +1275,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 
 		BeforeEach(func() {
 			mux := http.NewServeMux()
+			mockLogin(mux)
 			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
