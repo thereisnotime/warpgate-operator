@@ -138,5 +138,33 @@ test/e2e/               # End-to-end tests
 2. Make your changes, keeping commits focused and using conventional commit messages.
 3. Run `just check` to make sure linting and tests pass locally.
 4. Open a pull request with a conventional commit style title (e.g. `feat(crd): add SSH target resource`).
-5. CI will run the full lint and test suite -- make sure it passes before requesting review.
+5. CI will run the full lint and test suite -- all checks must pass before merge.
 6. Keep PRs focused -- one logical change per PR when possible.
+
+### Branch Protection
+
+The `main` branch has the following protections:
+
+- **All changes go through PRs** -- direct pushes to `main` are blocked.
+- **Required status checks** must pass before merge:
+  - Go Lint
+  - Unit Tests
+  - Build
+  - Markdown Lint
+  - Helm Lint
+  - Validate CRD Manifests
+- **Branch must be up-to-date** with `main` before merging (strict mode).
+- **Squash merge only** -- keeps the commit history clean.
+- **Linear history** enforced -- no merge commits.
+- **Review threads must be resolved** before merge.
+
+### Release Process
+
+Releases are automated via [release-please](https://github.com/googleapis/release-please).
+When conventional commits land on `main`, release-please opens a PR to bump the version
+and generate a changelog. Merging that PR triggers the release pipeline which:
+
+- Creates a GitHub release with the new semver tag
+- Builds and pushes the container image to `ghcr.io/thereisnotime/warpgate-operator`
+- Packages and pushes the Helm chart to `oci://ghcr.io/thereisnotime/charts`
+- Attaches `install.yaml` as a release asset
