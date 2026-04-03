@@ -1,0 +1,27 @@
+# Tasks
+
+- [x] Initialize Kubebuilder project scaffolding
+- [x] Implement Warpgate REST API client with full CRUD
+- [x] Write API client unit tests (100% coverage)
+- [x] Implement WarpgateConnection CRD and controller
+- [x] Implement WarpgateRole CRD and controller
+- [x] Implement WarpgateUser CRD and controller with auto-password
+- [x] Implement WarpgateTarget CRD and controller (SSH, HTTP, MySQL, PostgreSQL)
+- [x] Implement WarpgateUserRole binding CRD and controller
+- [x] Implement WarpgateTargetRole binding CRD and controller
+- [x] Implement WarpgatePasswordCredential CRD and controller
+- [x] Implement WarpgatePublicKeyCredential CRD and controller
+- [x] Implement WarpgateTicket CRD and controller with auto-secret
+- [x] Create Helm chart with all 9 CRDs, RBAC, deployment
+- [x] Set up justfile with minikube lifecycle
+- [x] Replace Dockerfile with Containerfile (podman)
+- [x] Add CI/CD (GitHub Actions: lint, test, build, e2e, release)
+- [x] Add semantic versioning via release-please
+- [x] Add conventional commits enforcement
+- [x] Add security scanning (gosec, govulncheck, trivy, gitleaks)
+- [x] Add branch protection rules
+- [x] Add codecov integration
+- [x] Write comprehensive controller tests (85%+ coverage)
+- [x] Create per-CRD documentation under docs/crds/
+- [x] Add .editorconfig, .vscode/, CONTRIBUTING.md, SECURITY.md, LICENSE
+- [x] Add dependabot, issue templates, PR template, CODEOWNERS
