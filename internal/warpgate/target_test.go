@@ -205,3 +205,160 @@ func TestDeleteTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestGetTargetByName(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		opts, _ := MarshalOptions(SSHOptions{Kind: "Ssh", Host: "h", Port: 22, Username: "u", Auth: SSHAuth{Kind: "PublicKey"}})
+		_ = json.NewEncoder(w).Encode([]Target{
+			{ID: "t1", Name: "alpha", Options: opts},
+			{ID: "t2", Name: "beta", Options: opts},
+		})
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	target, err := c.GetTargetByName("beta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target.ID != "t2" {
+		t.Errorf("expected t2, got %s", target.ID)
+	}
+}
+
+func TestGetTargetByName_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode([]Target{})
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	_, err := c.GetTargetByName("missing")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !IsNotFound(err) {
+		t.Errorf("expected 404 error, got %v", err)
+	}
+}
+
+func TestUpdateTarget(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/@warpgate/admin/api/targets/t1" {
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+		var req TargetRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewEncoder(w).Encode(Target{ID: "t1", Name: req.Name, Options: req.Options})
+	}))
+	defer srv.Close()
+
+	opts, _ := MarshalOptions(SSHOptions{Kind: "Ssh", Host: "10.0.0.1", Port: 22, Username: "root", Auth: SSHAuth{Kind: "Password"}})
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	target, err := c.UpdateTarget("t1", TargetRequest{Name: "updated-target", Options: opts})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target.Name != "updated-target" {
+		t.Errorf("expected updated-target, got %s", target.Name)
+	}
+}
+
+func TestUpdateTarget_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":"not found"}`))
+	}))
+	defer srv.Close()
+
+	opts, _ := MarshalOptions(SSHOptions{Kind: "Ssh", Host: "h", Port: 22, Username: "u", Auth: SSHAuth{Kind: "PublicKey"}})
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	_, err := c.UpdateTarget("gone", TargetRequest{Name: "x", Options: opts})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !IsNotFound(err) {
+		t.Errorf("expected 404, got %v", err)
+	}
+}
+
+func TestListTargets_WithSearch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.RawQuery != "search=myhost" {
+			t.Errorf("expected search=myhost, got %s", r.URL.RawQuery)
+		}
+		_ = json.NewEncoder(w).Encode([]Target{{ID: "t1", Name: "myhost"}})
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	targets, err := c.ListTargets("myhost")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targets) != 1 {
+		t.Errorf("expected 1, got %d", len(targets))
+	}
+}
+
+func TestCreateTarget_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"bad request"}`))
+	}))
+	defer srv.Close()
+
+	opts, _ := MarshalOptions(SSHOptions{Kind: "Ssh"})
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	_, err := c.CreateTarget(TargetRequest{Name: "x", Options: opts})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestGetTarget_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":"not found"}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	_, err := c.GetTarget("missing")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !IsNotFound(err) {
+		t.Errorf("expected 404, got %v", err)
+	}
+}
+
+func TestListTargets_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"internal"}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	_, err := c.ListTargets("")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestMarshalOptions_And_ParseOptionsKind(t *testing.T) {
+	// Error path for ParseOptionsKind with invalid JSON.
+	_, err := ParseOptionsKind(json.RawMessage(`{invalid`))
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestMarshalOptions_Error(t *testing.T) {
+	// MarshalOptions with a channel (cannot be marshaled).
+	_, err := MarshalOptions(make(chan int))
+	if err == nil {
+		t.Fatal("expected error for unmarshalable type")
+	}
+}

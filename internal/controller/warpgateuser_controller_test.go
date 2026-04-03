@@ -528,6 +528,150 @@ var _ = Describe("WarpgateUser Controller", func() {
 		})
 	})
 
+	Context("Create user API error", func() {
+		It("should set Ready=False with CreateFailed when the API returns an error", func() {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.WriteHeader(http.StatusInternalServerError)
+					_, _ = w.Write([]byte(`{"error":"internal"}`))
+					return
+				}
+			})
+			srv := setupMockAndConnection(mux, "-createfail")
+			defer srv.Close()
+
+			user := &warpgatev1alpha1.WarpgateUser{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-createfail-user",
+					Namespace: userNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateUserSpec{
+					ConnectionRef:    connName + "-createfail",
+					Username:         "failuser",
+					GeneratePassword: boolPtr(false),
+				},
+			}
+			Expect(k8sClient.Create(ctx, user)).To(Succeed())
+
+			nn := types.NamespacedName{Name: user.Name, Namespace: userNamespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).To(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateUser
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("CreateFailed"))
+		})
+	})
+
+	Context("Update user 404 triggers recreate", func() {
+		It("should clear ExternalID and requeue when update returns 404", func() {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(warpgate.User{ID: "user-404-001", Username: "user404"})
+				}
+			})
+			mux.HandleFunc("/@warpgate/admin/api/users/user-404-001", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPut {
+					w.WriteHeader(http.StatusNotFound)
+					_, _ = w.Write([]byte(`{"error":"not found"}`))
+					return
+				}
+			})
+			srv := setupMockAndConnection(mux, "-user404")
+			defer srv.Close()
+
+			user := &warpgatev1alpha1.WarpgateUser{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-user404",
+					Namespace: userNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateUserSpec{
+					ConnectionRef:    connName + "-user404",
+					Username:         "user404",
+					GeneratePassword: boolPtr(false),
+				},
+			}
+			Expect(k8sClient.Create(ctx, user)).To(Succeed())
+
+			nn := types.NamespacedName{Name: user.Name, Namespace: userNamespace}
+
+			// First reconcile: create.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile: update returns 404.
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(Equal(reconcile.Result{}))
+
+			var updated warpgatev1alpha1.WarpgateUser
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(BeEmpty())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("NotFound"))
+		})
+	})
+
+	Context("Update user non-404 error", func() {
+		It("should set Ready=False with UpdateFailed for non-404 API errors", func() {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(warpgate.User{ID: "user-500-001", Username: "user500"})
+				}
+			})
+			mux.HandleFunc("/@warpgate/admin/api/users/user-500-001", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPut {
+					w.WriteHeader(http.StatusInternalServerError)
+					_, _ = w.Write([]byte(`{"error":"internal"}`))
+					return
+				}
+			})
+			srv := setupMockAndConnection(mux, "-user500")
+			defer srv.Close()
+
+			user := &warpgatev1alpha1.WarpgateUser{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-user500",
+					Namespace: userNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateUserSpec{
+					ConnectionRef:    connName + "-user500",
+					Username:         "user500",
+					GeneratePassword: boolPtr(false),
+				},
+			}
+			Expect(k8sClient.Create(ctx, user)).To(Succeed())
+
+			nn := types.NamespacedName{Name: user.Name, Namespace: userNamespace}
+
+			// First reconcile: create.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile: update fails.
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).To(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateUser
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("UpdateFailed"))
+		})
+	})
+
 	Context("Missing connection", func() {
 		It("should return an error when the WarpgateConnection does not exist", func() {
 			user := &warpgatev1alpha1.WarpgateUser{

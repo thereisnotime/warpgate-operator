@@ -1,34 +1,53 @@
 # Warpgate Operator
 
-A Kubernetes operator that manages [Warpgate](https://github.com/warp-tech/warpgate) bastion host resources declaratively through CRDs.
+[![CI](https://github.com/thereisnotime/warpgate-operator/actions/workflows/ci.yml/badge.svg)](https://github.com/thereisnotime/warpgate-operator/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/thereisnotime/warpgate-operator)](https://goreportcard.com/report/github.com/thereisnotime/warpgate-operator)
+[![License](https://img.shields.io/github/license/thereisnotime/warpgate-operator)](LICENSE)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/thereisnotime/warpgate-operator)](go.mod)
+[![Release](https://img.shields.io/github/v/release/thereisnotime/warpgate-operator?include_prereleases)](https://github.com/thereisnotime/warpgate-operator/releases)
+
+A Kubernetes operator that manages [Warpgate](https://github.com/warp-tech/warpgate) bastion host resources
+declaratively through Custom Resource Definitions. Define your Warpgate roles, users, targets, credentials, and
+access tickets as Kubernetes manifests and let the operator handle the REST API calls, drift reconciliation, and
+lifecycle management.
 
 ## Table of Contents
 
 - [Features](#features)
-- [Prerequisites](#prerequisites)
+- [Installation](#installation)
 - [Quick Start](#quick-start)
 - [CRD Reference](#crd-reference)
-- [Development](#development)
 - [Architecture](#architecture)
 - [Roadmap](#roadmap)
+- [Contributing](#contributing)
 - [License](#license)
 
 ## Features
 
-- 9 CRDs covering all Warpgate resource types (connections, roles, users, targets, bindings, credentials, tickets)
-- Multi-instance support via `WarpgateConnection` CRDs pointing to different Warpgate instances
-- Continuous drift reconciliation that enforces desired state every 5 minutes
-- Secret references for sensitive fields -- no inline tokens or passwords in CRD specs
-- Finalizer-based cleanup that removes Warpgate resources when CRs are deleted
-- Auto-generated passwords for users, stored in Kubernetes Secrets
-- Auto-created Secrets for ticket values
+- **9 CRDs** covering all Warpgate resource types -- connections, roles, users, targets, bindings, credentials, and tickets
+- **Multi-instance support** via `WarpgateConnection` CRDs pointing to different Warpgate instances
+- **Continuous drift reconciliation** that enforces desired state every 5 minutes
+- **Secret references** for sensitive fields -- no inline tokens or passwords in CRD specs
+- **Finalizer-based cleanup** that removes Warpgate resources when CRs are deleted
+- **Auto-generated passwords** for users, stored in Kubernetes Secrets
+- **Auto-created Secrets** for ticket values
 
-## Prerequisites
+## Installation
 
-- Kubernetes 1.30+
-- [just](https://github.com/casey/just) (task runner)
-- [Podman](https://podman.io/) (container runtime)
-- Go 1.26+ (for development)
+### Helm (recommended)
+
+```bash
+helm repo add warpgate-operator https://thereisnotime.github.io/warpgate-operator
+helm repo update
+helm install warpgate-operator warpgate-operator/warpgate-operator \
+  --namespace warpgate-operator-system --create-namespace
+```
+
+### Kustomize / Raw Manifests
+
+```bash
+kubectl apply -f https://github.com/thereisnotime/warpgate-operator/releases/latest/download/install.yaml
+```
 
 ## Quick Start
 
@@ -72,7 +91,7 @@ spec:
   username: john.doe
 ```
 
-See the [CRD reference docs](#crd-reference) for full field details and more examples.
+See the [CRD reference](#crd-reference) for full field details and more examples.
 
 ## CRD Reference
 
@@ -89,47 +108,6 @@ All resources belong to the API group `warpgate.warpgate.warp.tech/v1alpha1`.
 | `WarpgatePasswordCredential` | Password credential for a user | [docs/crds/warpgate-password-credential.md](docs/crds/warpgate-password-credential.md) |
 | `WarpgatePublicKeyCredential` | SSH public key credential for a user | [docs/crds/warpgate-public-key-credential.md](docs/crds/warpgate-public-key-credential.md) |
 | `WarpgateTicket` | One-time access ticket (auto-creates Secret) | [docs/crds/warpgate-ticket.md](docs/crds/warpgate-ticket.md) |
-
-## Development
-
-### Commands
-
-| Recipe | Description |
-|--------|-------------|
-| `just build` | Build the operator binary |
-| `just test` | Run unit tests |
-| `just lint` | Run golangci-lint |
-| `just manifests` | Generate CRD manifests and RBAC |
-| `just generate` | Generate DeepCopy boilerplate |
-| `just image-build` | Build the container image (podman) |
-| `just install` | Install CRDs into the current cluster |
-| `just deploy` | Deploy the operator to the current cluster |
-| `just run` | Run the operator locally against current kubeconfig |
-
-### Minikube
-
-```bash
-just minikube-up          # Start cluster with podman driver
-just minikube-deploy      # Full dev cycle: cluster + build + install + deploy
-just minikube-logs        # Tail operator logs
-just minikube-teardown    # Full teardown: undeploy + uninstall + destroy
-```
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MINIKUBE_PROFILE` | `warpgate-operator` | Minikube profile name |
-| `MINIKUBE_CPUS` | `2` | CPU allocation |
-| `MINIKUBE_MEMORY` | `4096` | Memory allocation (MB) |
-| `MINIKUBE_K8S_VERSION` | `stable` | Kubernetes version |
-
-### Building and Deploying
-
-```bash
-just image-build IMG=ghcr.io/thereisnotime/warpgate-operator:latest
-just image-push IMG=ghcr.io/thereisnotime/warpgate-operator:latest
-just deploy IMG=ghcr.io/thereisnotime/warpgate-operator:latest
-just build-installer IMG=ghcr.io/thereisnotime/warpgate-operator:latest  # outputs dist/install.yaml
-```
 
 ## Architecture
 
@@ -175,9 +153,10 @@ erDiagram
     WarpgateTarget ||--o{ WarpgateTicket : "grants access to"
 ```
 
-Every resource CR references a `WarpgateConnection` by name (same namespace) via `connectionRef`. The operator resolves the
-connection, reads the API token from the referenced Kubernetes Secret, and talks to the Warpgate REST API. Roles are bound to
-users and targets through dedicated binding CRDs, while credentials and tickets hang off users directly.
+Every resource CR references a `WarpgateConnection` by name (same namespace) via `connectionRef`. The operator
+resolves the connection, reads the API token from the referenced Kubernetes Secret, and talks to the Warpgate
+REST API. Roles are bound to users and targets through dedicated binding CRDs, while credentials and tickets
+hang off users directly.
 
 ## Roadmap
 
@@ -189,6 +168,10 @@ users and targets through dedicated binding CRDs, while credentials and tickets 
 - Multi-architecture container images
 - Comprehensive E2E test suite
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding guidelines, and how to submit changes.
+
 ## License
 
-Apache License 2.0. See individual source files for the full header.
+Apache License 2.0. See [LICENSE](LICENSE) for the full text.

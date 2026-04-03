@@ -57,3 +57,17 @@ func TestDeleteTicket(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCreateTicket_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"bad request"}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	_, err := c.CreateTicket(TicketCreateRequest{Username: "x", TargetName: "y"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}

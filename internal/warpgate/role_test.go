@@ -132,3 +132,81 @@ func TestListRoles(t *testing.T) {
 		t.Errorf("expected 1 role, got %d", len(roles))
 	}
 }
+
+func TestCreateRole_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"error":"duplicate"}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	_, err := c.CreateRole(RoleCreateRequest{Name: "dup"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestGetRole_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":"not found"}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	_, err := c.GetRole("missing")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !IsNotFound(err) {
+		t.Errorf("expected 404, got %v", err)
+	}
+}
+
+func TestUpdateRole_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"internal"}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	_, err := c.UpdateRole("r1", RoleCreateRequest{Name: "x"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestListRoles_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":"forbidden"}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	_, err := c.ListRoles("")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestListRoles_NoSearch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.RawQuery != "" {
+			t.Errorf("expected no query, got %s", r.URL.RawQuery)
+		}
+		_ = json.NewEncoder(w).Encode([]Role{{ID: "r1", Name: "admin"}, {ID: "r2", Name: "user"}})
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	roles, err := c.ListRoles("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(roles) != 2 {
+		t.Errorf("expected 2, got %d", len(roles))
+	}
+}

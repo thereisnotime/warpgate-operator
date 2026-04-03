@@ -53,3 +53,17 @@ func TestUpdateParameters(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestGetParameters_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":"forbidden"}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	_, err := c.GetParameters()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}

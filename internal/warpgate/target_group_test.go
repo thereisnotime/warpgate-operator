@@ -72,3 +72,45 @@ func TestDeleteTargetGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCreateTargetGroup_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"error":"conflict"}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	_, err := c.CreateTargetGroup(TargetGroupRequest{Name: "dup"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestGetTargetGroup_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":"not found"}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	_, err := c.GetTargetGroup("missing")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestUpdateTargetGroup_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"internal"}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	_, err := c.UpdateTargetGroup("tg1", TargetGroupRequest{Name: "x"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}

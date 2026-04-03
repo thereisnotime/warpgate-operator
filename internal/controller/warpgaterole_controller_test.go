@@ -305,6 +305,96 @@ var _ = Describe("WarpgateRole Controller", func() {
 		})
 	})
 
+	Context("Create role API error", func() {
+		It("should set Ready=False with CreateFailed when the API returns an error", func() {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.WriteHeader(http.StatusInternalServerError)
+					_, _ = w.Write([]byte(`{"error":"internal"}`))
+					return
+				}
+			})
+			srv := setupMockAndConnection(mux, "-createfail")
+			defer srv.Close()
+
+			role := &warpgatev1alpha1.WarpgateRole{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-createfail-role",
+					Namespace: roleNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateRoleSpec{
+					ConnectionRef: connName + "-createfail",
+					Name:          "test-createfail-role",
+				},
+			}
+			Expect(k8sClient.Create(ctx, role)).To(Succeed())
+
+			nn := types.NamespacedName{Name: role.Name, Namespace: roleNamespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).To(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateRole
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("CreateFailed"))
+		})
+	})
+
+	Context("Update role non-404 error", func() {
+		It("should set Ready=False with UpdateFailed for non-404 API errors", func() {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(warpgate.Role{ID: "role-updfail-001", Name: "test-updfail-role"})
+				}
+			})
+			mux.HandleFunc("/@warpgate/admin/api/role/", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPut {
+					w.WriteHeader(http.StatusInternalServerError)
+					_, _ = w.Write([]byte(`{"error":"internal"}`))
+					return
+				}
+			})
+			srv := setupMockAndConnection(mux, "-updfail")
+			defer srv.Close()
+
+			role := &warpgatev1alpha1.WarpgateRole{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-updfail-role",
+					Namespace: roleNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateRoleSpec{
+					ConnectionRef: connName + "-updfail",
+					Name:          "test-updfail-role",
+				},
+			}
+			Expect(k8sClient.Create(ctx, role)).To(Succeed())
+
+			nn := types.NamespacedName{Name: role.Name, Namespace: roleNamespace}
+
+			// First reconcile: create role.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile: update fails with 500.
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).To(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateRole
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("UpdateFailed"))
+		})
+	})
+
 	Context("Missing connection", func() {
 		It("should return an error when the WarpgateConnection does not exist", func() {
 			role := &warpgatev1alpha1.WarpgateRole{

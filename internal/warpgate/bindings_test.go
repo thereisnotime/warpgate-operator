@@ -95,3 +95,57 @@ func TestListTargetRoles(t *testing.T) {
 		t.Errorf("expected 1 role, got %d", len(roles))
 	}
 }
+
+func TestCreateUserRole_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	err := c.CreateUserRole("u1", "r1")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestCreateTargetRole_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	err := c.CreateTargetRole("t1", "r1")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestListUserRoles_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"internal"}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	_, err := c.ListUserRoles("u1")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestListTargetRoles_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"internal"}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	_, err := c.ListTargetRoles("t1")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
