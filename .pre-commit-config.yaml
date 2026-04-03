@@ -10,6 +10,10 @@ repos:
         args: ["--maxkb=500"]
       - id: check-merge-conflict
       - id: detect-private-key
+      - id: check-symlinks
+      - id: check-executables-have-shebangs
+      - id: check-json
+      - id: check-toml
 
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v4.0.0
@@ -29,3 +33,20 @@ repos:
     hooks:
       - id: yamllint
         args: ["-c", ".yamllint.yaml"]
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.27.2
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v2.8.0
+    hooks:
+      - id: golangci-lint
+        args: ["--config=.golangci.yml"]
+
+  - repo: https://github.com/securego/gosec
+    rev: v2.22.4
+    hooks:
+      - id: gosec
+        args: ["-exclude-dir=test", "./..."]

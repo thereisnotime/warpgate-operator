@@ -207,6 +207,25 @@ lint: lint-go lint-md lint-yaml lint-helm lint-manifests
 lint-fix: lint-go-fix
     npx --yes markdownlint-cli2 --fix
 
+# ─── Security ────────────────────────────────────────────────────────
+
+# Run Go security scanner (gosec)
+sec-gosec:
+    go install github.com/securego/gosec/v2/cmd/gosec@latest
+    gosec -exclude-dir=test ./...
+
+# Run Go vulnerability checker
+sec-vulncheck:
+    go install golang.org/x/vuln/cmd/govulncheck@latest
+    govulncheck ./...
+
+# Run secret scanner (gitleaks)
+sec-secrets:
+    gitleaks detect --source . -v
+
+# Run all security checks
+sec: sec-gosec sec-vulncheck sec-secrets
+
 # ─── E2E Testing ─────────────────────────────────────────────────────
 
 # Run e2e tests against minikube
