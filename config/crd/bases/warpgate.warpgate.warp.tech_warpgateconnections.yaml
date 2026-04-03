@@ -53,7 +53,9 @@ spec:
                   The Secret must have "username" and "password" keys.
                 properties:
                   key:
-                    description: key is unused but retained for backward compatibility.
+                    description: |-
+                      key is the key within the Secret. Defaults to "password" for password refs.
+                      Unused by tokenSecretRef (which always reads "username" and "password" keys).
                     type: string
                   name:
                     description: name is the name of the Secret.

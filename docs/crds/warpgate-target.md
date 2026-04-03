@@ -67,7 +67,7 @@ Four target types are supported: SSH, HTTP, MySQL, and PostgreSQL. Exactly one t
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `name` | `string` | Yes | - | Name of the Kubernetes Secret |
-| `key` | `string` | No | `token` | Key within the Secret |
+| `key` | `string` | No | `password` | Key within the Secret |
 
 ## Status Fields
 

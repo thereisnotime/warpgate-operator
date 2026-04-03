@@ -11,7 +11,7 @@ This is useful when you want explicit control over password credentials. For aut
 | `connectionRef` | `string` | Yes | - | Name of the `WarpgateConnection` CR in the same namespace |
 | `username` | `string` | Yes | - | Warpgate username to add the credential to |
 | `passwordSecretRef.name` | `string` | Yes | - | Name of the Kubernetes Secret containing the password |
-| `passwordSecretRef.key` | `string` | No | `token` | Key within the Secret that holds the password value |
+| `passwordSecretRef.key` | `string` | No | `password` | Key within the Secret that holds the password value |
 
 ## Status Fields
 

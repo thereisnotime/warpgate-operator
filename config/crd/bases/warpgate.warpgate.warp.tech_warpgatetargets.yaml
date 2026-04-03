@@ -104,7 +104,9 @@ spec:
                       the MySQL password.
                     properties:
                       key:
-                        description: key is unused but retained for backward compatibility.
+                        description: |-
+                          key is the key within the Secret. Defaults to "password" for password refs.
+                          Unused by tokenSecretRef (which always reads "username" and "password" keys).
                         type: string
                       name:
                         description: name is the name of the Secret.
@@ -155,7 +157,9 @@ spec:
                       the PostgreSQL password.
                     properties:
                       key:
-                        description: key is unused but retained for backward compatibility.
+                        description: |-
+                          key is the key within the Secret. Defaults to "password" for password refs.
+                          Unused by tokenSecretRef (which always reads "username" and "password" keys).
                         type: string
                       name:
                         description: name is the name of the Secret.
@@ -213,7 +217,9 @@ spec:
                       the SSH password (for Password auth).
                     properties:
                       key:
-                        description: key is unused but retained for backward compatibility.
+                        description: |-
+                          key is the key within the Secret. Defaults to "password" for password refs.
+                          Unused by tokenSecretRef (which always reads "username" and "password" keys).
                         type: string
                       name:
                         description: name is the name of the Secret.

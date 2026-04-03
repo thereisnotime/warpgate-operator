@@ -51,10 +51,10 @@ spec:
                 type: boolean
               tokenSecretRef:
                 description: tokenSecretRef references a Kubernetes Secret containing
-                  the Warpgate API token.
+                  Warpgate admin credentials (username and password keys).
                 properties:
                   key:
-                    description: key is the key within the Secret. Defaults to "token".
+                    description: key is the key within the Secret. Defaults to "password" for password refs.
                     type: string
                   name:
                     description: name is the name of the Secret.

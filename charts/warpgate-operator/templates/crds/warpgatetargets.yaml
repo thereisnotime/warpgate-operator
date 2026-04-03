@@ -107,7 +107,7 @@ spec:
                     properties:
                       key:
                         description: key is the key within the Secret. Defaults to
-                          "token".
+                          "password".
                         type: string
                       name:
                         description: name is the name of the Secret.
@@ -159,7 +159,7 @@ spec:
                     properties:
                       key:
                         description: key is the key within the Secret. Defaults to
-                          "token".
+                          "password".
                         type: string
                       name:
                         description: name is the name of the Secret.
@@ -218,7 +218,7 @@ spec:
                     properties:
                       key:
                         description: key is the key within the Secret. Defaults to
-                          "token".
+                          "password".
                         type: string
                       name:
                         description: name is the name of the Secret.

@@ -25,7 +25,8 @@ type SecretKeyRef struct {
 	// name is the name of the Secret.
 	// +required
 	Name string `json:"name"`
-	// key is unused but retained for backward compatibility.
+	// key is the key within the Secret. Defaults to "password" for password refs.
+	// Unused by tokenSecretRef (which always reads "username" and "password" keys).
 	// +optional
 	Key string `json:"key,omitempty"`
 }
