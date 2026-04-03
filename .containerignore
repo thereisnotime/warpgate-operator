@@ -1,10 +1,15 @@
-# Ignore everything by default and re-include only needed files
-**
+# Ignore everything by default
+*
 
-# Re-include Go source files (but not *_test.go)
-!**/*.go
-**/*_test.go
+# Re-include Go source directories
+!cmd/
+!api/
+!internal/
+!hack/
 
 # Re-include Go module files
 !go.mod
 !go.sum
+
+# Exclude test files from the image
+**/*_test.go
