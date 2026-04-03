@@ -89,3 +89,38 @@ All controllers requeue after 5 minutes (or 30 seconds for transient errors on b
 **Scenarios:**
 - **Given** a successfully reconciled resource **When** 5 minutes elapse **Then** the controller reconciles again to detect and correct any drift.
 - **Given** a binding controller that failed to resolve a name **When** reconciliation fails **Then** it requeues after 30 seconds for faster retry.
+
+### REQ-INFRA-011: Security Scanning Tools
+**Status:** ADDED
+
+The project includes SAST (gosec), SCA (govulncheck, trivy), and secret scanning (gitleaks) both in CI and as local just recipes. Pre-commit hooks enforce gitleaks and gosec on every commit.
+
+**Scenarios:**
+- **Given** a developer runs `just sec` **When** all scanners execute **Then** gosec, govulncheck, and gitleaks run and report any findings.
+- **Given** a push to `main` **When** the security workflow runs **Then** gosec, govulncheck, trivy, and gitleaks all pass.
+
+### REQ-INFRA-012: Deterministic Local Development
+**Status:** ADDED
+
+`just minikube-deploy` handles the full lifecycle from a clean state: starts minikube with podman, installs cert-manager, builds and loads the operator image, creates a self-signed webhook certificate, installs all 9 CRDs, deploys the operator, injects the CA bundle into webhook configs, and waits for the pod to be ready. No manual steps required.
+
+**Scenarios:**
+- **Given** no minikube cluster exists **When** `just minikube-deploy` is run **Then** it creates the cluster, installs all dependencies, and deploys a fully functional operator with webhooks.
+- **Given** a running deployment **When** `just minikube-teardown` is run **Then** it undeploys the operator, removes CRDs, and destroys the cluster.
+
+### REQ-INFRA-013: Webhook Certificate Management
+**Status:** ADDED
+
+Webhook TLS certificates are managed by cert-manager. The Helm chart includes a self-signed Issuer and Certificate, with CA injection annotations on webhook configurations. For local development, the justfile provisions certificates automatically.
+
+**Scenarios:**
+- **Given** the Helm chart is installed with `webhooks.certManager.enabled: true` **When** cert-manager processes the Certificate resource **Then** a TLS secret is created and the CA bundle is injected into webhook configurations.
+
+### REQ-INFRA-014: Branch Protection
+**Status:** ADDED
+
+The `main` branch requires all changes through PRs with 6 required status checks (Go Lint, Unit Tests, Build, Markdown Lint, Helm Lint, Validate CRD Manifests). Squash merge only, linear history enforced, review threads must be resolved.
+
+**Scenarios:**
+- **Given** a PR to `main` **When** any required status check fails **Then** the PR cannot be merged.
+- **Given** a direct push to `main` by a non-admin **Then** the push is rejected.

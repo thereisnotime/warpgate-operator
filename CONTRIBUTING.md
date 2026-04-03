@@ -47,17 +47,25 @@ All development tasks are driven through `just`. Run `just` with no arguments to
 | `just lint-yaml` | Run yamllint only |
 | `just lint-helm` | Lint the Helm chart |
 | `just lint-commit` | Validate the last commit message |
+| `just sec` | Run all security checks (gosec, govulncheck, gitleaks) |
+| `just sec-gosec` | Run Go SAST scanner |
+| `just sec-vulncheck` | Check Go dependencies for known CVEs |
+| `just sec-secrets` | Scan for leaked secrets |
 
 ### Local Testing with Minikube
 
 The justfile includes recipes for a full local dev loop using minikube with the podman driver.
+`just minikube-deploy` is fully automated — it handles cluster creation, cert-manager installation,
+image building/loading, CRD installation, operator deployment, webhook certificate provisioning,
+and CA injection. No manual steps required.
 
 ```bash
-just minikube-up          # start cluster
-just minikube-deploy      # full cycle: start cluster + build + load image + install CRDs + deploy
+just minikube-deploy      # full automated cycle (from scratch to running operator)
 just minikube-logs        # tail operator logs
 just minikube-status      # show cluster status
+just minikube-stop        # stop cluster (preserves state)
 just minikube-teardown    # undeploy + uninstall CRDs + destroy cluster
+just minikube-certmanager # install cert-manager only (called by minikube-deploy)
 ```
 
 | Variable | Default | Description |
