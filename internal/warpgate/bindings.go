@@ -9,7 +9,7 @@ func (c *Client) CreateUserRole(userID, roleID string) error {
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		return &APIError{StatusCode: resp.StatusCode, Body: "failed to create user-role binding"}
 	}
@@ -35,7 +35,7 @@ func (c *Client) CreateTargetRole(targetID, roleID string) error {
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		return &APIError{StatusCode: resp.StatusCode, Body: "failed to create target-role binding"}
 	}

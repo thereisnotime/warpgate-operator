@@ -31,7 +31,7 @@ envtest_version := `v=$(go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else
 envtest_k8s_version := `v=$(go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' k8s.io/api 2>/dev/null); printf '%s' "$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/'`
 
 # Default recipe
-default: build
+default: help
 
 # Run all checks (lint + test) — use before pushing
 check: lint test
@@ -182,7 +182,7 @@ lint-go-fix: _golangci-lint
 
 # Lint Markdown files
 lint-md:
-    npx --yes markdownlint-cli2 "**/*.md" "#node_modules"
+    npx --yes markdownlint-cli2
 
 # Lint YAML files
 lint-yaml:
@@ -205,7 +205,7 @@ lint: lint-go lint-md lint-yaml lint-helm lint-manifests
 
 # Run all linters with auto-fix where possible
 lint-fix: lint-go-fix
-    npx --yes markdownlint-cli2 --fix "**/*.md" "#node_modules"
+    npx --yes markdownlint-cli2 --fix
 
 # ─── E2E Testing ─────────────────────────────────────────────────────
 

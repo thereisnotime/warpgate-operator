@@ -100,7 +100,7 @@ var _ = Describe("WarpgateRole Controller", func() {
 			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
-					json.NewEncoder(w).Encode(warpgate.Role{ID: "role-create-001", Name: "test-create-role"})
+					_ = json.NewEncoder(w).Encode(warpgate.Role{ID: "role-create-001", Name: "test-create-role"})
 				}
 			})
 			srv := setupMockAndConnection(mux, "-create")
@@ -130,7 +130,7 @@ var _ = Describe("WarpgateRole Controller", func() {
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: role.Name, Namespace: roleNamespace}, &updated)).To(Succeed())
 			Expect(updated.Status.ExternalID).To(Equal("role-create-001"))
 
-			readyCond := findCondition(updated.Status.Conditions, "Ready")
+			readyCond := findReadyCondition(updated.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
 			Expect(readyCond.Reason).To(Equal("Reconciled"))
@@ -143,17 +143,17 @@ var _ = Describe("WarpgateRole Controller", func() {
 			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
-					json.NewEncoder(w).Encode(warpgate.Role{ID: "role-update-001", Name: "test-update-role"})
+					_ = json.NewEncoder(w).Encode(warpgate.Role{ID: "role-update-001", Name: "test-update-role"})
 				}
 			})
 			mux.HandleFunc("/@warpgate/admin/api/role/", func(w http.ResponseWriter, r *http.Request) {
 				switch r.Method {
 				case http.MethodGet:
 					w.Header().Set("Content-Type", "application/json")
-					json.NewEncoder(w).Encode(warpgate.Role{ID: "role-update-001", Name: "test-update-role"})
+					_ = json.NewEncoder(w).Encode(warpgate.Role{ID: "role-update-001", Name: "test-update-role"})
 				case http.MethodPut:
 					w.Header().Set("Content-Type", "application/json")
-					json.NewEncoder(w).Encode(warpgate.Role{ID: "role-update-001", Name: "test-update-role-updated"})
+					_ = json.NewEncoder(w).Encode(warpgate.Role{ID: "role-update-001", Name: "test-update-role-updated"})
 				}
 			})
 			srv := setupMockAndConnection(mux, "-update")
@@ -183,7 +183,7 @@ var _ = Describe("WarpgateRole Controller", func() {
 			var updated warpgatev1alpha1.WarpgateRole
 			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
 
-			readyCond := findCondition(updated.Status.Conditions, "Ready")
+			readyCond := findReadyCondition(updated.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
 		})
@@ -196,7 +196,7 @@ var _ = Describe("WarpgateRole Controller", func() {
 			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
-					json.NewEncoder(w).Encode(warpgate.Role{ID: "role-delete-001", Name: "test-delete-role"})
+					_ = json.NewEncoder(w).Encode(warpgate.Role{ID: "role-delete-001", Name: "test-delete-role"})
 				}
 			})
 			mux.HandleFunc("/@warpgate/admin/api/role/", func(w http.ResponseWriter, r *http.Request) {
@@ -206,7 +206,7 @@ var _ = Describe("WarpgateRole Controller", func() {
 					w.WriteHeader(http.StatusNoContent)
 				case http.MethodPut:
 					w.Header().Set("Content-Type", "application/json")
-					json.NewEncoder(w).Encode(warpgate.Role{ID: "role-delete-001", Name: "test-delete-role"})
+					_ = json.NewEncoder(w).Encode(warpgate.Role{ID: "role-delete-001", Name: "test-delete-role"})
 				}
 			})
 			srv := setupMockAndConnection(mux, "-delete")
@@ -253,7 +253,7 @@ var _ = Describe("WarpgateRole Controller", func() {
 			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					w.Header().Set("Content-Type", "application/json")
-					json.NewEncoder(w).Encode(warpgate.Role{ID: "role-404-001", Name: "test-404-role"})
+					_ = json.NewEncoder(w).Encode(warpgate.Role{ID: "role-404-001", Name: "test-404-role"})
 				}
 			})
 			mux.HandleFunc("/@warpgate/admin/api/role/", func(w http.ResponseWriter, r *http.Request) {
@@ -261,11 +261,11 @@ var _ = Describe("WarpgateRole Controller", func() {
 					callCount++
 					if callCount >= 1 {
 						w.WriteHeader(http.StatusNotFound)
-						w.Write([]byte(`"not found"`))
+						_, _ = w.Write([]byte(`"not found"`))
 						return
 					}
 					w.Header().Set("Content-Type", "application/json")
-					json.NewEncoder(w).Encode(warpgate.Role{ID: "role-404-001", Name: "test-404-role"})
+					_ = json.NewEncoder(w).Encode(warpgate.Role{ID: "role-404-001", Name: "test-404-role"})
 				}
 			})
 			srv := setupMockAndConnection(mux, "-404")
@@ -292,13 +292,13 @@ var _ = Describe("WarpgateRole Controller", func() {
 			// Next reconcile hits update path, which returns 404.
 			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Requeue).To(BeTrue())
+			Expect(result).NotTo(Equal(reconcile.Result{}))
 
 			var updated warpgatev1alpha1.WarpgateRole
 			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
 			Expect(updated.Status.ExternalID).To(BeEmpty())
 
-			readyCond := findCondition(updated.Status.Conditions, "Ready")
+			readyCond := findReadyCondition(updated.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(readyCond.Reason).To(Equal("NotFound"))
@@ -328,7 +328,7 @@ var _ = Describe("WarpgateRole Controller", func() {
 			// Status should reflect the error.
 			var updated warpgatev1alpha1.WarpgateRole
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: role.Name, Namespace: roleNamespace}, &updated)).To(Succeed())
-			readyCond := findCondition(updated.Status.Conditions, "Ready")
+			readyCond := findReadyCondition(updated.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(readyCond.Reason).To(Equal("ClientError"))

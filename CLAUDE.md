@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A Kubernetes operator written in Go that manages [Warpgate](https://github.com/warp-tech/warpgate) (bastion host / privileged access management) resources via CRDs — mirroring the full surface of the [warp-tech/warpgate Terraform provider](https://registry.terraform.io/providers/warp-tech/warpgate/latest/docs).
+A Kubernetes operator written in Go that manages [Warpgate](https://github.com/warp-tech/warpgate)
+(bastion host / privileged access management) resources via CRDs — mirroring the full surface of the
+[warp-tech/warpgate Terraform provider](https://registry.terraform.io/providers/warp-tech/warpgate/latest/docs).
 
 ## Design Decisions
 
@@ -20,6 +22,7 @@ A Kubernetes operator written in Go that manages [Warpgate](https://github.com/w
 ## CRDs
 
 Mirrors all 8 Terraform resources as CRDs:
+
 - Role, User, Target (SSH, HTTP, MySQL, PostgreSQL)
 - UserRole, TargetRole (bindings)
 - PasswordCredential, PublicKeyCredential
@@ -68,6 +71,6 @@ make undeploy
 ## Runtime Environment Variables
 
 | Variable | Description |
-|---|---|
+| --- | --- |
 | `WARPGATE_HOST` | Warpgate instance URL (e.g. `https://warpgate.example.com`) |
 | `WARPGATE_TOKEN` | Admin-level API token from Warpgate |

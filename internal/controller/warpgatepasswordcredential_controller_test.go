@@ -60,7 +60,7 @@ var _ = Describe("WarpgatePasswordCredential Controller", func() {
 			passwordSecret = "pwcred-test-password"
 			connName = "pwcred-test-conn"
 			crName = "pwcred-test-cred"
-			namespace = "default"
+			namespace = testNamespace
 
 			mux := http.NewServeMux()
 			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +182,7 @@ var _ = Describe("WarpgatePasswordCredential Controller", func() {
 			Expect(updated.Status.UserID).To(Equal("user-uuid-pw1"))
 			Expect(updated.Status.CredentialID).To(Equal("cred-uuid-pw1"))
 
-			readyCond := findCondition(updated.Status.Conditions, "Ready")
+			readyCond := findReadyCondition(updated.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
 			Expect(readyCond.Reason).To(Equal("Reconciled"))
@@ -205,7 +205,7 @@ var _ = Describe("WarpgatePasswordCredential Controller", func() {
 			passwordSecret = "pwcred-del-password"
 			connName = "pwcred-del-conn"
 			crName = "pwcred-del-cred"
-			namespace = "default"
+			namespace = testNamespace
 			deleteCalled = false
 
 			mux := http.NewServeMux()

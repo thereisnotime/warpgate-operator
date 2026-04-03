@@ -58,7 +58,7 @@ var _ = Describe("WarpgateUserRole Controller", func() {
 			secretName = "userrole-test-token"
 			connName = "userrole-test-conn"
 			crName = "userrole-test-binding"
-			namespace = "default"
+			namespace = testNamespace
 
 			mux := http.NewServeMux()
 			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
@@ -164,7 +164,7 @@ var _ = Describe("WarpgateUserRole Controller", func() {
 			Expect(updated.Status.UserID).To(Equal("user-uuid-1"))
 			Expect(updated.Status.RoleID).To(Equal("role-uuid-1"))
 
-			readyCond := findCondition(updated.Status.Conditions, "Ready")
+			readyCond := findReadyCondition(updated.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
 			Expect(readyCond.Reason).To(Equal("Bound"))
@@ -185,7 +185,7 @@ var _ = Describe("WarpgateUserRole Controller", func() {
 			secretName = "userrole-del-token"
 			connName = "userrole-del-conn"
 			crName = "userrole-del-binding"
-			namespace = "default"
+			namespace = testNamespace
 			deleteCalled = false
 
 			mux := http.NewServeMux()
@@ -310,7 +310,7 @@ var _ = Describe("WarpgateUserRole Controller", func() {
 			secretName = "userrole-nouser-token"
 			connName = "userrole-nouser-conn"
 			crName = "userrole-nouser-binding"
-			namespace = "default"
+			namespace = testNamespace
 
 			mux := http.NewServeMux()
 			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
@@ -396,7 +396,7 @@ var _ = Describe("WarpgateUserRole Controller", func() {
 			var updated warpgatev1alpha1.WarpgateUserRole
 			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
 
-			readyCond := findCondition(updated.Status.Conditions, "Ready")
+			readyCond := findReadyCondition(updated.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(readyCond.Reason).To(Equal("UserNotFound"))

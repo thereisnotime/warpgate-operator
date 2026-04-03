@@ -178,62 +178,9 @@ func (r *WarpgateUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	// Auto-generate password credential if enabled and not yet created.
 	if user.Spec.GeneratePassword == nil || *user.Spec.GeneratePassword {
 		if user.Status.PasswordCredentialID == "" && user.Status.ExternalID != "" {
-			pwLen := 32
-			if user.Spec.PasswordLength != nil {
-				pwLen = *user.Spec.PasswordLength
-			}
-			password, err := generateRandomPassword(pwLen)
-			if err != nil {
-				log.Error(err, "failed to generate random password")
+			if err := r.ensurePasswordCredential(ctx, &user, wgClient); err != nil {
 				return ctrl.Result{}, err
 			}
-
-			cred, err := wgClient.CreatePasswordCredential(user.Status.ExternalID, password)
-			if err != nil {
-				log.Error(err, "failed to create password credential in Warpgate")
-				meta.SetStatusCondition(&user.Status.Conditions, metav1.Condition{
-					Type:               "Ready",
-					Status:             metav1.ConditionFalse,
-					Reason:             "PasswordCredentialFailed",
-					Message:            fmt.Sprintf("Failed to create password credential: %v", err),
-					ObservedGeneration: user.Generation,
-				})
-				_ = r.Status().Update(ctx, &user)
-				return ctrl.Result{}, err
-			}
-
-			// Store the password in a Kubernetes Secret.
-			secretName := user.Name + "-password"
-			secret := &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      secretName,
-					Namespace: user.Namespace,
-					Labels: map[string]string{
-						"app.kubernetes.io/managed-by": "warpgate-operator",
-						"app.kubernetes.io/name":       "warpgate-user-password",
-						"app.kubernetes.io/instance":   user.Name,
-					},
-				},
-				Type: corev1.SecretTypeOpaque,
-				StringData: map[string]string{
-					"password": password,
-					"username": user.Spec.Username,
-				},
-			}
-			if err := ctrl.SetControllerReference(&user, secret, r.Scheme); err != nil {
-				log.Error(err, "failed to set owner reference on password secret")
-				return ctrl.Result{}, err
-			}
-			if err := r.Create(ctx, secret); err != nil {
-				if !apierrors.IsAlreadyExists(err) {
-					log.Error(err, "failed to create password secret")
-					return ctrl.Result{}, err
-				}
-			}
-
-			user.Status.PasswordCredentialID = cred.ID
-			user.Status.PasswordSecretRef = secretName
-			log.Info("created auto-generated password credential", "credentialID", cred.ID, "secretName", secretName)
 		}
 	}
 
@@ -263,6 +210,70 @@ func toWarpgateCredentialPolicy(spec *warpgatev1alpha1.CredentialPolicySpec) *wa
 		MySQL:    spec.MySQL,
 		Postgres: spec.Postgres,
 	}
+}
+
+// ensurePasswordCredential generates a random password, creates the credential in Warpgate,
+// and stores the password in a Kubernetes Secret.
+func (r *WarpgateUserReconciler) ensurePasswordCredential(ctx context.Context, user *warpgatev1alpha1.WarpgateUser, wgClient *warpgate.Client) error {
+	log := logf.FromContext(ctx)
+
+	pwLen := 32
+	if user.Spec.PasswordLength != nil {
+		pwLen = *user.Spec.PasswordLength
+	}
+	password, err := generateRandomPassword(pwLen)
+	if err != nil {
+		log.Error(err, "failed to generate random password")
+		return err
+	}
+
+	cred, err := wgClient.CreatePasswordCredential(user.Status.ExternalID, password)
+	if err != nil {
+		log.Error(err, "failed to create password credential in Warpgate")
+		meta.SetStatusCondition(&user.Status.Conditions, metav1.Condition{
+			Type:               "Ready",
+			Status:             metav1.ConditionFalse,
+			Reason:             "PasswordCredentialFailed",
+			Message:            fmt.Sprintf("Failed to create password credential: %v", err),
+			ObservedGeneration: user.Generation,
+		})
+		_ = r.Status().Update(ctx, user)
+		return err
+	}
+
+	// Store the password in a Kubernetes Secret.
+	secretName := user.Name + "-password"
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: user.Namespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/managed-by": "warpgate-operator",
+				"app.kubernetes.io/name":       "warpgate-user-password",
+				"app.kubernetes.io/instance":   user.Name,
+			},
+		},
+		Type: corev1.SecretTypeOpaque,
+		StringData: map[string]string{
+			"password": password,
+			"username": user.Spec.Username,
+		},
+	}
+	if err := ctrl.SetControllerReference(user, secret, r.Scheme); err != nil {
+		log.Error(err, "failed to set owner reference on password secret")
+		return err
+	}
+	if err := r.Create(ctx, secret); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			log.Error(err, "failed to create password secret")
+			return err
+		}
+	}
+
+	user.Status.PasswordCredentialID = cred.ID
+	user.Status.PasswordSecretRef = secretName
+	log.Info("created auto-generated password credential", "credentialID", cred.ID, "secretName", secretName)
+	return nil
 }
 
 // generateRandomPassword generates a cryptographically random password of the given length.

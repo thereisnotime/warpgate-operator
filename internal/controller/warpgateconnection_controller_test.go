@@ -32,6 +32,8 @@ import (
 	warpgatev1alpha1 "github.com/thereisnotime/warpgate-operator/api/v1alpha1"
 )
 
+const testNamespace = "default"
+
 var _ = Describe("WarpgateConnection Controller", func() {
 
 	var (
@@ -56,7 +58,7 @@ var _ = Describe("WarpgateConnection Controller", func() {
 		BeforeEach(func() {
 			secretName = "wg-token-success"
 			connName = "wg-conn-success"
-			namespace = "default"
+			namespace = testNamespace
 
 			mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/@warpgate/admin/api/roles" {
@@ -126,7 +128,7 @@ var _ = Describe("WarpgateConnection Controller", func() {
 			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
 
 			Expect(updated.Status.Conditions).NotTo(BeEmpty())
-			readyCond := findCondition(updated.Status.Conditions, "Ready")
+			readyCond := findReadyCondition(updated.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
 			Expect(readyCond.Reason).To(Equal("Connected"))
@@ -141,7 +143,7 @@ var _ = Describe("WarpgateConnection Controller", func() {
 
 		BeforeEach(func() {
 			connName = "wg-conn-nosecret"
-			namespace = "default"
+			namespace = testNamespace
 
 			conn := &warpgatev1alpha1.WarpgateConnection{
 				ObjectMeta: metav1.ObjectMeta{
@@ -178,7 +180,7 @@ var _ = Describe("WarpgateConnection Controller", func() {
 			var updated warpgatev1alpha1.WarpgateConnection
 			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
 
-			readyCond := findCondition(updated.Status.Conditions, "Ready")
+			readyCond := findReadyCondition(updated.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(readyCond.Reason).To(Equal("ConnectionFailed"))
@@ -196,7 +198,7 @@ var _ = Describe("WarpgateConnection Controller", func() {
 		BeforeEach(func() {
 			secretName = "wg-token-badhost"
 			connName = "wg-conn-badhost"
-			namespace = "default"
+			namespace = testNamespace
 
 			secret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
@@ -249,7 +251,7 @@ var _ = Describe("WarpgateConnection Controller", func() {
 			var updated warpgatev1alpha1.WarpgateConnection
 			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
 
-			readyCond := findCondition(updated.Status.Conditions, "Ready")
+			readyCond := findReadyCondition(updated.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(readyCond.Reason).To(Equal("ConnectionFailed"))
@@ -267,7 +269,7 @@ var _ = Describe("WarpgateConnection Controller", func() {
 		BeforeEach(func() {
 			secretName = "wg-token-delete"
 			connName = "wg-conn-delete"
-			namespace = "default"
+			namespace = testNamespace
 
 			mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
@@ -342,7 +344,7 @@ var _ = Describe("WarpgateConnection Controller", func() {
 		It("should return no error when the resource doesn't exist", func() {
 			nn := types.NamespacedName{
 				Name:      "does-not-exist",
-				Namespace: "default",
+				Namespace: testNamespace,
 			}
 
 			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
@@ -352,10 +354,10 @@ var _ = Describe("WarpgateConnection Controller", func() {
 	})
 })
 
-// findCondition returns the condition with the given type, or nil if not found.
-func findCondition(conditions []metav1.Condition, condType string) *metav1.Condition {
+// findReadyCondition returns the "Ready" condition, or nil if not found.
+func findReadyCondition(conditions []metav1.Condition) *metav1.Condition {
 	for i := range conditions {
-		if conditions[i].Type == condType {
+		if conditions[i].Type == "Ready" {
 			return &conditions[i]
 		}
 	}

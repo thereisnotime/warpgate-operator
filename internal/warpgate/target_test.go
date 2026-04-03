@@ -10,7 +10,7 @@ import (
 func TestCreateSSHTarget(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req TargetRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(r.Body).Decode(&req)
 
 		kind, _ := ParseOptionsKind(req.Options)
 		if kind != "Ssh" {
@@ -18,7 +18,7 @@ func TestCreateSSHTarget(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(Target{ID: "t1", Name: req.Name, Options: req.Options})
+		_ = json.NewEncoder(w).Encode(Target{ID: "t1", Name: req.Name, Options: req.Options})
 	}))
 	defer srv.Close()
 
@@ -43,13 +43,13 @@ func TestCreateSSHTarget(t *testing.T) {
 func TestCreateHTTPTarget(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req TargetRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(r.Body).Decode(&req)
 		kind, _ := ParseOptionsKind(req.Options)
 		if kind != "Http" {
 			t.Errorf("expected Http kind, got %s", kind)
 		}
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(Target{ID: "t2", Name: req.Name, Options: req.Options})
+		_ = json.NewEncoder(w).Encode(Target{ID: "t2", Name: req.Name, Options: req.Options})
 	}))
 	defer srv.Close()
 
@@ -73,13 +73,13 @@ func TestCreateHTTPTarget(t *testing.T) {
 func TestCreateMySQLTarget(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req TargetRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(r.Body).Decode(&req)
 		kind, _ := ParseOptionsKind(req.Options)
 		if kind != "MySql" {
 			t.Errorf("expected MySql kind, got %s", kind)
 		}
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(Target{ID: "t3", Name: "mysql-db", Options: req.Options})
+		_ = json.NewEncoder(w).Encode(Target{ID: "t3", Name: "mysql-db", Options: req.Options})
 	}))
 	defer srv.Close()
 
@@ -104,13 +104,13 @@ func TestCreateMySQLTarget(t *testing.T) {
 func TestCreatePostgresTarget(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req TargetRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(r.Body).Decode(&req)
 		kind, _ := ParseOptionsKind(req.Options)
 		if kind != "Postgres" {
 			t.Errorf("expected Postgres kind, got %s", kind)
 		}
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(Target{ID: "t4", Name: "pg-db", Options: req.Options})
+		_ = json.NewEncoder(w).Encode(Target{ID: "t4", Name: "pg-db", Options: req.Options})
 	}))
 	defer srv.Close()
 
@@ -135,13 +135,13 @@ func TestCreatePostgresTarget(t *testing.T) {
 func TestCreateKubernetesTarget(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req TargetRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(r.Body).Decode(&req)
 		kind, _ := ParseOptionsKind(req.Options)
 		if kind != "Kubernetes" {
 			t.Errorf("expected Kubernetes kind, got %s", kind)
 		}
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(Target{ID: "t5", Name: "k8s", Options: req.Options})
+		_ = json.NewEncoder(w).Encode(Target{ID: "t5", Name: "k8s", Options: req.Options})
 	}))
 	defer srv.Close()
 
@@ -164,7 +164,7 @@ func TestCreateKubernetesTarget(t *testing.T) {
 func TestGetTarget(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		opts, _ := MarshalOptions(SSHOptions{Kind: "Ssh", Host: "h", Port: 22, Username: "u", Auth: SSHAuth{Kind: "PublicKey"}})
-		json.NewEncoder(w).Encode(Target{ID: "t1", Name: "test", Options: opts, AllowRoles: []string{"r1"}})
+		_ = json.NewEncoder(w).Encode(Target{ID: "t1", Name: "test", Options: opts, AllowRoles: []string{"r1"}})
 	}))
 	defer srv.Close()
 
@@ -180,7 +180,7 @@ func TestGetTarget(t *testing.T) {
 
 func TestListTargets(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]Target{{ID: "t1", Name: "srv1"}, {ID: "t2", Name: "srv2"}})
+		_ = json.NewEncoder(w).Encode([]Target{{ID: "t1", Name: "srv1"}, {ID: "t2", Name: "srv2"}})
 	}))
 	defer srv.Close()
 

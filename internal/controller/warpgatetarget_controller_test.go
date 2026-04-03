@@ -106,7 +106,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 	Context("Create SSH target", func() {
 		var (
 			mockServer *httptest.Server
-			namespace  = "default"
+			namespace  = testNamespace
 			secretName = "wg-token-target-ssh"
 			connName   = "wg-conn-target-ssh"
 			targetName = "target-ssh-test"
@@ -166,7 +166,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
 			Expect(updated.Status.ExternalID).To(Equal("target-ssh-123"))
 
-			readyCond := findCondition(updated.Status.Conditions, "Ready")
+			readyCond := findReadyCondition(updated.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
 			Expect(readyCond.Reason).To(Equal("SSH"))
@@ -176,7 +176,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 	Context("Create HTTP target", func() {
 		var (
 			mockServer *httptest.Server
-			namespace  = "default"
+			namespace  = testNamespace
 			secretName = "wg-token-target-http"
 			connName   = "wg-conn-target-http"
 			targetName = "target-http-test"
@@ -247,7 +247,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
 			Expect(updated.Status.ExternalID).To(Equal("target-http-456"))
 
-			readyCond := findCondition(updated.Status.Conditions, "Ready")
+			readyCond := findReadyCondition(updated.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
 			Expect(readyCond.Reason).To(Equal("HTTP"))
@@ -257,7 +257,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 	Context("Update target", func() {
 		var (
 			mockServer *httptest.Server
-			namespace  = "default"
+			namespace  = testNamespace
 			secretName = "wg-token-target-update"
 			connName   = "wg-conn-target-update"
 			targetName = "target-update-test"
@@ -345,7 +345,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
 			Expect(updated.Status.ExternalID).To(Equal("target-upd-789"))
 
-			readyCond := findCondition(updated.Status.Conditions, "Ready")
+			readyCond := findReadyCondition(updated.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
 		})
@@ -354,7 +354,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 	Context("Delete target", func() {
 		var (
 			mockServer   *httptest.Server
-			namespace    = "default"
+			namespace    = testNamespace
 			secretName   = "wg-token-target-del"
 			connName     = "wg-conn-target-del"
 			targetName   = "target-delete-test"
@@ -452,7 +452,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 	Context("SSH target with password from secret", func() {
 		var (
 			mockServer   *httptest.Server
-			namespace    = "default"
+			namespace    = testNamespace
 			secretName   = "wg-token-target-sshpw"
 			connName     = "wg-conn-target-sshpw"
 			targetName   = "target-sshpw-test"
@@ -564,7 +564,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 	Context("Target not found on update", func() {
 		var (
 			mockServer *httptest.Server
-			namespace  = "default"
+			namespace  = testNamespace
 			secretName = "wg-token-target-notfound"
 			connName   = "wg-conn-target-notfound"
 			targetName = "target-notfound-test"
@@ -637,13 +637,13 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			// Reconcile 2: update (PUT returns 404) — should clear ExternalID and requeue.
 			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Requeue).To(BeTrue())
+			Expect(result).NotTo(Equal(reconcile.Result{}))
 
 			var updated warpgatev1alpha1.WarpgateTarget
 			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
 			Expect(updated.Status.ExternalID).To(BeEmpty())
 
-			readyCond := findCondition(updated.Status.Conditions, "Ready")
+			readyCond := findReadyCondition(updated.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(readyCond.Reason).To(Equal("NotFound"))

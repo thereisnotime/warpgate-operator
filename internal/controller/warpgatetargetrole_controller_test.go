@@ -58,7 +58,7 @@ var _ = Describe("WarpgateTargetRole Controller", func() {
 			secretName = "targetrole-test-token"
 			connName = "targetrole-test-conn"
 			crName = "targetrole-test-binding"
-			namespace = "default"
+			namespace = testNamespace
 
 			mux := http.NewServeMux()
 			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
@@ -164,7 +164,7 @@ var _ = Describe("WarpgateTargetRole Controller", func() {
 			Expect(updated.Status.TargetID).To(Equal("target-uuid-1"))
 			Expect(updated.Status.RoleID).To(Equal("role-uuid-1"))
 
-			readyCond := findCondition(updated.Status.Conditions, "Ready")
+			readyCond := findReadyCondition(updated.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
 			Expect(readyCond.Reason).To(Equal("Bound"))
@@ -185,7 +185,7 @@ var _ = Describe("WarpgateTargetRole Controller", func() {
 			secretName = "targetrole-del-token"
 			connName = "targetrole-del-conn"
 			crName = "targetrole-del-binding"
-			namespace = "default"
+			namespace = testNamespace
 			deleteCalled = false
 
 			mux := http.NewServeMux()

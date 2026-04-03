@@ -13,7 +13,7 @@ func TestCreateUser(t *testing.T) {
 			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
 		}
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(User{ID: "u1", Username: "alice"})
+		_ = json.NewEncoder(w).Encode(User{ID: "u1", Username: "alice"})
 	}))
 	defer srv.Close()
 
@@ -30,8 +30,8 @@ func TestCreateUser(t *testing.T) {
 func TestUpdateUserWithCredentialPolicy(t *testing.T) {
 	var gotBody UserUpdateRequest
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&gotBody)
-		json.NewEncoder(w).Encode(User{ID: "u1", Username: "alice", CredentialPolicy: gotBody.CredentialPolicy})
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		_ = json.NewEncoder(w).Encode(User{ID: "u1", Username: "alice", CredentialPolicy: gotBody.CredentialPolicy})
 	}))
 	defer srv.Close()
 
@@ -56,7 +56,7 @@ func TestUpdateUserWithCredentialPolicy(t *testing.T) {
 
 func TestGetUserByUsername(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]User{
+		_ = json.NewEncoder(w).Encode([]User{
 			{ID: "u1", Username: "alice"},
 			{ID: "u2", Username: "bob"},
 		})
@@ -90,7 +90,7 @@ func TestDeleteUser(t *testing.T) {
 
 func TestListUsers(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]User{{ID: "u1", Username: "alice"}})
+		_ = json.NewEncoder(w).Encode([]User{{ID: "u1", Username: "alice"}})
 	}))
 	defer srv.Close()
 

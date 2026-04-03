@@ -4,7 +4,7 @@
 
 This project uses [conventional commits](https://www.conventionalcommits.org/). Every commit message must follow the format:
 
-```
+```text
 <type>(optional scope): <description>
 ```
 
@@ -12,7 +12,7 @@ Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `buil
 
 Examples:
 
-```
+```text
 feat(crd): add WarpgateRole custom resource
 fix(controller): handle nil pointer on missing secret ref
 docs: update quickstart guide

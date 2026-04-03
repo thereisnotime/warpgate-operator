@@ -77,8 +77,6 @@ jobs:
 
       - name: Lint markdown files
         uses: DavidAnson/markdownlint-cli2-action@v19
-        with:
-          globs: "**/*.md"
 
   lint-commits:
     name: Commit Lint

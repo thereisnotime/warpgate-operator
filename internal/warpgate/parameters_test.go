@@ -12,7 +12,7 @@ func TestGetParameters(t *testing.T) {
 		if r.Method != "GET" || r.URL.Path != "/@warpgate/admin/api/parameters" {
 			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
 		}
-		json.NewEncoder(w).Encode(Parameters{
+		_ = json.NewEncoder(w).Encode(Parameters{
 			AllowOwnCredentialManagement: true,
 			SSHClientAuthPublicKey:       true,
 			SSHClientAuthPassword:        true,
@@ -36,7 +36,7 @@ func TestUpdateParameters(t *testing.T) {
 			t.Errorf("expected PUT, got %s", r.Method)
 		}
 		var params Parameters
-		json.NewDecoder(r.Body).Decode(&params)
+		_ = json.NewDecoder(r.Body).Decode(&params)
 		if !params.MinimizePasswordLogin {
 			t.Error("expected MinimizePasswordLogin=true")
 		}

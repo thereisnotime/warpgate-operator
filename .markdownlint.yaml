@@ -11,3 +11,4 @@ MD033:
     - details
     - summary
 MD041: false  # First line heading - not needed for all md files
+MD060: false  # Table column style - not enforced

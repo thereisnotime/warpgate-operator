@@ -7,37 +7,42 @@ import (
 	"testing"
 )
 
+const (
+	testRoleName   = "admin"
+	testRoleR1Path = "/@warpgate/admin/api/role/r1"
+)
+
 func TestCreateRole(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" || r.URL.Path != "/@warpgate/admin/api/roles" {
+		if r.Method != http.MethodPost || r.URL.Path != "/@warpgate/admin/api/roles" {
 			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
 		}
 		var req RoleCreateRequest
-		json.NewDecoder(r.Body).Decode(&req)
-		if req.Name != "admin" {
-			t.Errorf("expected name=admin, got %s", req.Name)
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req.Name != testRoleName {
+			t.Errorf("expected name=%s, got %s", testRoleName, req.Name)
 		}
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(Role{ID: "r1", Name: "admin", Description: "Admin role"})
+		_ = json.NewEncoder(w).Encode(Role{ID: "r1", Name: testRoleName, Description: "Admin role"})
 	}))
 	defer srv.Close()
 
 	c := NewClient(Config{Host: srv.URL, Token: "tok"})
-	role, err := c.CreateRole(RoleCreateRequest{Name: "admin", Description: "Admin role"})
+	role, err := c.CreateRole(RoleCreateRequest{Name: testRoleName, Description: "Admin role"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if role.ID != "r1" || role.Name != "admin" {
+	if role.ID != "r1" || role.Name != testRoleName {
 		t.Errorf("unexpected role: %+v", role)
 	}
 }
 
 func TestGetRole(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/@warpgate/admin/api/role/r1" {
+		if r.URL.Path != testRoleR1Path {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
-		json.NewEncoder(w).Encode(Role{ID: "r1", Name: "admin"})
+		_ = json.NewEncoder(w).Encode(Role{ID: "r1", Name: testRoleName})
 	}))
 	defer srv.Close()
 
@@ -53,8 +58,8 @@ func TestGetRole(t *testing.T) {
 
 func TestGetRoleByName(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]Role{
-			{ID: "r1", Name: "admin"},
+		_ = json.NewEncoder(w).Encode([]Role{
+			{ID: "r1", Name: testRoleName},
 			{ID: "r2", Name: "user"},
 		})
 	}))
@@ -77,10 +82,10 @@ func TestGetRoleByName(t *testing.T) {
 
 func TestUpdateRole(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "PUT" || r.URL.Path != "/@warpgate/admin/api/role/r1" {
+		if r.Method != http.MethodPut || r.URL.Path != testRoleR1Path {
 			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
 		}
-		json.NewEncoder(w).Encode(Role{ID: "r1", Name: "updated"})
+		_ = json.NewEncoder(w).Encode(Role{ID: "r1", Name: "updated"})
 	}))
 	defer srv.Close()
 
@@ -96,7 +101,7 @@ func TestUpdateRole(t *testing.T) {
 
 func TestDeleteRole(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "DELETE" || r.URL.Path != "/@warpgate/admin/api/role/r1" {
+		if r.Method != http.MethodDelete || r.URL.Path != testRoleR1Path {
 			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -111,15 +116,15 @@ func TestDeleteRole(t *testing.T) {
 
 func TestListRoles(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("search") != "admin" {
-			t.Errorf("expected search=admin, got %s", r.URL.Query().Get("search"))
+		if r.URL.Query().Get("search") != testRoleName {
+			t.Errorf("expected search=%s, got %s", testRoleName, r.URL.Query().Get("search"))
 		}
-		json.NewEncoder(w).Encode([]Role{{ID: "r1", Name: "admin"}})
+		_ = json.NewEncoder(w).Encode([]Role{{ID: "r1", Name: testRoleName}})
 	}))
 	defer srv.Close()
 
 	c := NewClient(Config{Host: srv.URL, Token: "tok"})
-	roles, err := c.ListRoles("admin")
+	roles, err := c.ListRoles(testRoleName)
 	if err != nil {
 		t.Fatal(err)
 	}

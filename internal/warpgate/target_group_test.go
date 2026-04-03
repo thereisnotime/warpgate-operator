@@ -10,12 +10,12 @@ import (
 func TestCreateTargetGroup(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req TargetGroupRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(r.Body).Decode(&req)
 		if req.Color != "Primary" {
 			t.Errorf("expected color Primary, got %s", req.Color)
 		}
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(TargetGroup{ID: "tg1", Name: req.Name, Color: req.Color})
+		_ = json.NewEncoder(w).Encode(TargetGroup{ID: "tg1", Name: req.Name, Color: req.Color})
 	}))
 	defer srv.Close()
 
@@ -31,7 +31,7 @@ func TestCreateTargetGroup(t *testing.T) {
 
 func TestGetTargetGroup(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(TargetGroup{ID: "tg1", Name: "prod"})
+		_ = json.NewEncoder(w).Encode(TargetGroup{ID: "tg1", Name: "prod"})
 	}))
 	defer srv.Close()
 
@@ -47,7 +47,7 @@ func TestGetTargetGroup(t *testing.T) {
 
 func TestUpdateTargetGroup(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(TargetGroup{ID: "tg1", Name: "updated", Color: "Danger"})
+		_ = json.NewEncoder(w).Encode(TargetGroup{ID: "tg1", Name: "updated", Color: "Danger"})
 	}))
 	defer srv.Close()
 

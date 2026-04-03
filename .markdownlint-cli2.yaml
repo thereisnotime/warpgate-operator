@@ -1,0 +1,5 @@
+globs:
+  - "**/*.md"
+  - "!.github/prompts/**"
+  - "!.github/skills/**"
+  - "!node_modules/**"

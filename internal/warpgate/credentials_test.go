@@ -9,11 +9,11 @@ import (
 
 func TestCreatePasswordCredential(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" || r.URL.Path != "/@warpgate/admin/api/users/u1/credentials/passwords" {
+		if r.Method != http.MethodPost || r.URL.Path != "/@warpgate/admin/api/users/u1/credentials/passwords" {
 			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
 		}
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(PasswordCredential{ID: "pc1", Password: "hashed"})
+		_ = json.NewEncoder(w).Encode(PasswordCredential{ID: "pc1", Password: "hashed"})
 	}))
 	defer srv.Close()
 
@@ -45,12 +45,12 @@ func TestDeletePasswordCredential(t *testing.T) {
 func TestCreatePublicKeyCredential(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req PublicKeyCredentialRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(r.Body).Decode(&req)
 		if req.Label != "laptop" {
 			t.Errorf("expected label=laptop, got %s", req.Label)
 		}
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(PublicKeyCredential{ID: "pk1", Label: req.Label, OpenSSHPublicKey: req.OpenSSHPublicKey, DateAdded: "2024-01-01"})
+		_ = json.NewEncoder(w).Encode(PublicKeyCredential{ID: "pk1", Label: req.Label, OpenSSHPublicKey: req.OpenSSHPublicKey, DateAdded: "2024-01-01"})
 	}))
 	defer srv.Close()
 
@@ -66,7 +66,7 @@ func TestCreatePublicKeyCredential(t *testing.T) {
 
 func TestListPublicKeyCredentials(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]PublicKeyCredential{{ID: "pk1", Label: "laptop"}, {ID: "pk2", Label: "desktop"}})
+		_ = json.NewEncoder(w).Encode([]PublicKeyCredential{{ID: "pk1", Label: "laptop"}, {ID: "pk2", Label: "desktop"}})
 	}))
 	defer srv.Close()
 
@@ -95,9 +95,9 @@ func TestDeletePublicKeyCredential(t *testing.T) {
 func TestCreateSsoCredential(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req SsoCredentialRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(r.Body).Decode(&req)
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(SsoCredential{ID: "sso1", Provider: req.Provider, Email: req.Email})
+		_ = json.NewEncoder(w).Encode(SsoCredential{ID: "sso1", Provider: req.Provider, Email: req.Email})
 	}))
 	defer srv.Close()
 

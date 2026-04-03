@@ -9,7 +9,7 @@ import (
 
 func TestCreateUserRole(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" || r.URL.Path != "/@warpgate/admin/api/users/u1/roles/r1" {
+		if r.Method != http.MethodPost || r.URL.Path != "/@warpgate/admin/api/users/u1/roles/r1" {
 			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
 		}
 		w.WriteHeader(http.StatusCreated)
@@ -24,7 +24,7 @@ func TestCreateUserRole(t *testing.T) {
 
 func TestDeleteUserRole(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "DELETE" {
+		if r.Method != http.MethodDelete {
 			t.Errorf("expected DELETE, got %s", r.Method)
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -39,7 +39,7 @@ func TestDeleteUserRole(t *testing.T) {
 
 func TestListUserRoles(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]Role{{ID: "r1", Name: "admin"}, {ID: "r2", Name: "user"}})
+		_ = json.NewEncoder(w).Encode([]Role{{ID: "r1", Name: "admin"}, {ID: "r2", Name: "user"}})
 	}))
 	defer srv.Close()
 
@@ -82,7 +82,7 @@ func TestDeleteTargetRole(t *testing.T) {
 
 func TestListTargetRoles(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]Role{{ID: "r1", Name: "admin"}})
+		_ = json.NewEncoder(w).Encode([]Role{{ID: "r1", Name: "admin"}})
 	}))
 	defer srv.Close()
 

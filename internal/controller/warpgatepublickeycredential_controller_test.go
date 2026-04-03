@@ -58,7 +58,7 @@ var _ = Describe("WarpgatePublicKeyCredential Controller", func() {
 			tokenSecret = "pkcred-test-token"
 			connName = "pkcred-test-conn"
 			crName = "pkcred-test-cred"
-			namespace = "default"
+			namespace = testNamespace
 
 			mux := http.NewServeMux()
 			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
@@ -157,7 +157,7 @@ var _ = Describe("WarpgatePublicKeyCredential Controller", func() {
 			Expect(updated.Status.UserID).To(Equal("user-uuid-pk1"))
 			Expect(updated.Status.CredentialID).To(Equal("cred-uuid-pk1"))
 
-			readyCond := findCondition(updated.Status.Conditions, "Ready")
+			readyCond := findReadyCondition(updated.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
 			Expect(readyCond.Reason).To(Equal("Reconciled"))
@@ -178,7 +178,7 @@ var _ = Describe("WarpgatePublicKeyCredential Controller", func() {
 			tokenSecret = "pkcred-upd-token"
 			connName = "pkcred-upd-conn"
 			crName = "pkcred-upd-cred"
-			namespace = "default"
+			namespace = testNamespace
 			updateSeen = false
 
 			mux := http.NewServeMux()
@@ -308,7 +308,7 @@ var _ = Describe("WarpgatePublicKeyCredential Controller", func() {
 			var updated warpgatev1alpha1.WarpgatePublicKeyCredential
 			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
 
-			readyCond := findCondition(updated.Status.Conditions, "Ready")
+			readyCond := findReadyCondition(updated.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
 		})
@@ -328,7 +328,7 @@ var _ = Describe("WarpgatePublicKeyCredential Controller", func() {
 			tokenSecret = "pkcred-del-token"
 			connName = "pkcred-del-conn"
 			crName = "pkcred-del-cred"
-			namespace = "default"
+			namespace = testNamespace
 			deleteCalled = false
 
 			mux := http.NewServeMux()

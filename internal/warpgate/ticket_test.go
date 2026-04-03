@@ -13,12 +13,12 @@ func TestCreateTicket(t *testing.T) {
 			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
 		}
 		var req TicketCreateRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(r.Body).Decode(&req)
 		if req.Username != "alice" || req.TargetName != "ssh-server" {
 			t.Errorf("unexpected request: %+v", req)
 		}
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(TicketAndSecret{
+		_ = json.NewEncoder(w).Encode(TicketAndSecret{
 			Ticket: Ticket{ID: "tk1", Username: "alice", Target: "ssh-server"},
 			Secret: "supersecret123",
 		})

@@ -67,7 +67,7 @@ func TestGetUnmarshal(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("expected GET, got %s", r.Method)
 		}
-		json.NewEncoder(w).Encode(map[string]string{"id": "123", "name": "test"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": "123", "name": "test"})
 	}))
 	defer srv.Close()
 
@@ -88,9 +88,9 @@ func TestPostWithBody(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
-		json.NewDecoder(r.Body).Decode(&gotBody)
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]string{"id": "new-id"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": "new-id"})
 	}))
 	defer srv.Close()
 
@@ -143,7 +143,7 @@ func TestDelete(t *testing.T) {
 func TestAPIErrorParsing(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"error":"not found"}`))
+		_, _ = w.Write([]byte(`{"error":"not found"}`))
 	}))
 	defer srv.Close()
 

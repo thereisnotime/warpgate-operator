@@ -58,7 +58,7 @@ var _ = Describe("WarpgateTicket Controller", func() {
 			tokenSecret = "ticket-test-token"
 			connName = "ticket-test-conn"
 			crName = "ticket-test-tkt"
-			namespace = "default"
+			namespace = testNamespace
 
 			mux := http.NewServeMux()
 			mux.HandleFunc("/@warpgate/admin/api/tickets", func(w http.ResponseWriter, r *http.Request) {
@@ -159,7 +159,7 @@ var _ = Describe("WarpgateTicket Controller", func() {
 			Expect(updated.Status.TicketID).To(Equal("t1"))
 			Expect(updated.Status.SecretRef).To(Equal(crName + "-secret"))
 
-			readyCond := findCondition(updated.Status.Conditions, "Ready")
+			readyCond := findReadyCondition(updated.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
 			Expect(readyCond.Reason).To(Equal("Reconciled"))
@@ -188,7 +188,7 @@ var _ = Describe("WarpgateTicket Controller", func() {
 			tokenSecret = "ticket-del-token"
 			connName = "ticket-del-conn"
 			crName = "ticket-del-tkt"
-			namespace = "default"
+			namespace = testNamespace
 			deleteCalled = false
 
 			mux := http.NewServeMux()

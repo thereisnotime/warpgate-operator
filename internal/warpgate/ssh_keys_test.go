@@ -12,7 +12,7 @@ func TestGetSSHOwnKeys(t *testing.T) {
 		if r.URL.Path != "/@warpgate/admin/api/ssh/own-keys" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
-		json.NewEncoder(w).Encode([]SSHKey{
+		_ = json.NewEncoder(w).Encode([]SSHKey{
 			{Kind: "Ed25519", PublicKeyBase64: "AAAAC3NzaC1l..."},
 			{Kind: "RSA", PublicKeyBase64: "AAAAB3NzaC1y..."},
 		})
