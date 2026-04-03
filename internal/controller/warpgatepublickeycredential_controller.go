@@ -33,7 +33,7 @@ import (
 	"github.com/thereisnotime/warpgate-operator/internal/warpgate"
 )
 
-const publicKeyCredentialFinalizer = "warpgate.warp.tech/finalizer"
+const publicKeyCredentialFinalizer = "warpgate.warp.tech/finalizer" // #nosec G101 -- finalizer name, not a credential
 
 // WarpgatePublicKeyCredentialReconciler reconciles a WarpgatePublicKeyCredential object.
 type WarpgatePublicKeyCredentialReconciler struct {

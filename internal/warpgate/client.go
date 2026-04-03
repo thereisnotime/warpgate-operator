@@ -43,7 +43,7 @@ func NewClient(cfg Config) *Client {
 	transport := &http.Transport{}
 	if cfg.InsecureSkipVerify {
 		transport.TLSClientConfig = &tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec // user-configured
+			InsecureSkipVerify: true, // #nosec G402 -- user-configured InsecureSkipVerify
 		}
 	}
 
