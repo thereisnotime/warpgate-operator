@@ -8,6 +8,7 @@ dist/
 
 # Test artifacts
 cover.out
+cover_*.out
 *.test
 
 # Go
