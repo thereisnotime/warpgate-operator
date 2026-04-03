@@ -1,3 +1,49 @@
-.maistro/
-.env.local
+# Binaries and build output
 bin/
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test artifacts
+cover.out
+*.test
+
+# Go
+vendor/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.*.kate-swp
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+._*
+
+# Container build
+Containerfile.cross
+Dockerfile.cross
+
+# Secrets and local config
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Tool caches
+.cache/
+node_modules/
+
+# Claude Code
+.claude/
+
+# Project-specific
+.maistro/
