@@ -158,10 +158,88 @@ minikube-dashboard:
 
 # Build image and load it into minikube (no push needed)
 minikube-load: image-build
-    minikube image load {{img}} -p {{minikube_profile}}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Loading image into minikube..."
+    podman save {{img}} -o /tmp/warpgate-operator-image.tar
+    minikube image load /tmp/warpgate-operator-image.tar -p {{minikube_profile}}
+    rm -f /tmp/warpgate-operator-image.tar
+    echo "Image loaded."
 
-# Full dev cycle: start minikube, build, load image, deploy
-minikube-deploy: minikube-up minikube-load install deploy
+# Install cert-manager (required for webhooks)
+minikube-certmanager:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if kubectl get namespace cert-manager &>/dev/null; then
+        echo "cert-manager already installed."
+    else
+        echo "Installing cert-manager..."
+        kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
+        echo "Waiting for cert-manager to be ready..."
+        kubectl wait --for=condition=Available deployment/cert-manager -n cert-manager --timeout=120s
+        kubectl wait --for=condition=Available deployment/cert-manager-webhook -n cert-manager --timeout=120s
+        kubectl wait --for=condition=Available deployment/cert-manager-cainjector -n cert-manager --timeout=120s
+        echo "cert-manager is ready."
+    fi
+
+# Create webhook certificate (self-signed)
+[private]
+_minikube-webhook-cert:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    kubectl get namespace warpgate-operator-system &>/dev/null || kubectl create namespace warpgate-operator-system
+    if kubectl get certificate warpgate-operator-webhook-cert -n warpgate-operator-system &>/dev/null; then
+        echo "Webhook certificate already exists."
+    else
+        echo "Creating self-signed webhook certificate..."
+        cat <<CERTEOF | kubectl apply -f -
+    apiVersion: cert-manager.io/v1
+    kind: Issuer
+    metadata:
+      name: warpgate-operator-selfsigned
+      namespace: warpgate-operator-system
+    spec:
+      selfSigned: {}
+    ---
+    apiVersion: cert-manager.io/v1
+    kind: Certificate
+    metadata:
+      name: warpgate-operator-webhook-cert
+      namespace: warpgate-operator-system
+    spec:
+      secretName: webhook-server-cert
+      issuerRef:
+        name: warpgate-operator-selfsigned
+        kind: Issuer
+      dnsNames:
+        - warpgate-operator-webhook-service.warpgate-operator-system.svc
+        - warpgate-operator-webhook-service.warpgate-operator-system.svc.cluster.local
+    CERTEOF
+        echo "Waiting for certificate to be ready..."
+        kubectl wait --for=condition=Ready certificate/warpgate-operator-webhook-cert -n warpgate-operator-system --timeout=60s
+    fi
+
+# Patch webhook configs with CA bundle and fix image pull policy
+[private]
+_minikube-post-deploy:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Annotating webhook configurations for cert-manager CA injection..."
+    kubectl annotate mutatingwebhookconfiguration warpgate-operator-mutating-webhook-configuration \
+        cert-manager.io/inject-ca-from=warpgate-operator-system/warpgate-operator-webhook-cert --overwrite 2>/dev/null || true
+    kubectl annotate validatingwebhookconfiguration warpgate-operator-validating-webhook-configuration \
+        cert-manager.io/inject-ca-from=warpgate-operator-system/warpgate-operator-webhook-cert --overwrite 2>/dev/null || true
+    echo "Fixing image reference and pull policy for local images..."
+    kubectl set image deployment/warpgate-operator-controller-manager \
+        -n warpgate-operator-system manager=localhost/{{img}} 2>/dev/null || true
+    kubectl patch deployment -n warpgate-operator-system warpgate-operator-controller-manager \
+        --type=json -p='[{"op":"replace","path":"/spec/template/spec/containers/0/imagePullPolicy","value":"Never"}]' 2>/dev/null || true
+    echo "Waiting for operator pod to be ready..."
+    kubectl rollout status deployment/warpgate-operator-controller-manager -n warpgate-operator-system --timeout=180s
+    echo "Operator is running."
+
+# Full dev cycle: start minikube, build, load image, deploy (fully automated)
+minikube-deploy: minikube-up minikube-certmanager minikube-load _minikube-webhook-cert install deploy _minikube-post-deploy
 
 # Tear down: undeploy, uninstall CRDs, destroy cluster
 minikube-teardown: undeploy uninstall minikube-destroy
