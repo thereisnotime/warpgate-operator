@@ -501,6 +501,85 @@ var _ = Describe("WarpgateConnection Controller", func() {
 			Expect(result).To(Equal(reconcile.Result{}))
 		})
 	})
+
+	Context("API returns 500 on validation", func() {
+		var (
+			mockServer *httptest.Server
+			secretName string
+			connName   string
+			namespace  string
+		)
+
+		BeforeEach(func() {
+			secretName = "wg-token-500"
+			connName = "wg-conn-500"
+			namespace = testNamespace
+
+			mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"error":"internal server error"}`))
+			}))
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"token": []byte("test-token"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      connName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host: mockServer.URL,
+					TokenSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: secretName,
+						Key:  "token",
+					},
+					InsecureSkipVerify: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				controllerutil.RemoveFinalizer(conn, warpgateFinalizer)
+				_ = k8sClient.Update(ctx, conn)
+				_ = k8sClient.Delete(ctx, conn)
+			}
+
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should set Ready=False with ConnectionFailed when the API returns 500", func() {
+			nn := types.NamespacedName{Name: connName, Namespace: namespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateConnection
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("ConnectionFailed"))
+			Expect(readyCond.Message).To(ContainSubstring("Connection check failed"))
+		})
+	})
 })
 
 // findReadyCondition returns the "Ready" condition, or nil if not found.

@@ -270,6 +270,55 @@ var _ = Describe("WarpgateTicket Controller", func() {
 		})
 	})
 
+	Context("Client error", func() {
+		var (
+			crName    string
+			namespace string
+		)
+
+		BeforeEach(func() {
+			crName = "ticket-clienterr-tkt"
+			namespace = testNamespace
+
+			cr := &warpgatev1alpha1.WarpgateTicket{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      crName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateTicketSpec{
+					ConnectionRef: "nonexistent-conn",
+					Username:      "someuser",
+					TargetName:    "sometarget",
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			cr := &warpgatev1alpha1.WarpgateTicket{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: namespace}, cr); err == nil {
+				controllerutil.RemoveFinalizer(cr, ticketFinalizer)
+				_ = k8sClient.Update(ctx, cr)
+				_ = k8sClient.Delete(ctx, cr)
+			}
+		})
+
+		It("should set Ready=False with ClientError when the connection doesn't exist", func() {
+			nn := types.NamespacedName{Name: crName, Namespace: namespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).To(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTicket
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("ClientError"))
+		})
+	})
+
 	Context("Ticket already exists (TicketID set)", func() {
 		var (
 			mockServer  *httptest.Server

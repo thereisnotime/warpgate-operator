@@ -631,6 +631,55 @@ var _ = Describe("WarpgateUserRole Controller", func() {
 		})
 	})
 
+	Context("Client error", func() {
+		var (
+			crName    string
+			namespace string
+		)
+
+		BeforeEach(func() {
+			crName = "userrole-clienterr-binding"
+			namespace = testNamespace
+
+			cr := &warpgatev1alpha1.WarpgateUserRole{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      crName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateUserRoleSpec{
+					ConnectionRef: "nonexistent-conn",
+					Username:      "someuser",
+					RoleName:      "somerole",
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			cr := &warpgatev1alpha1.WarpgateUserRole{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: namespace}, cr); err == nil {
+				controllerutil.RemoveFinalizer(cr, warpgateUserRoleFinalizer)
+				_ = k8sClient.Update(ctx, cr)
+				_ = k8sClient.Delete(ctx, cr)
+			}
+		})
+
+		It("should set Ready=False with ClientError when the connection doesn't exist", func() {
+			nn := types.NamespacedName{Name: crName, Namespace: namespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred()) // returns requeue, not error
+
+			var updated warpgatev1alpha1.WarpgateUserRole
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("ClientError"))
+		})
+	})
+
 	Context("User not found", func() {
 		var (
 			mockServer *httptest.Server
