@@ -3,6 +3,14 @@
 # It should be run by config/default
 resources:
 - bases/warpgate.warpgate.warp.tech_warpgateconnections.yaml
+- bases/warpgate.warpgate.warp.tech_warpgateroles.yaml
+- bases/warpgate.warpgate.warp.tech_warpgateusers.yaml
+- bases/warpgate.warpgate.warp.tech_warpgatetargets.yaml
+- bases/warpgate.warpgate.warp.tech_warpgateuserroles.yaml
+- bases/warpgate.warpgate.warp.tech_warpgatetargetroles.yaml
+- bases/warpgate.warpgate.warp.tech_warpgatepasswordcredentials.yaml
+- bases/warpgate.warpgate.warp.tech_warpgatepublickeycredentials.yaml
+- bases/warpgate.warpgate.warp.tech_warpgatetickets.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:
