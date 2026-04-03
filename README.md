@@ -133,23 +133,51 @@ just build-installer IMG=ghcr.io/thereisnotime/warpgate-operator:latest  # outpu
 
 ## Architecture
 
-```text
-WarpgateConnection CR --> Operator reads host + token secret
-        |                         |
-        |                         v
-        |                  Warpgate REST API
-        |                         |
-        v                         v
-  Resource CRs ----------> Create / Update / Delete
-  (Role, User,              Warpgate resources
-   Target, etc.)
-        |
-        +-- On CR deletion --> Finalizer removes
-                                Warpgate resource
+### Reconciliation Flow
+
+```mermaid
+flowchart TD
+    A[User creates Resource CR\nRole / User / Target / etc.] --> B{CR spec includes\nconnectionRef}
+    B --> C[Operator looks up\nWarpgateConnection CR]
+    C --> D[Read host URL +\ntokenSecretRef from connection]
+    D --> E[Fetch API token from\nKubernetes Secret]
+    E --> F[Call Warpgate REST API\nCreate / Update / Delete]
+    F --> G[Write status back to CR]
+
+    H[User deletes Resource CR] --> I[Finalizer intercepts deletion]
+    I --> J[Operator deletes resource\nin Warpgate via REST API]
+    J --> K[Remove finalizer\nCR is garbage-collected]
 ```
 
-Each resource CR references a `WarpgateConnection` by name (same namespace) via `connectionRef`. The operator resolves the connection,
-reads the API token from the referenced Secret, and communicates with the Warpgate REST API.
+### CRD Relationship Model
+
+```mermaid
+erDiagram
+    WarpgateConnection ||--o{ WarpgateRole : "referenced by"
+    WarpgateConnection ||--o{ WarpgateUser : "referenced by"
+    WarpgateConnection ||--o{ WarpgateTarget : "referenced by"
+    WarpgateConnection ||--o{ WarpgateUserRole : "referenced by"
+    WarpgateConnection ||--o{ WarpgateTargetRole : "referenced by"
+    WarpgateConnection ||--o{ WarpgatePasswordCredential : "referenced by"
+    WarpgateConnection ||--o{ WarpgatePublicKeyCredential : "referenced by"
+    WarpgateConnection ||--o{ WarpgateTicket : "referenced by"
+
+    WarpgateUser ||--o{ WarpgateUserRole : "bound via"
+    WarpgateRole ||--o{ WarpgateUserRole : "bound via"
+
+    WarpgateTarget ||--o{ WarpgateTargetRole : "bound via"
+    WarpgateRole ||--o{ WarpgateTargetRole : "bound via"
+
+    WarpgateUser ||--o{ WarpgatePasswordCredential : "has"
+    WarpgateUser ||--o{ WarpgatePublicKeyCredential : "has"
+
+    WarpgateUser ||--o{ WarpgateTicket : "issued to"
+    WarpgateTarget ||--o{ WarpgateTicket : "grants access to"
+```
+
+Every resource CR references a `WarpgateConnection` by name (same namespace) via `connectionRef`. The operator resolves the
+connection, reads the API token from the referenced Kubernetes Secret, and talks to the Warpgate REST API. Roles are bound to
+users and targets through dedicated binding CRDs, while credentials and tickets hang off users directly.
 
 ## Roadmap
 

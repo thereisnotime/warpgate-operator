@@ -340,6 +340,155 @@ var _ = Describe("WarpgateConnection Controller", func() {
 		})
 	})
 
+	Context("Missing key in secret", func() {
+		var (
+			secretName string
+			connName   string
+			namespace  string
+		)
+
+		BeforeEach(func() {
+			secretName = "wg-token-missingkey"
+			connName = "wg-conn-missingkey"
+			namespace = testNamespace
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"wrong-key": []byte("some-token"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      connName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host: "https://warpgate.example.com",
+					TokenSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: secretName,
+						Key:  "token",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				controllerutil.RemoveFinalizer(conn, warpgateFinalizer)
+				_ = k8sClient.Update(ctx, conn)
+				_ = k8sClient.Delete(ctx, conn)
+			}
+
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should set Ready=False when the expected key is missing from the secret", func() {
+			nn := types.NamespacedName{Name: connName, Namespace: namespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateConnection
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("ConnectionFailed"))
+			Expect(readyCond.Message).To(ContainSubstring(`key "token" not found`))
+		})
+	})
+
+	Context("Default token key", func() {
+		var (
+			mockServer *httptest.Server
+			secretName string
+			connName   string
+			namespace  string
+		)
+
+		BeforeEach(func() {
+			secretName = "wg-token-defaultkey"
+			connName = "wg-conn-defaultkey"
+			namespace = testNamespace
+
+			mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode([]map[string]any{})
+			}))
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"token": []byte("default-key-token"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      connName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host: mockServer.URL,
+					TokenSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: secretName,
+						// Key is empty, should default to "token"
+					},
+					InsecureSkipVerify: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				controllerutil.RemoveFinalizer(conn, warpgateFinalizer)
+				_ = k8sClient.Update(ctx, conn)
+				_ = k8sClient.Delete(ctx, conn)
+			}
+
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should use the default 'token' key when Key is empty in the SecretKeyRef", func() {
+			nn := types.NamespacedName{Name: connName, Namespace: namespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateConnection
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(readyCond.Reason).To(Equal("Connected"))
+		})
+	})
+
 	Context("Resource not found", func() {
 		It("should return no error when the resource doesn't exist", func() {
 			nn := types.NamespacedName{

@@ -1,0 +1,37 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build",
+      "type": "shell",
+      "command": "just build",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "Test",
+      "type": "shell",
+      "command": "just test",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "Lint",
+      "type": "shell",
+      "command": "just lint",
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "Generate",
+      "type": "shell",
+      "command": "just generate && just manifests",
+      "problemMatcher": []
+    },
+    {
+      "label": "Minikube Deploy",
+      "type": "shell",
+      "command": "just minikube-deploy",
+      "problemMatcher": []
+    }
+  ]
+}

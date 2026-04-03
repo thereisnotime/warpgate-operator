@@ -413,6 +413,121 @@ var _ = Describe("WarpgateUser Controller", func() {
 		})
 	})
 
+	Context("Create user with custom passwordLength", func() {
+		It("should generate a password of the specified length", func() {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(warpgate.User{ID: "user-pwlen-001", Username: "pwlenuser"})
+				}
+			})
+			mux.HandleFunc("/@warpgate/admin/api/users/user-pwlen-001/credentials/passwords", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(warpgate.PasswordCredential{ID: "cred-pwlen-001", Password: "pw"})
+				}
+			})
+			mux.HandleFunc("/@warpgate/admin/api/users/user-pwlen-001", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPut {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(warpgate.User{ID: "user-pwlen-001", Username: "pwlenuser"})
+				}
+			})
+			srv := setupMockAndConnection(mux, "-pwlen")
+			defer srv.Close()
+
+			customLen := 64
+			user := &warpgatev1alpha1.WarpgateUser{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pwlen-user",
+					Namespace: userNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateUserSpec{
+					ConnectionRef:    connName + "-pwlen",
+					Username:         "pwlenuser",
+					GeneratePassword: boolPtr(true),
+					PasswordLength:   &customLen,
+				},
+			}
+			Expect(k8sClient.Create(ctx, user)).To(Succeed())
+
+			nn := types.NamespacedName{Name: user.Name, Namespace: userNamespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateUser
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.PasswordCredentialID).To(Equal("cred-pwlen-001"))
+			Expect(updated.Status.PasswordSecretRef).To(Equal("test-pwlen-user-password"))
+
+			// Verify the generated password in the Secret is the right length.
+			var pwSecret corev1.Secret
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "test-pwlen-user-password",
+				Namespace: userNamespace,
+			}, &pwSecret)).To(Succeed())
+			Expect(string(pwSecret.Data["password"])).To(HaveLen(customLen))
+		})
+	})
+
+	Context("Password secret already exists", func() {
+		It("should not fail when the password Secret already exists (AlreadyExists is tolerated)", func() {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(warpgate.User{ID: "user-dupsec-001", Username: "dupsecuser"})
+				}
+			})
+			mux.HandleFunc("/@warpgate/admin/api/users/user-dupsec-001/credentials/passwords", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(warpgate.PasswordCredential{ID: "cred-dupsec-001", Password: "pw"})
+				}
+			})
+			srv := setupMockAndConnection(mux, "-dupsec")
+			defer srv.Close()
+
+			// Pre-create the password Secret that the controller would also try to create.
+			existingSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-dupsec-user-password",
+					Namespace: userNamespace,
+				},
+				Data: map[string][]byte{
+					"password": []byte("pre-existing"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, existingSecret)).To(Succeed())
+
+			user := &warpgatev1alpha1.WarpgateUser{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-dupsec-user",
+					Namespace: userNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateUserSpec{
+					ConnectionRef:    connName + "-dupsec",
+					Username:         "dupsecuser",
+					GeneratePassword: boolPtr(true),
+				},
+			}
+			Expect(k8sClient.Create(ctx, user)).To(Succeed())
+
+			nn := types.NamespacedName{Name: user.Name, Namespace: userNamespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateUser
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.PasswordCredentialID).To(Equal("cred-dupsec-001"))
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+		})
+	})
+
 	Context("Missing connection", func() {
 		It("should return an error when the WarpgateConnection does not exist", func() {
 			user := &warpgatev1alpha1.WarpgateUser{

@@ -1,0 +1,30 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Operator",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/main.go",
+      "args": [
+        "--metrics-bind-address=:8080",
+        "--health-probe-bind-address=:8081",
+        "--leader-elect=false",
+        "--metrics-secure=false"
+      ],
+      "env": {}
+    },
+    {
+      "name": "Test Current Package",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${fileDirname}",
+      "args": ["-v", "-count=1"],
+      "env": {
+        "KUBEBUILDER_ASSETS": "${workspaceFolder}/bin/k8s/1.35.0-linux-amd64"
+      }
+    }
+  ]
+}

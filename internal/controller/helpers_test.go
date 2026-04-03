@@ -1,0 +1,238 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package controller
+
+import (
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+
+	warpgatev1alpha1 "github.com/thereisnotime/warpgate-operator/api/v1alpha1"
+)
+
+var _ = Describe("getWarpgateClient helper", func() {
+
+	const helperNS = "default"
+
+	Context("Happy path", func() {
+		var (
+			connName   = "helper-conn-ok"
+			secretName = "helper-secret-ok"
+		)
+
+		BeforeEach(func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: helperNS},
+				Data:       map[string][]byte{"token": []byte("valid-token")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:               "https://warpgate.example.com",
+					TokenSecretRef:     warpgatev1alpha1.SecretKeyRef{Name: secretName, Key: "token"},
+					InsecureSkipVerify: false,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: helperNS}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: helperNS}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should return a non-nil client when the connection and secret exist", func() {
+			client, err := getWarpgateClient(ctx, k8sClient, helperNS, connName)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(client).NotTo(BeNil())
+		})
+	})
+
+	Context("Happy path with default key", func() {
+		var (
+			connName   = "helper-conn-defkey"
+			secretName = "helper-secret-defkey"
+		)
+
+		BeforeEach(func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: helperNS},
+				Data:       map[string][]byte{"token": []byte("default-key-token")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host: "https://warpgate.example.com",
+					// Key is empty, so it should default to "token"
+					TokenSecretRef: warpgatev1alpha1.SecretKeyRef{Name: secretName},
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: helperNS}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: helperNS}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should default to the 'token' key when SecretKeyRef.Key is empty", func() {
+			client, err := getWarpgateClient(ctx, k8sClient, helperNS, connName)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(client).NotTo(BeNil())
+		})
+	})
+
+	Context("Missing connection", func() {
+		It("should return an error when the WarpgateConnection does not exist", func() {
+			client, err := getWarpgateClient(ctx, k8sClient, helperNS, "nonexistent-connection")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("nonexistent-connection"))
+			Expect(client).To(BeNil())
+		})
+	})
+
+	Context("Missing secret", func() {
+		var connName = "helper-conn-nosecret"
+
+		BeforeEach(func() {
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:           "https://warpgate.example.com",
+					TokenSecretRef: warpgatev1alpha1.SecretKeyRef{Name: "ghost-secret", Key: "token"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: helperNS}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+		})
+
+		It("should return an error when the referenced secret does not exist", func() {
+			client, err := getWarpgateClient(ctx, k8sClient, helperNS, connName)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("ghost-secret"))
+			Expect(client).To(BeNil())
+		})
+	})
+
+	Context("Missing key in secret", func() {
+		var (
+			connName   = "helper-conn-badkey"
+			secretName = "helper-secret-badkey"
+		)
+
+		BeforeEach(func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: helperNS},
+				Data:       map[string][]byte{"wrong-key": []byte("some-value")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:           "https://warpgate.example.com",
+					TokenSecretRef: warpgatev1alpha1.SecretKeyRef{Name: secretName, Key: "token"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: helperNS}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: helperNS}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should return an error when the expected key is missing from the secret", func() {
+			client, err := getWarpgateClient(ctx, k8sClient, helperNS, connName)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(`key "token" not found`))
+			Expect(client).To(BeNil())
+		})
+	})
+
+	Context("InsecureSkipVerify flag", func() {
+		var (
+			connName   = "helper-conn-insecure"
+			secretName = "helper-secret-insecure"
+		)
+
+		BeforeEach(func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: helperNS},
+				Data:       map[string][]byte{"token": []byte("tok")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:               "https://warpgate.example.com",
+					TokenSecretRef:     warpgatev1alpha1.SecretKeyRef{Name: secretName, Key: "token"},
+					InsecureSkipVerify: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: helperNS}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: helperNS}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should create a client successfully when insecureSkipVerify is true", func() {
+			client, err := getWarpgateClient(ctx, k8sClient, helperNS, connName)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(client).NotTo(BeNil())
+		})
+	})
+})

@@ -189,6 +189,108 @@ func TestInsecureSkipVerify(t *testing.T) {
 	}
 }
 
+func TestNonJSONErrorBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("Internal Server Error: something went wrong"))
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	err := c.Get("/failing-endpoint", nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	apiErr, ok := err.(*APIError)
+	if !ok {
+		t.Fatalf("expected *APIError, got %T", err)
+	}
+	if apiErr.StatusCode != 500 {
+		t.Errorf("expected status 500, got %d", apiErr.StatusCode)
+	}
+	if apiErr.Body != "Internal Server Error: something went wrong" {
+		t.Errorf("unexpected body: %s", apiErr.Body)
+	}
+}
+
+func TestInvalidURLRequestCreation(t *testing.T) {
+	c := &Client{
+		baseURL:    "://bad-url",
+		token:      "tok",
+		httpClient: &http.Client{},
+	}
+	err := c.Get("/test", nil)
+	if err == nil {
+		t.Fatal("expected error for invalid URL, got nil")
+	}
+	if _, ok := err.(*APIError); ok {
+		t.Error("expected a non-APIError (request creation failure), got *APIError")
+	}
+}
+
+func TestSecureClientNoTLSConfig(t *testing.T) {
+	c := NewClient(Config{
+		Host:               "https://localhost",
+		Token:              "tok",
+		InsecureSkipVerify: false,
+	})
+	transport := c.httpClient.Transport.(*http.Transport)
+	if transport.TLSClientConfig != nil {
+		t.Error("expected no TLSClientConfig when InsecureSkipVerify is false")
+	}
+}
+
+func TestUnmarshalErrorOnBadJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("{not valid json"))
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	var result map[string]string
+	err := c.Get("/bad-json", &result)
+	if err == nil {
+		t.Fatal("expected unmarshal error, got nil")
+	}
+	// Should not be an APIError since status was 200.
+	if _, ok := err.(*APIError); ok {
+		t.Error("expected unmarshal error, not *APIError")
+	}
+}
+
+func TestEmptyBodyNoUnmarshalError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "tok"})
+	var result map[string]string
+	// Even with a non-nil result pointer, empty body should not error.
+	err := c.Get("/empty", &result)
+	if err != nil {
+		t.Fatalf("expected no error for empty body with 204, got: %v", err)
+	}
+}
+
+func TestConnectionRefused(t *testing.T) {
+	c := NewClient(Config{
+		Host:  "http://127.0.0.1:1",
+		Token: "tok",
+	})
+	err := c.Get("/test", nil)
+	if err == nil {
+		t.Fatal("expected connection error, got nil")
+	}
+	if _, ok := err.(*APIError); ok {
+		t.Error("expected a transport-level error, not *APIError")
+	}
+}
+
 func TestAPIErrorString(t *testing.T) {
 	err := &APIError{StatusCode: 403, Body: "forbidden"}
 	expected := "warpgate API error (status 403): forbidden"

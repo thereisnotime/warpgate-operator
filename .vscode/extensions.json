@@ -1,0 +1,11 @@
+{
+  "recommendations": [
+    "golang.go",
+    "redhat.vscode-yaml",
+    "ms-kubernetes-tools.vscode-kubernetes-tools",
+    "DavidAnson.vscode-markdownlint",
+    "tim-koehler.helm-intellisense",
+    "ms-azuretools.vscode-containers",
+    "EditorConfig.EditorConfig"
+  ]
+}

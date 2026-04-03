@@ -1,0 +1,45 @@
+{
+  "go.useLanguageServer": true,
+  "go.lintTool": "golangci-lint",
+  "go.lintFlags": ["--config=${workspaceFolder}/.golangci.yml"],
+  "go.testFlags": ["-v", "-count=1"],
+  "go.testTimeout": "120s",
+  "go.coverOnSave": false,
+  "go.coverageDecorator": {
+    "type": "highlight"
+  },
+  "gopls": {
+    "formatting.gofumpt": false,
+    "ui.semanticTokens": true
+  },
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "golang.go",
+  "[go]": {
+    "editor.defaultFormatter": "golang.go",
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  "[yaml]": {
+    "editor.defaultFormatter": "redhat.vscode-yaml"
+  },
+  "[markdown]": {
+    "editor.defaultFormatter": "DavidAnson.vscode-markdownlint"
+  },
+  "yaml.schemas": {
+    "kubernetes": ["config/**/*.yaml", "charts/**/*.yaml"]
+  },
+  "files.exclude": {
+    "bin/": true,
+    "dist/": true,
+    "cover.out": true
+  },
+  "files.watcherExclude": {
+    "bin/**": true,
+    "node_modules/**": true
+  },
+  "search.exclude": {
+    "bin/": true,
+    "node_modules/": true
+  }
+}
