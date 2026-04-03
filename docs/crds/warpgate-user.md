@@ -79,6 +79,21 @@ After reconciliation, retrieve the auto-generated password:
 kubectl get secret john-doe-password -o jsonpath='{.data.password}' | base64 -d
 ```
 
+## Validation
+
+The following rules are enforced by the admission webhook on create and update:
+
+- `spec.connectionRef` must not be empty
+- `spec.username` must not be empty
+- `spec.passwordLength` (when set) must be between 16 and 128
+
+## Defaults
+
+The following defaults are applied on create and update:
+
+- `spec.generatePassword` defaults to `true` if not set
+- `spec.passwordLength` defaults to `32` if not set
+
 ## Example Without Password Generation
 
 ```yaml

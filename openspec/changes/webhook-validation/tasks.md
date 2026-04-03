@@ -8,8 +8,8 @@
 - [x] Implement ticket CRD validation (expiry format, immutability)
 - [x] Implement binding CRD validation (UserRole, TargetRole)
 - [x] Implement Role and User validation and defaults
-- [ ] Add cert-manager to Helm chart
+- [x] Add cert-manager to Helm chart
 - [x] Uncomment webhook sections in kustomize configs
 - [x] Write webhook unit tests
-- [ ] Update E2E tests for webhook rejection
-- [ ] Update documentation
+- [x] Write webhook edge case tests
+- [x] Update documentation

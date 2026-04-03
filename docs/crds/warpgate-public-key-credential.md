@@ -42,6 +42,15 @@ spec:
   opensshPublicKey: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAEXAMPLEKEY john@laptop
 ```
 
+## Validation
+
+The following rules are enforced by the admission webhook on create and update:
+
+- `spec.connectionRef` must not be empty
+- `spec.username` must not be empty
+- `spec.label` must not be empty
+- `spec.opensshPublicKey` must not be empty and must start with `ssh-` (e.g. `ssh-rsa`, `ssh-ed25519`)
+
 ## Notes
 
 - The user specified by `username` must already exist in Warpgate.

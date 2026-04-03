@@ -192,6 +192,29 @@ spec:
       verify: true
 ```
 
+## Validation
+
+The following rules are enforced by the admission webhook on create and update:
+
+- `spec.connectionRef` must not be empty
+- `spec.name` must not be empty
+- Exactly one of `spec.ssh`, `spec.http`, `spec.mysql`, or `spec.postgresql` must be set
+- **SSH targets:** `ssh.host` and `ssh.username` are required; `ssh.port` must be between 1 and 65535; `ssh.authKind` must be `Password` or `PublicKey`
+- **HTTP targets:** `http.url` is required
+- **MySQL targets:** `mysql.host` and `mysql.username` are required; `mysql.port` must be between 1 and 65535
+- **PostgreSQL targets:** `postgresql.host` and `postgresql.username` are required; `postgresql.port` must be between 1 and 65535
+- **TLS config** (HTTP, MySQL, PostgreSQL): `tls.mode` must be one of `Disabled`, `Preferred`, or `Required`
+
+## Defaults
+
+The following defaults are applied on create and update:
+
+- `spec.ssh.port` defaults to `22` if not set
+- `spec.ssh.authKind` defaults to `"PublicKey"` if not set
+- `spec.mysql.port` defaults to `3306` if not set
+- `spec.postgresql.port` defaults to `5432` if not set
+- `tls.mode` defaults to `"Preferred"` for HTTP, MySQL, and PostgreSQL targets when a TLS block is present but the mode is empty
+
 ## Notes
 
 - Exactly one of `ssh`, `http`, `mysql`, or `postgresql` must be set. Setting zero or more than one is invalid.

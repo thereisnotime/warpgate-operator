@@ -1,0 +1,34 @@
+{{- if and .Values.webhooks.enabled .Values.webhooks.certManager.enabled }}
+{{- if not .Values.webhooks.certManager.issuerRef.name }}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "warpgate-operator.fullname" . }}-selfsigned
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "warpgate-operator.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+{{- end }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "warpgate-operator.fullname" . }}-webhook-cert
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "warpgate-operator.labels" . | nindent 4 }}
+spec:
+  secretName: webhook-server-cert
+  issuerRef:
+    {{- if .Values.webhooks.certManager.issuerRef.name }}
+    name: {{ .Values.webhooks.certManager.issuerRef.name }}
+    kind: {{ .Values.webhooks.certManager.issuerRef.kind | default "Issuer" }}
+    {{- else }}
+    name: {{ include "warpgate-operator.fullname" . }}-selfsigned
+    kind: Issuer
+    {{- end }}
+  dnsNames:
+    - {{ include "warpgate-operator.fullname" . }}-webhook.{{ .Release.Namespace }}.svc
+    - {{ include "warpgate-operator.fullname" . }}-webhook.{{ .Release.Namespace }}.svc.cluster.local
+{{- end }}

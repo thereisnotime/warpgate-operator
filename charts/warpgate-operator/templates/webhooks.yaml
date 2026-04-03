@@ -1,0 +1,399 @@
+{{- if .Values.webhooks.enabled }}
+{{- $fullName := include "warpgate-operator.fullname" . }}
+{{- $certAnnotation := dict }}
+{{- if .Values.webhooks.certManager.enabled }}
+{{- $_ := set $certAnnotation "cert-manager.io/inject-ca-from" (printf "%s/%s-webhook-cert" .Release.Namespace $fullName) }}
+{{- end }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: {{ $fullName }}-mutating
+  labels:
+    {{- include "warpgate-operator.labels" . | nindent 4 }}
+  {{- if $certAnnotation }}
+  annotations:
+    {{- toYaml $certAnnotation | nindent 4 }}
+  {{- end }}
+webhooks:
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ $fullName }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-warpgate-warpgate-warp-tech-v1alpha1-warpgateconnection
+    failurePolicy: Fail
+    name: mwarpgateconnection.kb.io
+    rules:
+      - apiGroups:
+          - warpgate.warpgate.warp.tech
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - warpgateconnections
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ $fullName }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-warpgate-warpgate-warp-tech-v1alpha1-warpgatepasswordcredential
+    failurePolicy: Fail
+    name: mwarpgatepasswordcredential.kb.io
+    rules:
+      - apiGroups:
+          - warpgate.warpgate.warp.tech
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - warpgatepasswordcredentials
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ $fullName }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-warpgate-warpgate-warp-tech-v1alpha1-warpgatepublickeycredential
+    failurePolicy: Fail
+    name: mwarpgatepublickeycredential.kb.io
+    rules:
+      - apiGroups:
+          - warpgate.warpgate.warp.tech
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - warpgatepublickeycredentials
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ $fullName }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-warpgate-warpgate-warp-tech-v1alpha1-warpgaterole
+    failurePolicy: Fail
+    name: mwarpgaterole.kb.io
+    rules:
+      - apiGroups:
+          - warpgate.warpgate.warp.tech
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - warpgateroles
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ $fullName }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-warpgate-warpgate-warp-tech-v1alpha1-warpgatetarget
+    failurePolicy: Fail
+    name: mwarpgatetarget.kb.io
+    rules:
+      - apiGroups:
+          - warpgate.warpgate.warp.tech
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - warpgatetargets
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ $fullName }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-warpgate-warpgate-warp-tech-v1alpha1-warpgatetargetrole
+    failurePolicy: Fail
+    name: mwarpgatetargetrole.kb.io
+    rules:
+      - apiGroups:
+          - warpgate.warpgate.warp.tech
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - warpgatetargetroles
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ $fullName }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-warpgate-warpgate-warp-tech-v1alpha1-warpgateticket
+    failurePolicy: Fail
+    name: mwarpgateticket.kb.io
+    rules:
+      - apiGroups:
+          - warpgate.warpgate.warp.tech
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - warpgatetickets
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ $fullName }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-warpgate-warpgate-warp-tech-v1alpha1-warpgateuser
+    failurePolicy: Fail
+    name: mwarpgateuser.kb.io
+    rules:
+      - apiGroups:
+          - warpgate.warpgate.warp.tech
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - warpgateusers
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ $fullName }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-warpgate-warpgate-warp-tech-v1alpha1-warpgateuserrole
+    failurePolicy: Fail
+    name: mwarpgateuserrole.kb.io
+    rules:
+      - apiGroups:
+          - warpgate.warpgate.warp.tech
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - warpgateuserroles
+    sideEffects: None
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ $fullName }}-validating
+  labels:
+    {{- include "warpgate-operator.labels" . | nindent 4 }}
+  {{- if $certAnnotation }}
+  annotations:
+    {{- toYaml $certAnnotation | nindent 4 }}
+  {{- end }}
+webhooks:
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ $fullName }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-warpgate-warpgate-warp-tech-v1alpha1-warpgateconnection
+    failurePolicy: Fail
+    name: vwarpgateconnection.kb.io
+    rules:
+      - apiGroups:
+          - warpgate.warpgate.warp.tech
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+          - DELETE
+        resources:
+          - warpgateconnections
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ $fullName }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-warpgate-warpgate-warp-tech-v1alpha1-warpgatepasswordcredential
+    failurePolicy: Fail
+    name: vwarpgatepasswordcredential.kb.io
+    rules:
+      - apiGroups:
+          - warpgate.warpgate.warp.tech
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+          - DELETE
+        resources:
+          - warpgatepasswordcredentials
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ $fullName }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-warpgate-warpgate-warp-tech-v1alpha1-warpgatepublickeycredential
+    failurePolicy: Fail
+    name: vwarpgatepublickeycredential.kb.io
+    rules:
+      - apiGroups:
+          - warpgate.warpgate.warp.tech
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+          - DELETE
+        resources:
+          - warpgatepublickeycredentials
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ $fullName }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-warpgate-warpgate-warp-tech-v1alpha1-warpgaterole
+    failurePolicy: Fail
+    name: vwarpgaterole.kb.io
+    rules:
+      - apiGroups:
+          - warpgate.warpgate.warp.tech
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+          - DELETE
+        resources:
+          - warpgateroles
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ $fullName }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-warpgate-warpgate-warp-tech-v1alpha1-warpgatetarget
+    failurePolicy: Fail
+    name: vwarpgatetarget.kb.io
+    rules:
+      - apiGroups:
+          - warpgate.warpgate.warp.tech
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+          - DELETE
+        resources:
+          - warpgatetargets
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ $fullName }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-warpgate-warpgate-warp-tech-v1alpha1-warpgatetargetrole
+    failurePolicy: Fail
+    name: vwarpgatetargetrole.kb.io
+    rules:
+      - apiGroups:
+          - warpgate.warpgate.warp.tech
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+          - DELETE
+        resources:
+          - warpgatetargetroles
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ $fullName }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-warpgate-warpgate-warp-tech-v1alpha1-warpgateticket
+    failurePolicy: Fail
+    name: vwarpgateticket.kb.io
+    rules:
+      - apiGroups:
+          - warpgate.warpgate.warp.tech
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+          - DELETE
+        resources:
+          - warpgatetickets
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ $fullName }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-warpgate-warpgate-warp-tech-v1alpha1-warpgateuser
+    failurePolicy: Fail
+    name: vwarpgateuser.kb.io
+    rules:
+      - apiGroups:
+          - warpgate.warpgate.warp.tech
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+          - DELETE
+        resources:
+          - warpgateusers
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ $fullName }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-warpgate-warpgate-warp-tech-v1alpha1-warpgateuserrole
+    failurePolicy: Fail
+    name: vwarpgateuserrole.kb.io
+    rules:
+      - apiGroups:
+          - warpgate.warpgate.warp.tech
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+          - DELETE
+        resources:
+          - warpgateuserroles
+    sideEffects: None
+{{- end }}

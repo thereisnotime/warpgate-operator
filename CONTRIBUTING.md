@@ -115,7 +115,7 @@ Markdown files are linted with markdownlint-cli2. Configuration lives in `.markd
 ## Project Structure
 
 ```text
-api/                    # CRD Go types (grouped by version)
+api/                    # CRD Go types and admission webhooks (grouped by version)
 cmd/                    # Operator entrypoint
 config/
   crd/                  # Generated CRD manifests
@@ -131,6 +131,11 @@ internal/
 hack/                   # Boilerplate headers and helper scripts
 test/e2e/               # End-to-end tests
 ```
+
+Webhook files live alongside the CRD types in `api/v1alpha1/` and follow the naming convention
+`*_webhook.go` (e.g. `warpgateconnection_webhook.go`). Each webhook implements validation
+(required fields, value constraints) and optional defaulting (sensible zero-value overrides).
+If you add or modify a CRD, update the corresponding webhook file to keep validation in sync.
 
 ## Submitting Changes
 

@@ -2,4 +2,6 @@ globs:
   - "**/*.md"
   - "!.github/prompts/**"
   - "!.github/skills/**"
+  - "!.claude/**"
+  - "!openspec/**"
   - "!node_modules/**"

@@ -38,6 +38,13 @@ spec:
   description: Role for developer access
 ```
 
+## Validation
+
+The following rules are enforced by the admission webhook on create and update:
+
+- `spec.connectionRef` must not be empty
+- `spec.name` must not be empty
+
 ## Notes
 
 - Deleting a `WarpgateRole` CR triggers the finalizer to remove the role from Warpgate.

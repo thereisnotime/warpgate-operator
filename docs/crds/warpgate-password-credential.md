@@ -53,6 +53,20 @@ spec:
     key: password
 ```
 
+## Validation
+
+The following rules are enforced by the admission webhook on create and update:
+
+- `spec.connectionRef` must not be empty
+- `spec.username` must not be empty
+- `spec.passwordSecretRef.name` must not be empty
+
+## Defaults
+
+The following defaults are applied on create and update:
+
+- `spec.passwordSecretRef.key` defaults to `"password"` if not set
+
 ## Notes
 
 - The referenced Secret must exist in the same namespace as the CR.

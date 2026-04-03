@@ -79,3 +79,11 @@ webhooks:
   enabled: true
   # -- Port the webhook server listens on.
   port: 9443
+  certManager:
+    # -- Use cert-manager to provision webhook TLS certificates.
+    enabled: true
+    issuerRef:
+      # -- Name of an existing Issuer/ClusterIssuer. Leave empty to create a self-signed Issuer.
+      name: ""
+      # -- Kind of the issuer (Issuer or ClusterIssuer).
+      kind: Issuer

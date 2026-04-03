@@ -32,6 +32,7 @@ lifecycle management.
 - **Finalizer-based cleanup** that removes Warpgate resources when CRs are deleted
 - **Auto-generated passwords** for users, stored in Kubernetes Secrets
 - **Auto-created Secrets** for ticket values
+- **Admission webhooks** that validate and default CRD specs at create/update time, catching misconfigurations before they reach the controller
 
 ## Installation
 
@@ -161,7 +162,7 @@ hang off users directly.
 
 ## Roadmap
 
-- Webhook validation for CRD specs
+- ~~Webhook validation for CRD specs~~ (done)
 - Kubernetes target type support
 - SSO credential management
 - Helm chart published to artifact hub

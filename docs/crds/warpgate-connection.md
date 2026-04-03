@@ -45,6 +45,19 @@ spec:
   insecureSkipVerify: false
 ```
 
+## Validation
+
+The following rules are enforced by the admission webhook on create and update:
+
+- `spec.host` must not be empty and must start with `http://` or `https://`
+- `spec.tokenSecretRef.name` must not be empty
+
+## Defaults
+
+The following defaults are applied on create and update:
+
+- `spec.tokenSecretRef.key` defaults to `"token"` if not set
+
 ## Notes
 
 - The token Secret must exist in the same namespace as the `WarpgateConnection` CR.

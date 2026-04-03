@@ -71,6 +71,15 @@ spec:
   description: Access valid until end of year
 ```
 
+## Validation
+
+The following rules are enforced by the admission webhook:
+
+- `spec.connectionRef` must not be empty
+- `spec.numberOfUses` (when set) must be greater than 0
+- On **update**, the spec is immutable -- any change to spec fields is rejected (delete and recreate the ticket instead)
+- A warning is emitted if neither `spec.username` nor `spec.targetName` is set, since the ticket may not be useful without at least one
+
 ## Notes
 
 - Both `username` and `targetName` are optional -- you can create tickets scoped to just a user, just a target, or both.

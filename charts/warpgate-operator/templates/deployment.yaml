@@ -44,6 +44,9 @@ spec:
             - --metrics-bind-address=:{{ .Values.metrics.port }}
             - --metrics-secure={{ .Values.metrics.secure }}
             - --leader-elect={{ .Values.leaderElection.enabled }}
+            {{- if .Values.webhooks.enabled }}
+            - --webhook-cert-path=/tmp/k8s-webhook-server/serving-certs
+            {{- end }}
           ports:
             - name: metrics
               containerPort: {{ .Values.metrics.port }}

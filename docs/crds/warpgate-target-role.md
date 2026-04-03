@@ -39,6 +39,14 @@ spec:
   roleName: developers
 ```
 
+## Validation
+
+The following rules are enforced by the admission webhook on create and update:
+
+- `spec.connectionRef` must not be empty
+- `spec.targetName` must not be empty
+- `spec.roleName` must not be empty
+
 ## Notes
 
 - The target and role referenced by `targetName` and `roleName` must already exist in Warpgate.
