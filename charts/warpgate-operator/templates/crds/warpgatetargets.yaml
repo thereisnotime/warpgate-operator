@@ -1,12 +1,11 @@
 {{- if .Values.crds.install -}}
+---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
   name: warpgatetargets.warpgate.warpgate.warp.tech
-  labels:
-    {{- include "warpgate-operator.labels" . | nindent 4 }}
 spec:
   group: warpgate.warpgate.warp.tech
   names:
@@ -106,8 +105,9 @@ spec:
                       the MySQL password.
                     properties:
                       key:
-                        description: key is the key within the Secret. Defaults to
-                          "password".
+                        description: |-
+                          key is the key within the Secret. Defaults to "password" for password refs.
+                          Unused by tokenSecretRef (which always reads "username" and "password" keys).
                         type: string
                       name:
                         description: name is the name of the Secret.
@@ -158,8 +158,9 @@ spec:
                       the PostgreSQL password.
                     properties:
                       key:
-                        description: key is the key within the Secret. Defaults to
-                          "password".
+                        description: |-
+                          key is the key within the Secret. Defaults to "password" for password refs.
+                          Unused by tokenSecretRef (which always reads "username" and "password" keys).
                         type: string
                       name:
                         description: name is the name of the Secret.
@@ -217,8 +218,9 @@ spec:
                       the SSH password (for Password auth).
                     properties:
                       key:
-                        description: key is the key within the Secret. Defaults to
-                          "password".
+                        description: |-
+                          key is the key within the Secret. Defaults to "password" for password refs.
+                          Unused by tokenSecretRef (which always reads "username" and "password" keys).
                         type: string
                       name:
                         description: name is the name of the Secret.

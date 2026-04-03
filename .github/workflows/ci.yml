@@ -136,7 +136,7 @@ jobs:
 
       - name: Check for uncommitted changes
         run: |
-          if ! git diff --exit-code config/; then
-            echo "::error::Generated manifests are out of date. Run 'just manifests' and commit the changes."
+          if ! git diff --exit-code config/ charts/warpgate-operator/templates/crds/; then
+            echo "::error::Generated manifests or Helm chart CRDs are out of date. Run 'just manifests' and commit the changes."
             exit 1
           fi

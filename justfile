@@ -44,9 +44,24 @@ help:
 
 # ─── Development ──────────────────────────────────────────────────────
 
-# Generate CRD manifests, RBAC, and webhook configs
+# Generate CRD manifests, RBAC, webhook configs, and sync Helm chart CRDs
 manifests: _controller-gen
     "{{controller_gen}}" rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+    just _sync-chart-crds
+
+# Sync generated CRDs into the Helm chart templates
+[private]
+_sync-chart-crds:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for crd in config/crd/bases/*.yaml; do
+        name=$(basename "$crd" | sed 's/warpgate.warpgate.warp.tech_//')
+        chart_file="charts/warpgate-operator/templates/crds/${name}"
+        echo '{''{'- if .Values.crds.install -'}''}' > "$chart_file"
+        cat "$crd" >> "$chart_file"
+        echo '{''{'- end '}''}' >> "$chart_file"
+    done
+    echo "Synced $(ls config/crd/bases/*.yaml | wc -l) CRDs to Helm chart."
 
 # Generate DeepCopy and related boilerplate
 generate: _controller-gen
@@ -274,9 +289,9 @@ lint-helm:
 lint-commit:
     npx --yes @commitlint/cli --from HEAD~1 --to HEAD --config .commitlintrc.yaml
 
-# Validate generated manifests are up to date
+# Validate generated manifests and Helm chart CRDs are up to date
 lint-manifests: manifests generate
-    git diff --exit-code config/ api/
+    git diff --exit-code config/ api/ charts/warpgate-operator/templates/crds/
 
 # Run all linters
 lint: lint-go lint-md lint-yaml lint-helm lint-manifests
