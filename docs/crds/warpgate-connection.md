@@ -6,10 +6,10 @@ You can create a `WarpgateConnection` manually, or let a [`WarpgateInstance`](wa
 
 The operator supports two authentication modes against the Warpgate REST API:
 
-1. **Bearer token** (recommended) -- a single API token that bypasses OTP/2FA requirements.
+1. **API token** (recommended) -- a single API token that bypasses OTP/2FA requirements.
 2. **Username/password** (fallback) -- session-based authentication, requires OTP to be disabled on the Warpgate instance.
 
-Auth mode is auto-detected from the referenced Secret: if the `token` key exists, bearer token auth is used. Otherwise the operator falls back to username/password session auth.
+Auth mode is auto-detected from the referenced Secret: if the `token` key exists, API token auth is used. Otherwise the operator falls back to username/password session auth.
 
 ## Spec Fields
 
@@ -17,7 +17,7 @@ Auth mode is auto-detected from the referenced Secret: if the `token` key exists
 |-------|------|----------|---------|-------------|
 | `host` | `string` | Yes | - | URL of the Warpgate instance (e.g. `https://warpgate.example.com`) |
 | `authSecretRef.name` | `string` | Yes | - | Name of the Kubernetes Secret containing auth credentials |
-| `authSecretRef.tokenKey` | `string` | No | `token` | Key in the Secret that holds the API token (bearer auth) |
+| `authSecretRef.tokenKey` | `string` | No | `token` | Key in the Secret that holds the API token (token auth) |
 | `authSecretRef.usernameKey` | `string` | No | `username` | Key in the Secret that holds the username (session auth) |
 | `authSecretRef.passwordKey` | `string` | No | `password` | Key in the Secret that holds the password (session auth) |
 | `insecureSkipVerify` | `bool` | No | `false` | Disable TLS certificate verification (not recommended for production) |
@@ -57,7 +57,7 @@ spec:
   insecureSkipVerify: false
 ```
 
-The operator sees the `token` key in the Secret and uses bearer token authentication. This is the recommended approach because it works regardless of OTP/2FA settings on the Warpgate instance.
+The operator sees the `token` key in the Secret and uses API token authentication. This is the recommended approach because it works regardless of OTP/2FA settings on the Warpgate instance.
 
 ## Auth Mode: Username/Password (fallback)
 
@@ -117,7 +117,7 @@ The admission webhook applies these defaults if not set:
   deployed instance. You don't need to create one manually in that case -- just reference the auto-created
   connection name (found in the `WarpgateInstance` status) from your other CRDs.
 - The auth Secret must exist in the same namespace as the `WarpgateConnection` CR.
-- If the Secret contains the token key, bearer auth is used regardless of whether username/password keys also exist.
+- If the Secret contains the token key, token auth is used regardless of whether username/password keys also exist.
 - Username/password session auth requires OTP to be disabled on the Warpgate instance. If OTP is enabled, use token auth instead.
 - The `insecureSkipVerify` flag is provided for development/testing environments with self-signed certificates. Avoid using it in production.
 - Multiple `WarpgateConnection` resources can coexist in the same namespace, each pointing to a different Warpgate instance. Other CRDs select which instance to use via `connectionRef`.

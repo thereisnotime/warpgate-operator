@@ -36,7 +36,7 @@ type AuthSecretRef struct {
 	// name is the name of the Secret.
 	// +required
 	Name string `json:"name"`
-	// tokenKey is the key in the Secret that holds the API bearer token. Defaults to "token".
+	// tokenKey is the key in the Secret that holds the API API token. Defaults to "token".
 	// If this key exists in the Secret, token-based auth is used (recommended, bypasses OTP).
 	// +optional
 	// +kubebuilder:default="token"
@@ -60,7 +60,7 @@ type WarpgateConnectionSpec struct {
 	Host string `json:"host"`
 	// authSecretRef references a Kubernetes Secret containing authentication credentials.
 	// The Secret can contain either:
-	// - A bearer token (key configured by tokenKey, default "token") — recommended, bypasses OTP/2FA
+	// - A API token (key configured by tokenKey, default "token") — recommended, bypasses OTP/2FA
 	// - Username and password (keys configured by usernameKey/passwordKey) — fallback, requires OTP disabled
 	// If the token key exists in the Secret, token auth is used. Otherwise, username/password auth is used.
 	// +required

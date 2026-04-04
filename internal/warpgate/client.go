@@ -16,7 +16,7 @@ const apiBasePath = "/@warpgate/admin/api"
 // Config holds the configuration for a Warpgate API client.
 type Config struct {
 	Host               string
-	Token              string // Bearer token (recommended, bypasses OTP)
+	Token              string // API token (recommended, bypasses OTP)
 	Username           string // For session auth fallback
 	Password           string // For session auth fallback
 	InsecureSkipVerify bool
@@ -32,11 +32,11 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("warpgate API error (status %d): %s", e.StatusCode, e.Body)
 }
 
-// Client is a Warpgate REST API client supporting bearer-token and session-based cookie authentication.
+// Client is a Warpgate REST API client supporting token-based and session-based cookie authentication.
 type Client struct {
 	host       string
 	baseURL    string
-	token      string // bearer token
+	token      string // API token
 	username   string
 	password   string
 	httpClient *http.Client
@@ -44,7 +44,7 @@ type Client struct {
 }
 
 // NewClient creates a new Warpgate API client from the given config.
-// If Token is set, bearer-token auth is used (recommended, bypasses OTP).
+// If Token is set, token-based auth is used (recommended, bypasses OTP).
 // Otherwise, Username/Password session auth is used as a fallback.
 func NewClient(cfg Config) *Client {
 	host := strings.TrimRight(cfg.Host, "/")
@@ -69,7 +69,7 @@ func NewClient(cfg Config) *Client {
 	}
 
 	if cfg.Token != "" {
-		// Bearer token auth — no login needed.
+		// API token auth — no login needed.
 		c.authed = true
 	} else {
 		c.username = cfg.Username
@@ -150,7 +150,7 @@ func (c *Client) doRequest(method, path string, body any) (*http.Response, error
 	req.Header.Set("Accept", "application/json")
 
 	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
+		req.Header.Set("X-Warpgate-Token", c.token)
 	}
 
 	resp, err := c.httpClient.Do(req)

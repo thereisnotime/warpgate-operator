@@ -424,7 +424,7 @@ func TestLoginSkippedWhenAlreadyAuthed(t *testing.T) {
 func TestBearerTokenAuth(t *testing.T) {
 	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuth = r.Header.Get("Authorization")
+		gotAuth = r.Header.Get("X-Warpgate-Token")
 		_ = json.NewEncoder(w).Encode([]map[string]string{})
 	}))
 	defer srv.Close()
@@ -434,8 +434,8 @@ func TestBearerTokenAuth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if gotAuth != "Bearer test-token-abc" {
-		t.Errorf("expected Authorization header 'Bearer test-token-abc', got %q", gotAuth)
+	if gotAuth != "test-token-abc" {
+		t.Errorf("expected X-Warpgate-Token header 'test-token-abc', got %q", gotAuth)
 	}
 }
 
