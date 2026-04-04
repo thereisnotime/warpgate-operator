@@ -321,15 +321,127 @@ sec: sec-gosec sec-vulncheck sec-secrets
 
 # ─── E2E Testing ─────────────────────────────────────────────────────
 
-# Run e2e tests against minikube
-test-e2e: minikube-up manifests generate fmt vet
+# Run e2e smoke tests against minikube (fully automated)
+test-e2e: minikube-deploy
     #!/usr/bin/env bash
     set -euo pipefail
-    echo "Building and loading operator image into minikube..."
-    {{container_tool}} build -t {{img}} -f Containerfile .
-    minikube image load {{img}} -p {{minikube_profile}}
-    echo "Running e2e tests..."
-    MINIKUBE_PROFILE={{minikube_profile}} go test -tags=e2e ./test/e2e/ -v -ginkgo.v
+    echo "Running E2E smoke tests against minikube..."
+
+    echo "=== Verifying operator pod is running ==="
+    kubectl rollout status deployment/warpgate-operator-controller-manager -n warpgate-operator-system --timeout=120s
+    kubectl get pods -n warpgate-operator-system -l control-plane=controller-manager
+
+    echo "=== Verifying all 10 CRDs installed ==="
+    CRDS=$(kubectl get crds -o name | grep warpgate | wc -l)
+    if [ "$CRDS" -ne 10 ]; then
+        echo "FAIL: expected 10 CRDs, got $CRDS"
+        exit 1
+    fi
+    echo "OK: $CRDS CRDs installed"
+
+    echo "=== Testing webhook validation (should reject invalid host) ==="
+    OUTPUT=$(kubectl apply -f - 2>&1 <<'YAML' || true
+    apiVersion: warpgate.warpgate.warp.tech/v1alpha1
+    kind: WarpgateConnection
+    metadata:
+      name: e2e-bad-conn
+    spec:
+      authSecretRef:
+        name: fake
+    YAML
+    )
+    if echo "$OUTPUT" | grep -q 'spec.host must'; then
+        echo "OK: webhook rejected missing host"
+    else
+        echo "FAIL: webhook did not reject invalid connection"
+        echo "Output: $OUTPUT"
+        exit 1
+    fi
+
+    echo "=== Testing webhook validation (should reject no target type) ==="
+    kubectl create secret generic e2e-auth --from-literal=token=fake --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
+    kubectl apply -f - 2>/dev/null <<'YAML' || true
+    apiVersion: warpgate.warpgate.warp.tech/v1alpha1
+    kind: WarpgateConnection
+    metadata:
+      name: e2e-conn
+    spec:
+      host: https://warpgate.example.com
+      authSecretRef:
+        name: e2e-auth
+    YAML
+    OUTPUT=$(kubectl apply -f - 2>&1 <<'YAML' || true
+    apiVersion: warpgate.warpgate.warp.tech/v1alpha1
+    kind: WarpgateTarget
+    metadata:
+      name: e2e-bad-target
+    spec:
+      connectionRef: e2e-conn
+      name: bad
+    YAML
+    )
+    if echo "$OUTPUT" | grep -q 'exactly one'; then
+        echo "OK: webhook rejected target with no type"
+    else
+        echo "FAIL: webhook did not reject invalid target"
+        echo "Output: $OUTPUT"
+        exit 1
+    fi
+
+    echo "=== Testing webhook defaulting (SSH port should default to 22) ==="
+    kubectl apply -f - <<'YAML'
+    apiVersion: warpgate.warpgate.warp.tech/v1alpha1
+    kind: WarpgateTarget
+    metadata:
+      name: e2e-ssh-target
+    spec:
+      connectionRef: e2e-conn
+      name: test-ssh
+      ssh:
+        host: 10.0.0.1
+        username: root
+    YAML
+    PORT=$(kubectl get warpgatetarget e2e-ssh-target -o jsonpath='{.spec.ssh.port}')
+    if [ "$PORT" = "22" ]; then
+        echo "OK: SSH port defaulted to 22"
+    else
+        echo "FAIL: expected port 22, got $PORT"
+        exit 1
+    fi
+
+    echo "=== Testing valid resource creation ==="
+    kubectl apply -f - <<'YAML'
+    apiVersion: warpgate.warpgate.warp.tech/v1alpha1
+    kind: WarpgateRole
+    metadata:
+      name: e2e-role
+    spec:
+      connectionRef: e2e-conn
+      name: e2e-developers
+    YAML
+    kubectl apply -f - <<'YAML'
+    apiVersion: warpgate.warpgate.warp.tech/v1alpha1
+    kind: WarpgateUser
+    metadata:
+      name: e2e-user
+    spec:
+      connectionRef: e2e-conn
+      username: e2e-test-user
+    YAML
+    echo "OK: role and user created"
+
+    echo "=== Checking operator logs for reconciliation ==="
+    kubectl logs -n warpgate-operator-system -l control-plane=controller-manager --tail=5 2>&1 | head -5
+
+    echo "=== Cleanup ==="
+    kubectl delete warpgatetarget e2e-ssh-target --ignore-not-found
+    kubectl delete warpgaterole e2e-role --ignore-not-found
+    kubectl delete warpgateuser e2e-user --ignore-not-found
+    kubectl delete warpgateconnection e2e-conn --ignore-not-found
+    kubectl delete secret e2e-auth --ignore-not-found
+
+    echo ""
+    echo "=== ALL E2E SMOKE TESTS PASSED ==="
 
 # ─── Setup ───────────────────────────────────────────────────────────
 
