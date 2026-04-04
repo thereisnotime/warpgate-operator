@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/thereisnotime/warpgate-operator/compare/v0.3.0...v0.4.0) (2026-04-04)
+
+
+### Features
+
+* align WarpgateInstance with official Warpgate Helm chart ([a3a01ba](https://github.com/thereisnotime/warpgate-operator/commit/a3a01ba4ed8beef51e15396ee45aebf1e3e01a34))
+
+
+### Bug Fixes
+
+* improve WarpgateInstance lifecycle management ([e31ef7e](https://github.com/thereisnotime/warpgate-operator/commit/e31ef7e52948a5c38cd5a931ab467e2cad35ee0e))
+
 ## [0.3.0](https://github.com/thereisnotime/warpgate-operator/compare/v0.2.1...v0.3.0) (2026-04-04)
 
 
