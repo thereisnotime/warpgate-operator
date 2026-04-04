@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"strings"
 	"time"
@@ -267,12 +268,34 @@ func shouldCreateConnection(inst *warpgatev1alpha1.WarpgateInstance) bool {
 	return *inst.Spec.CreateConnection
 }
 
+func adminPasswordKey(inst *warpgatev1alpha1.WarpgateInstance) string {
+	if inst.Spec.AdminPasswordSecretRef.Key != "" {
+		return inst.Spec.AdminPasswordSecretRef.Key
+	}
+	return "password"
+}
+
 func instanceLabels(inst *warpgatev1alpha1.WarpgateInstance) map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/name":       "warpgate",
 		"app.kubernetes.io/instance":   inst.Name,
 		"app.kubernetes.io/managed-by": "warpgate-operator",
 	}
+}
+
+// configHash returns a short hash of fields that should trigger a pod rollout
+// when they change (version, image, ports, config-affecting settings).
+func configHash(inst *warpgatev1alpha1.WarpgateInstance) string {
+	h := sha256.New()
+	h.Write([]byte(resolveImage(inst)))
+	h.Write(fmt.Appendf(nil, "%d%d%d%d",
+		instanceHTTPPort(inst), instanceSSHPort(inst),
+		instanceMySQLPort(inst), instancePGPort(inst)))
+	h.Write(fmt.Appendf(nil, "%v%v%v%v",
+		httpEnabled(inst), sshEnabled(inst),
+		mysqlEnabled(inst), pgEnabled(inst)))
+	h.Write([]byte(inst.Spec.ExternalHost))
+	return fmt.Sprintf("%x", h.Sum(nil))[:12]
 }
 
 // ---------------------------------------------------------------------------
@@ -295,8 +318,8 @@ func (r *WarpgateInstanceReconciler) buildWarpgateConfig(inst *warpgatev1alpha1.
 		b.WriteString("  enable: false\n")
 	}
 	fmt.Fprintf(&b, "  listen: \"0.0.0.0:%d\"\n", instanceHTTPPort(inst))
-	b.WriteString("  certificate: /data/tls.crt\n")
-	b.WriteString("  key: /data/tls.key\n")
+	b.WriteString("  certificate: /data/tls.certificate.pem\n")
+	b.WriteString("  key: /data/tls.key.pem\n")
 
 	// SSH
 	b.WriteString("ssh:\n")
@@ -428,47 +451,68 @@ func (r *WarpgateInstanceReconciler) buildStatefulSet(inst *warpgatev1alpha1.War
 		})
 	}
 
-	// Init container: copy config from ConfigMap into /data and generate self-signed TLS
-	// certificates if they don't already exist.
-	initScript := `#!/bin/sh
+	// Init container 1: run warpgate unattended-setup if the DB doesn't exist yet.
+	initSetupScript := fmt.Sprintf(`#!/bin/sh
 set -e
-echo "Copying config..."
+if [ ! -f /data/db ]; then
+  echo "Running initial Warpgate setup..."
+  warpgate --skip-securing-files unattended-setup \
+    --data-path /data \
+    --http-port %d \
+    --admin-password "${ADMIN_PASSWORD}"
+  echo "Initial setup complete."
+else
+  echo "Warpgate already initialized, skipping setup."
+fi
+`, instanceHTTPPort(inst))
+
+	// Init container 2: copy operator-generated config and generate self-signed TLS if needed.
+	initConfigScript := `#!/bin/sh
+set -e
+echo "Applying operator config..."
 cp /config/warpgate.yaml /data/warpgate.yaml
-if [ ! -f /data/tls.crt ] || [ ! -f /data/tls.key ]; then
+if [ ! -f /data/tls.certificate.pem ]; then
   echo "Generating self-signed TLS certificate..."
   apk add --no-cache openssl >/dev/null 2>&1 || true
   openssl req -x509 -newkey rsa:4096 \
-    -keyout /data/tls.key -out /data/tls.crt \
+    -keyout /data/tls.key.pem -out /data/tls.certificate.pem \
     -days 3650 -nodes -subj "/CN=warpgate"
-  echo "TLS certificate generated."
 fi
-echo "Init complete."
+echo "Config init complete."
 `
 
-	// Probes — use TCP socket on the HTTP port when HTTP is enabled.
+	// Probes — use HTTP health check on the Warpgate admin API when HTTP is enabled.
 	var livenessProbe, readinessProbe *corev1.Probe
 	if httpEnabled(inst) {
 		livenessProbe = &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
-				TCPSocket: &corev1.TCPSocketAction{
-					Port: intstr.FromInt32(instanceHTTPPort(inst)),
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/@warpgate/api/info",
+					Port:   intstr.FromInt32(instanceHTTPPort(inst)),
+					Scheme: corev1.URISchemeHTTPS,
 				},
 			},
-			InitialDelaySeconds: 15,
-			PeriodSeconds:       20,
+			InitialDelaySeconds: 30,
+			PeriodSeconds:       30,
 			TimeoutSeconds:      5,
+			FailureThreshold:    3,
 		}
 		readinessProbe = &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
-				TCPSocket: &corev1.TCPSocketAction{
-					Port: intstr.FromInt32(instanceHTTPPort(inst)),
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/@warpgate/api/info",
+					Port:   intstr.FromInt32(instanceHTTPPort(inst)),
+					Scheme: corev1.URISchemeHTTPS,
 				},
 			},
-			InitialDelaySeconds: 10,
+			InitialDelaySeconds: 15,
 			PeriodSeconds:       10,
 			TimeoutSeconds:      5,
+			FailureThreshold:    3,
 		}
 	}
+
+	hash := configHash(inst)
 
 	sts := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -482,16 +526,46 @@ echo "Init complete."
 				MatchLabels: labels,
 			},
 			ServiceName: inst.Name + "-http",
+			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
+				Type: appsv1.RollingUpdateStatefulSetStrategyType,
+				RollingUpdate: &appsv1.RollingUpdateStatefulSetStrategy{
+					MaxUnavailable: &intstr.IntOrString{Type: intstr.Int, IntVal: 1},
+				},
+			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: labels,
+					Annotations: map[string]string{
+						"warpgate.warp.tech/config-hash": hash,
+					},
 				},
 				Spec: corev1.PodSpec{
 					InitContainers: []corev1.Container{
 						{
+							Name:    "init-setup",
+							Image:   image,
+							Command: []string{"/bin/sh", "-c", initSetupScript},
+							VolumeMounts: []corev1.VolumeMount{
+								{Name: "data", MountPath: "/data"},
+							},
+							Env: []corev1.EnvVar{
+								{
+									Name: "ADMIN_PASSWORD",
+									ValueFrom: &corev1.EnvVarSource{
+										SecretKeyRef: &corev1.SecretKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: inst.Spec.AdminPasswordSecretRef.Name,
+											},
+											Key: adminPasswordKey(inst),
+										},
+									},
+								},
+							},
+						},
+						{
 							Name:    "init-config",
 							Image:   "alpine:3.20",
-							Command: []string{"/bin/sh", "-c", initScript},
+							Command: []string{"/bin/sh", "-c", initConfigScript},
 							VolumeMounts: []corev1.VolumeMount{
 								{Name: "config", MountPath: "/config", ReadOnly: true},
 								{Name: "data", MountPath: "/data"},
@@ -557,11 +631,16 @@ func (r *WarpgateInstanceReconciler) ensureStatefulSet(ctx context.Context, inst
 		return err
 	}
 
-	// Update if the pod template or replica count changed.
-	if !equality.Semantic.DeepEqual(existing.Spec.Template, desired.Spec.Template) ||
-		!equality.Semantic.DeepEqual(existing.Spec.Replicas, desired.Spec.Replicas) {
+	// Check if update is needed by comparing image, config hash, and replicas.
+	existingImage := existing.Spec.Template.Spec.Containers[0].Image
+	desiredImage := desired.Spec.Template.Spec.Containers[0].Image
+	existingHash := existing.Spec.Template.Annotations["warpgate.warp.tech/config-hash"]
+	desiredHash := desired.Spec.Template.Annotations["warpgate.warp.tech/config-hash"]
+
+	if existingImage != desiredImage || existingHash != desiredHash || *existing.Spec.Replicas != *desired.Spec.Replicas {
 		existing.Spec.Template = desired.Spec.Template
 		existing.Spec.Replicas = desired.Spec.Replicas
+		existing.Spec.UpdateStrategy = desired.Spec.UpdateStrategy
 		return r.Update(ctx, &existing)
 	}
 	return nil

@@ -29,7 +29,7 @@ linters:
         type: "module"
         description: Checks Go logging calls for Kubernetes logging conventions.
     goconst:
-      min-occurrences: 6
+      min-occurrences: 7
     revive:
       rules:
         - name: comment-spacings
