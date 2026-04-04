@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.1...v0.4.2) (2026-04-04)
+
+
+### Bug Fixes
+
+* use X-Warpgate-Token header instead of Authorization Bearer ([40bcd7f](https://github.com/thereisnotime/warpgate-operator/commit/40bcd7f926f56c97d451a7c6b45b53aa81e7c059))
+
 ## [0.4.1](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.0...v0.4.1) (2026-04-04)
 
 
