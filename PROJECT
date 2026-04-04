@@ -90,4 +90,13 @@ resources:
   kind: WarpgateTicket
   path: github.com/thereisnotime/warpgate-operator/api/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: warpgate.warp.tech
+  group: warpgate
+  kind: WarpgateInstance
+  path: github.com/thereisnotime/warpgate-operator/api/v1alpha1
+  version: v1alpha1
 version: "3"

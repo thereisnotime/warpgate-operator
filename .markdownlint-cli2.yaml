@@ -5,3 +5,4 @@ globs:
   - "!.claude/**"
   - "!openspec/**"
   - "!node_modules/**"
+  - "!CHANGELOG.md"

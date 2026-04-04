@@ -249,6 +249,14 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "WarpgateTicket")
 		os.Exit(1)
 	}
+	if err := (&controller.WarpgateInstanceReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "WarpgateInstance")
+		os.Exit(1)
+	}
+
 	if err := (&warpgatev1alpha1.WarpgateConnection{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create webhook", "webhook", "WarpgateConnection")
 		os.Exit(1)
@@ -283,6 +291,10 @@ func main() {
 	}
 	if err := (&warpgatev1alpha1.WarpgateTicket{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create webhook", "webhook", "WarpgateTicket")
+		os.Exit(1)
+	}
+	if err := (&warpgatev1alpha1.WarpgateInstance{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create webhook", "webhook", "WarpgateInstance")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

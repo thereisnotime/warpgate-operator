@@ -110,6 +110,10 @@ The admission webhook applies these defaults if not set:
 
 ## Notes
 
+- **Auto-created by WarpgateInstance:** When a `WarpgateInstance` CR has `createConnection: true` (the default),
+  the operator automatically creates a `WarpgateConnection` in the same namespace, pre-configured to talk to the
+  deployed instance. You don't need to create one manually in that case -- just reference the auto-created
+  connection name (found in the `WarpgateInstance` status) from your other CRDs.
 - The auth Secret must exist in the same namespace as the `WarpgateConnection` CR.
 - If the Secret contains the token key, bearer auth is used regardless of whether username/password keys also exist.
 - Username/password session auth requires OTP to be disabled on the Warpgate instance. If OTP is enabled, use token auth instead.

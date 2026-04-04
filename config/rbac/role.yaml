@@ -7,17 +7,48 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - configmaps
+  - persistentvolumeclaims
   - secrets
+  - services
   verbs:
   - create
   - delete
   - get
   - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cert-manager.io
+  resources:
+  - certificates
+  - issuers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - warpgate.warpgate.warp.tech
   resources:
   - warpgateconnections
+  - warpgateinstances
   - warpgatepasswordcredentials
   - warpgatepublickeycredentials
   - warpgateroles
@@ -38,6 +69,7 @@ rules:
   - warpgate.warpgate.warp.tech
   resources:
   - warpgateconnections/finalizers
+  - warpgateinstances/finalizers
   - warpgatepasswordcredentials/finalizers
   - warpgatepublickeycredentials/finalizers
   - warpgateroles/finalizers
@@ -52,6 +84,8 @@ rules:
   - warpgate.warpgate.warp.tech
   resources:
   - warpgateconnections/status
+  - warpgateinstances/scale
+  - warpgateinstances/status
   - warpgatepasswordcredentials/status
   - warpgatepublickeycredentials/status
   - warpgateroles/status

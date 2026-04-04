@@ -30,6 +30,26 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /mutate-warpgate-warpgate-warp-tech-v1alpha1-warpgateinstance
+  failurePolicy: Fail
+  name: mwarpgateinstance.kb.io
+  rules:
+  - apiGroups:
+    - warpgate.warpgate.warp.tech
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - warpgateinstances
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /mutate-warpgate-warpgate-warp-tech-v1alpha1-warpgatepasswordcredential
   failurePolicy: Fail
   name: mwarpgatepasswordcredential.kb.io
@@ -210,6 +230,27 @@ webhooks:
     - DELETE
     resources:
     - warpgateconnections
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-warpgate-warpgate-warp-tech-v1alpha1-warpgateinstance
+  failurePolicy: Fail
+  name: vwarpgateinstance.kb.io
+  rules:
+  - apiGroups:
+    - warpgate.warpgate.warp.tech
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    - DELETE
+    resources:
+    - warpgateinstances
   sideEffects: None
 - admissionReviewVersions:
   - v1

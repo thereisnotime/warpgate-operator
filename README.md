@@ -25,7 +25,8 @@ lifecycle management.
 
 ## Features
 
-- **9 CRDs** covering all Warpgate resource types -- connections, roles, users, targets, bindings, credentials, and tickets
+- **Deploy and manage Warpgate instances** directly on Kubernetes with the `WarpgateInstance` CRD
+- **10 CRDs** covering all Warpgate resource types -- instances, connections, roles, users, targets, bindings, credentials, and tickets
 - **Multi-instance support** via `WarpgateConnection` CRDs pointing to different Warpgate instances
 - **Continuous drift reconciliation** that enforces desired state every 5 minutes
 - **Secret references** for sensitive fields -- no inline tokens or passwords in CRD specs
@@ -105,6 +106,7 @@ All resources belong to the API group `warpgate.warpgate.warp.tech/v1alpha1`.
 
 | Kind | Description | Docs |
 |------|-------------|------|
+| `WarpgateInstance` | Deploy and manage a Warpgate instance on Kubernetes | [docs/crds/warpgate-instance.md](docs/crds/warpgate-instance.md) |
 | `WarpgateConnection` | Connection to a Warpgate instance | [docs/crds/warpgate-connection.md](docs/crds/warpgate-connection.md) |
 | `WarpgateRole` | Role definition | [docs/crds/warpgate-role.md](docs/crds/warpgate-role.md) |
 | `WarpgateUser` | User account with credential policy and auto-generated password | [docs/crds/warpgate-user.md](docs/crds/warpgate-user.md) |
@@ -137,6 +139,7 @@ flowchart TD
 
 ```mermaid
 erDiagram
+    WarpgateInstance ||--o| WarpgateConnection : "auto-creates"
     WarpgateConnection ||--o{ WarpgateRole : "referenced by"
     WarpgateConnection ||--o{ WarpgateUser : "referenced by"
     WarpgateConnection ||--o{ WarpgateTarget : "referenced by"
@@ -162,7 +165,8 @@ erDiagram
 Every resource CR references a `WarpgateConnection` by name (same namespace) via `connectionRef`. The operator
 resolves the connection, reads the auth credentials from the referenced Kubernetes Secret, and talks to the Warpgate
 REST API. Roles are bound to users and targets through dedicated binding CRDs, while credentials and tickets
-hang off users directly.
+hang off users directly. A `WarpgateInstance` can optionally deploy Warpgate itself and auto-create the
+`WarpgateConnection` CR, giving you a fully self-contained setup.
 
 ## Roadmap
 

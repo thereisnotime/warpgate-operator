@@ -11,6 +11,7 @@ resources:
 - bases/warpgate.warpgate.warp.tech_warpgatepasswordcredentials.yaml
 - bases/warpgate.warpgate.warp.tech_warpgatepublickeycredentials.yaml
 - bases/warpgate.warpgate.warp.tech_warpgatetickets.yaml
+- bases/warpgate.warpgate.warp.tech_warpgateinstances.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:
