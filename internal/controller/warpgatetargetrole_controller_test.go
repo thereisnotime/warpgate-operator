@@ -105,9 +105,9 @@ var _ = Describe("WarpgateTargetRole Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:                 mockServer.URL,
-					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
-					InsecureSkipVerify:   true,
+					Host:               mockServer.URL,
+					AuthSecretRef:      warpgatev1alpha1.AuthSecretRef{Name: secretName},
+					InsecureSkipVerify: true,
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -198,9 +198,9 @@ var _ = Describe("WarpgateTargetRole Controller", func() {
 			conn := &warpgatev1alpha1.WarpgateConnection{
 				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: namespace},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:                 mockServer.URL,
-					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
-					InsecureSkipVerify:   true,
+					Host:               mockServer.URL,
+					AuthSecretRef:      warpgatev1alpha1.AuthSecretRef{Name: secretName},
+					InsecureSkipVerify: true,
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -375,9 +375,9 @@ var _ = Describe("WarpgateTargetRole Controller", func() {
 			conn := &warpgatev1alpha1.WarpgateConnection{
 				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: namespace},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:                 mockServer.URL,
-					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
-					InsecureSkipVerify:   true,
+					Host:               mockServer.URL,
+					AuthSecretRef:      warpgatev1alpha1.AuthSecretRef{Name: secretName},
+					InsecureSkipVerify: true,
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -471,9 +471,9 @@ var _ = Describe("WarpgateTargetRole Controller", func() {
 			conn := &warpgatev1alpha1.WarpgateConnection{
 				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: namespace},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:                 mockServer.URL,
-					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
-					InsecureSkipVerify:   true,
+					Host:               mockServer.URL,
+					AuthSecretRef:      warpgatev1alpha1.AuthSecretRef{Name: secretName},
+					InsecureSkipVerify: true,
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -569,9 +569,9 @@ var _ = Describe("WarpgateTargetRole Controller", func() {
 			conn := &warpgatev1alpha1.WarpgateConnection{
 				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: namespace},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:                 mockServer.URL,
-					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
-					InsecureSkipVerify:   true,
+					Host:               mockServer.URL,
+					AuthSecretRef:      warpgatev1alpha1.AuthSecretRef{Name: secretName},
+					InsecureSkipVerify: true,
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -683,9 +683,9 @@ var _ = Describe("WarpgateTargetRole Controller", func() {
 			conn := &warpgatev1alpha1.WarpgateConnection{
 				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: namespace},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:                 mockServer.URL,
-					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
-					InsecureSkipVerify:   true,
+					Host:               mockServer.URL,
+					AuthSecretRef:      warpgatev1alpha1.AuthSecretRef{Name: secretName},
+					InsecureSkipVerify: true,
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -794,9 +794,9 @@ var _ = Describe("WarpgateTargetRole Controller", func() {
 			conn := &warpgatev1alpha1.WarpgateConnection{
 				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: namespace},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:                 mockServer.URL,
-					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
-					InsecureSkipVerify:   true,
+					Host:               mockServer.URL,
+					AuthSecretRef:      warpgatev1alpha1.AuthSecretRef{Name: secretName},
+					InsecureSkipVerify: true,
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -901,9 +901,9 @@ var _ = Describe("WarpgateTargetRole Controller", func() {
 			conn := &warpgatev1alpha1.WarpgateConnection{
 				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: namespace},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:                 mockServer.URL,
-					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
-					InsecureSkipVerify:   true,
+					Host:               mockServer.URL,
+					AuthSecretRef:      warpgatev1alpha1.AuthSecretRef{Name: secretName},
+					InsecureSkipVerify: true,
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -1031,9 +1031,9 @@ var _ = Describe("WarpgateTargetRole Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:                 mockServer.URL,
-					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
-					InsecureSkipVerify:   true,
+					Host:               mockServer.URL,
+					AuthSecretRef:      warpgatev1alpha1.AuthSecretRef{Name: secretName},
+					InsecureSkipVerify: true,
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())

@@ -24,39 +24,45 @@ import (
 func TestWarpgateConnectionDefaulter(t *testing.T) {
 	d := &WarpgateConnectionCustomDefaulter{}
 
-	t.Run("defaults usernameKey and passwordKey", func(t *testing.T) {
+	t.Run("defaults tokenKey, usernameKey and passwordKey", func(t *testing.T) {
 		conn := &WarpgateConnection{
 			Spec: WarpgateConnectionSpec{
-				Host:                 "https://warpgate.example.com",
-				CredentialsSecretRef: CredentialsSecretRef{Name: "warpgate-credentials"},
+				Host:          "https://warpgate.example.com",
+				AuthSecretRef: AuthSecretRef{Name: "warpgate-credentials"},
 			},
 		}
 		if err := d.Default(context.Background(), conn); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if conn.Spec.CredentialsSecretRef.UsernameKey != "username" {
-			t.Errorf("expected usernameKey 'username', got %q", conn.Spec.CredentialsSecretRef.UsernameKey)
+		if conn.Spec.AuthSecretRef.TokenKey != "token" {
+			t.Errorf("expected tokenKey 'token', got %q", conn.Spec.AuthSecretRef.TokenKey)
 		}
-		if conn.Spec.CredentialsSecretRef.PasswordKey != "password" {
-			t.Errorf("expected passwordKey 'password', got %q", conn.Spec.CredentialsSecretRef.PasswordKey)
+		if conn.Spec.AuthSecretRef.UsernameKey != "username" {
+			t.Errorf("expected usernameKey 'username', got %q", conn.Spec.AuthSecretRef.UsernameKey)
+		}
+		if conn.Spec.AuthSecretRef.PasswordKey != "password" {
+			t.Errorf("expected passwordKey 'password', got %q", conn.Spec.AuthSecretRef.PasswordKey)
 		}
 	})
 
 	t.Run("preserves custom keys", func(t *testing.T) {
 		conn := &WarpgateConnection{
 			Spec: WarpgateConnectionSpec{
-				Host:                 "https://warpgate.example.com",
-				CredentialsSecretRef: CredentialsSecretRef{Name: "creds", UsernameKey: "admin_user", PasswordKey: "admin_pass"},
+				Host:          "https://warpgate.example.com",
+				AuthSecretRef: AuthSecretRef{Name: "creds", TokenKey: "my-token", UsernameKey: "admin_user", PasswordKey: "admin_pass"},
 			},
 		}
 		if err := d.Default(context.Background(), conn); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if conn.Spec.CredentialsSecretRef.UsernameKey != "admin_user" {
-			t.Errorf("expected usernameKey 'admin_user', got %q", conn.Spec.CredentialsSecretRef.UsernameKey)
+		if conn.Spec.AuthSecretRef.TokenKey != "my-token" {
+			t.Errorf("expected tokenKey 'my-token', got %q", conn.Spec.AuthSecretRef.TokenKey)
 		}
-		if conn.Spec.CredentialsSecretRef.PasswordKey != "admin_pass" {
-			t.Errorf("expected passwordKey 'admin_pass', got %q", conn.Spec.CredentialsSecretRef.PasswordKey)
+		if conn.Spec.AuthSecretRef.UsernameKey != "admin_user" {
+			t.Errorf("expected usernameKey 'admin_user', got %q", conn.Spec.AuthSecretRef.UsernameKey)
+		}
+		if conn.Spec.AuthSecretRef.PasswordKey != "admin_pass" {
+			t.Errorf("expected passwordKey 'admin_pass', got %q", conn.Spec.AuthSecretRef.PasswordKey)
 		}
 	})
 }
@@ -68,8 +74,8 @@ func TestWarpgateConnectionValidator(t *testing.T) {
 	validConn := func() *WarpgateConnection {
 		return &WarpgateConnection{
 			Spec: WarpgateConnectionSpec{
-				Host:                 "https://warpgate.example.com",
-				CredentialsSecretRef: CredentialsSecretRef{Name: "warpgate-credentials"},
+				Host:          "https://warpgate.example.com",
+				AuthSecretRef: AuthSecretRef{Name: "warpgate-credentials"},
 			},
 		}
 	}
@@ -108,12 +114,12 @@ func TestWarpgateConnectionValidator(t *testing.T) {
 		}
 	})
 
-	t.Run("empty tokenSecretRef.name rejected", func(t *testing.T) {
+	t.Run("empty authSecretRef.name rejected", func(t *testing.T) {
 		c := validConn()
-		c.Spec.CredentialsSecretRef.Name = ""
+		c.Spec.AuthSecretRef.Name = ""
 		_, err := v.ValidateCreate(ctx, c)
 		if err == nil {
-			t.Error("expected error for empty tokenSecretRef.name")
+			t.Error("expected error for empty authSecretRef.name")
 		}
 	})
 

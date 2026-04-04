@@ -53,16 +53,15 @@ kubectl apply -f https://github.com/thereisnotime/warpgate-operator/releases/lat
 
 ## Quick Start
 
-Create a Secret with your Warpgate admin credentials, then define a connection, a role, and a user:
+Create a Secret with your Warpgate API token (recommended), then define a connection, a role, and a user:
 
 ```yaml
 apiVersion: v1
 kind: Secret
 metadata:
-  name: warpgate-credentials
+  name: warpgate-auth
 stringData:
-  username: admin
-  password: YOUR_PASSWORD
+  token: YOUR_WARPGATE_API_TOKEN
 ```
 
 ```yaml
@@ -72,9 +71,13 @@ metadata:
   name: my-warpgate
 spec:
   host: https://warpgate.example.com
-  credentialsSecretRef:
-    name: warpgate-credentials
+  authSecretRef:
+    name: warpgate-auth
 ```
+
+> **Note:** Username/password authentication is also supported as a fallback for Warpgate instances
+> that don't have OTP/2FA enabled. See the [WarpgateConnection docs](docs/crds/warpgate-connection.md)
+> for details on both auth modes.
 
 ```yaml
 apiVersion: warpgate.warpgate.warp.tech/v1alpha1
@@ -157,7 +160,7 @@ erDiagram
 ```
 
 Every resource CR references a `WarpgateConnection` by name (same namespace) via `connectionRef`. The operator
-resolves the connection, reads the credentials from the referenced Kubernetes Secret, and talks to the Warpgate
+resolves the connection, reads the auth credentials from the referenced Kubernetes Secret, and talks to the Warpgate
 REST API. Roles are bound to users and targets through dedicated binding CRDs, while credentials and tickets
 hang off users directly.
 

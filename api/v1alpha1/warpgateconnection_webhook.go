@@ -43,17 +43,21 @@ func (r *WarpgateConnection) SetupWebhookWithManager(mgr ctrl.Manager) error {
 }
 
 const (
+	defaultTokenKey    = "token"
 	defaultUsernameKey = "username"
 	defaultPasswordKey = "password"
 )
 
 // Default sets sensible defaults for WarpgateConnection fields.
 func (d *WarpgateConnectionCustomDefaulter) Default(ctx context.Context, conn *WarpgateConnection) error {
-	if conn.Spec.CredentialsSecretRef.UsernameKey == "" {
-		conn.Spec.CredentialsSecretRef.UsernameKey = defaultUsernameKey
+	if conn.Spec.AuthSecretRef.TokenKey == "" {
+		conn.Spec.AuthSecretRef.TokenKey = defaultTokenKey
 	}
-	if conn.Spec.CredentialsSecretRef.PasswordKey == "" {
-		conn.Spec.CredentialsSecretRef.PasswordKey = defaultPasswordKey
+	if conn.Spec.AuthSecretRef.UsernameKey == "" {
+		conn.Spec.AuthSecretRef.UsernameKey = defaultUsernameKey
+	}
+	if conn.Spec.AuthSecretRef.PasswordKey == "" {
+		conn.Spec.AuthSecretRef.PasswordKey = defaultPasswordKey
 	}
 	return nil
 }
@@ -83,8 +87,8 @@ func validateConnection(conn *WarpgateConnection) (admission.Warnings, error) {
 	if !strings.HasPrefix(conn.Spec.Host, "http://") && !strings.HasPrefix(conn.Spec.Host, "https://") {
 		return nil, fmt.Errorf("spec.host must start with http:// or https://")
 	}
-	if conn.Spec.CredentialsSecretRef.Name == "" {
-		return nil, fmt.Errorf("spec.credentialsSecretRef.name must not be empty")
+	if conn.Spec.AuthSecretRef.Name == "" {
+		return nil, fmt.Errorf("spec.authSecretRef.name must not be empty")
 	}
 	return nil, nil
 }

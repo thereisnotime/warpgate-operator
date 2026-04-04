@@ -40,23 +40,34 @@ spec:
           spec:
             description: spec defines the desired state of WarpgateConnection
             properties:
-              credentialsSecretRef:
+              authSecretRef:
                 description: |-
-                  credentialsSecretRef references a Kubernetes Secret containing Warpgate admin credentials.
-                  The Secret must have keys for the username and password (configurable, defaults to "username" and "password").
+                  authSecretRef references a Kubernetes Secret containing authentication credentials.
+                  The Secret can contain either:
+                  - A bearer token (key configured by tokenKey, default "token") — recommended, bypasses OTP/2FA
+                  - Username and password (keys configured by usernameKey/passwordKey) — fallback, requires OTP disabled
+                  If the token key exists in the Secret, token auth is used. Otherwise, username/password auth is used.
                 properties:
                   name:
                     description: name is the name of the Secret.
                     type: string
                   passwordKey:
                     default: password
-                    description: passwordKey is the key in the Secret that holds the
-                      password. Defaults to "password".
+                    description: |-
+                      passwordKey is the key in the Secret for password. Defaults to "password".
+                      Used only when the token key is not found in the Secret.
+                    type: string
+                  tokenKey:
+                    default: token
+                    description: |-
+                      tokenKey is the key in the Secret that holds the API bearer token. Defaults to "token".
+                      If this key exists in the Secret, token-based auth is used (recommended, bypasses OTP).
                     type: string
                   usernameKey:
                     default: username
-                    description: usernameKey is the key in the Secret that holds the
-                      username. Defaults to "username".
+                    description: |-
+                      usernameKey is the key in the Secret for username. Defaults to "username".
+                      Used only when the token key is not found in the Secret.
                     type: string
                 required:
                 - name
@@ -69,7 +80,7 @@ spec:
                   Not recommended for production.
                 type: boolean
             required:
-            - credentialsSecretRef
+            - authSecretRef
             - host
             type: object
           status:

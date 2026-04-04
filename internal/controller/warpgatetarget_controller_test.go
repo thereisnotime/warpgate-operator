@@ -67,9 +67,9 @@ var _ = Describe("WarpgateTarget Controller", func() {
 				Namespace: namespace,
 			},
 			Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-				Host:                 serverURL,
-				CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
-				InsecureSkipVerify:   true,
+				Host:               serverURL,
+				AuthSecretRef:      warpgatev1alpha1.AuthSecretRef{Name: secretName},
+				InsecureSkipVerify: true,
 			},
 		}
 		Expect(k8sClient.Create(ctx, conn)).To(Succeed())

@@ -11,13 +11,37 @@ import (
 )
 
 func TestNewClient(t *testing.T) {
-	c := NewClient(Config{
-		Host:     "https://warpgate.example.com",
-		Username: "u", Password: "p",
+	t.Run("session auth", func(t *testing.T) {
+		c := NewClient(Config{
+			Host:     "https://warpgate.example.com",
+			Username: "u", Password: "p",
+		})
+		if c.baseURL != "https://warpgate.example.com/@warpgate/admin/api" {
+			t.Errorf("unexpected baseURL: %s", c.baseURL)
+		}
+		if c.authed {
+			t.Error("session client should not be pre-authed")
+		}
+		if c.token != "" {
+			t.Error("session client should have empty token")
+		}
 	})
-	if c.baseURL != "https://warpgate.example.com/@warpgate/admin/api" {
-		t.Errorf("unexpected baseURL: %s", c.baseURL)
-	}
+
+	t.Run("bearer token", func(t *testing.T) {
+		c := NewClient(Config{
+			Host:  "https://warpgate.example.com",
+			Token: "my-secret-token",
+		})
+		if c.baseURL != "https://warpgate.example.com/@warpgate/admin/api" {
+			t.Errorf("unexpected baseURL: %s", c.baseURL)
+		}
+		if !c.authed {
+			t.Error("token client should be pre-authed")
+		}
+		if c.token != "my-secret-token" {
+			t.Errorf("unexpected token: %s", c.token)
+		}
+	})
 }
 
 func TestNewClientTrailingSlash(t *testing.T) {
@@ -394,6 +418,47 @@ func TestLoginSkippedWhenAlreadyAuthed(t *testing.T) {
 	err := c.login()
 	if err != nil {
 		t.Fatalf("expected nil from login() when already authed, got: %v", err)
+	}
+}
+
+func TestBearerTokenAuth(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		_ = json.NewEncoder(w).Encode([]map[string]string{})
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "test-token-abc"})
+	err := c.Get("/roles", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotAuth != "Bearer test-token-abc" {
+		t.Errorf("expected Authorization header 'Bearer test-token-abc', got %q", gotAuth)
+	}
+}
+
+func TestBearerTokenSkipsLogin(t *testing.T) {
+	var loginCalled bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/@warpgate/api/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		loginCalled = true
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]string{})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "skip-login-token"})
+	err := c.Get("/roles", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if loginCalled {
+		t.Error("login endpoint should NOT be called when bearer token is set")
 	}
 }
 

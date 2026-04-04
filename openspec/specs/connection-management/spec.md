@@ -2,34 +2,44 @@
 
 ## Overview
 
-The `WarpgateConnection` CRD represents a connection to a Warpgate bastion host instance. It stores the host URL and a reference to a Kubernetes Secret containing credentials (username/password). All other CRDs reference a `WarpgateConnection` by name (in the same namespace) to know which Warpgate instance to talk to, enabling multi-instance support within a single cluster.
+The `WarpgateConnection` CRD represents a connection to a Warpgate bastion host instance. It stores the host URL and a reference to a Kubernetes Secret containing auth credentials (API token for bearer auth, or username/password for session auth). All other CRDs reference a `WarpgateConnection` by name (in the same namespace) to know which Warpgate instance to talk to, enabling multi-instance support within a single cluster.
 
 ## Requirements
 
 ### REQ-CONN-001: Connection CRD Definition
-**Status:** ADDED
+**Status:** MODIFIED
 
 The operator provides a `WarpgateConnection` custom resource with the following spec fields:
 - `host` (required) -- URL of the Warpgate instance (e.g. `https://warpgate.example.com`).
-- `tokenSecretRef` (required) -- a `SecretKeyRef` pointing to a Kubernetes Secret containing credentials (`username` and `password` keys).
+- `authSecretRef` (required) -- references a Kubernetes Secret containing auth credentials. Sub-fields:
+  - `name` (required) -- name of the Secret.
+  - `tokenKey` (optional, default `token`) -- key holding the API token for bearer auth.
+  - `usernameKey` (optional, default `username`) -- key holding the username for session auth.
+  - `passwordKey` (optional, default `password`) -- key holding the password for session auth.
 - `insecureSkipVerify` (optional, default `false`) -- disables TLS certificate verification.
+
+Auth mode is auto-detected: if the Secret contains the token key, bearer auth is used. Otherwise, the operator falls back to username/password session auth.
 
 Status fields:
 - `conditions` -- standard Kubernetes conditions list (map by type).
 
 **Scenarios:**
-- **Given** a valid `WarpgateConnection` CR is created **When** the controller reconciles it **Then** it reads the credentials from the referenced Secret, validates the connection by listing roles, and sets the `Ready` condition to `True` with reason `Connected`.
+- **Given** a valid `WarpgateConnection` CR is created **When** the controller reconciles it **Then** it reads the auth credentials from the referenced Secret, validates the connection by listing roles, and sets the `Ready` condition to `True` with reason `Connected`.
 - **Given** a `WarpgateConnection` CR references a Secret that does not exist **When** the controller reconciles **Then** the `Ready` condition is set to `False` with reason `ConnectionFailed`.
 - **Given** a `WarpgateConnection` CR points to an unreachable Warpgate host **When** the controller reconciles **Then** the `Ready` condition is set to `False` with reason `ConnectionFailed` and it requeues after 5 minutes.
 
-### REQ-CONN-002: Credential Secret Format
+### REQ-CONN-002: Auth Secret Format
 **Status:** MODIFIED
 
-The referenced Secret must contain `username` and `password` keys for session-based authentication.
+The referenced Secret supports two auth modes, auto-detected by the operator:
+
+1. **Bearer token (recommended):** If the Secret contains a key matching `tokenKey` (default `token`), the operator uses bearer token authentication. This bypasses OTP/2FA requirements.
+2. **Username/password (fallback):** If the token key is absent, the operator reads `usernameKey` (default `username`) and `passwordKey` (default `password`) for session-based authentication. Requires OTP to be disabled on the Warpgate instance.
 
 **Scenarios:**
-- **Given** a `WarpgateConnection` referencing a Secret with `username` and `password` keys **When** the controller builds the API client **Then** it reads both values and authenticates via session-based auth.
-- **Given** a `WarpgateConnection` referencing a Secret missing the `username` or `password` key **When** the controller reconciles **Then** the `Ready` condition is set to `False` with reason `ConnectionFailed`.
+- **Given** a `WarpgateConnection` referencing a Secret with a `token` key **When** the controller builds the API client **Then** it uses bearer token authentication.
+- **Given** a `WarpgateConnection` referencing a Secret with `username` and `password` keys but no `token` key **When** the controller builds the API client **Then** it uses session-based authentication.
+- **Given** a `WarpgateConnection` referencing a Secret missing both the token key and the username/password keys **When** the controller reconciles **Then** the `Ready` condition is set to `False` with reason `ConnectionFailed`.
 
 ### REQ-CONN-003: Periodic Re-validation
 **Status:** ADDED
@@ -52,7 +62,7 @@ The controller adds the `warpgate.warp.tech/finalizer` to every `WarpgateConnect
 ### REQ-CONN-005: Namespace-Scoped Secret Lookup
 **Status:** ADDED
 
-The controller reads the credentials Secret from the same namespace as the `WarpgateConnection` CR. Cross-namespace Secret references are not supported.
+The controller reads the auth Secret from the same namespace as the `WarpgateConnection` CR. Cross-namespace Secret references are not supported.
 
 **Scenarios:**
 - **Given** a `WarpgateConnection` in namespace `team-a` referencing Secret `wg-token` **When** the controller reads the Secret **Then** it looks up `team-a/wg-token`, not a cluster-wide search.

@@ -98,9 +98,9 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:                 mockServer.URL,
-					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
-					InsecureSkipVerify:   true,
+					Host:               mockServer.URL,
+					AuthSecretRef:      warpgatev1alpha1.AuthSecretRef{Name: secretName},
+					InsecureSkipVerify: true,
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -157,8 +157,8 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:                 "https://warpgate.example.com",
-					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: "nonexistent-secret"},
+					Host:          "https://warpgate.example.com",
+					AuthSecretRef: warpgatev1alpha1.AuthSecretRef{Name: "nonexistent-secret"},
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -221,8 +221,8 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:                 "http://127.0.0.1:1", // unreachable port
-					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
+					Host:          "http://127.0.0.1:1", // unreachable port
+					AuthSecretRef: warpgatev1alpha1.AuthSecretRef{Name: secretName},
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -301,9 +301,9 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:                 mockServer.URL,
-					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
-					InsecureSkipVerify:   true,
+					Host:               mockServer.URL,
+					AuthSecretRef:      warpgatev1alpha1.AuthSecretRef{Name: secretName},
+					InsecureSkipVerify: true,
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -373,8 +373,8 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:                 "https://warpgate.example.com",
-					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
+					Host:          "https://warpgate.example.com",
+					AuthSecretRef: warpgatev1alpha1.AuthSecretRef{Name: secretName},
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -440,8 +440,8 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:                 "https://warpgate.example.com",
-					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
+					Host:          "https://warpgate.example.com",
+					AuthSecretRef: warpgatev1alpha1.AuthSecretRef{Name: secretName},
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -536,7 +536,7 @@ var _ = Describe("WarpgateConnection Controller", func() {
 				},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
 					Host: mockServer.URL,
-					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{
+					AuthSecretRef: warpgatev1alpha1.AuthSecretRef{
 						Name:        secretName,
 						PasswordKey: "", // should fall back to "password"
 					},
@@ -565,7 +565,7 @@ var _ = Describe("WarpgateConnection Controller", func() {
 				},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
 					Host: mockServer.URL,
-					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{
+					AuthSecretRef: warpgatev1alpha1.AuthSecretRef{
 						Name:        secretName,
 						PasswordKey: "nonexistent-key",
 					},
@@ -629,9 +629,9 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:                 mockServer.URL,
-					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
-					InsecureSkipVerify:   true,
+					Host:               mockServer.URL,
+					AuthSecretRef:      warpgatev1alpha1.AuthSecretRef{Name: secretName},
+					InsecureSkipVerify: true,
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -697,8 +697,8 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:                 "http://127.0.0.1:1",
-					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
+					Host:          "http://127.0.0.1:1",
+					AuthSecretRef: warpgatev1alpha1.AuthSecretRef{Name: secretName},
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -746,8 +746,8 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:                 "https://warpgate.example.com",
-					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: "nonexistent-secret-statusfail"},
+					Host:          "https://warpgate.example.com",
+					AuthSecretRef: warpgatev1alpha1.AuthSecretRef{Name: "nonexistent-secret-statusfail"},
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
@@ -829,9 +829,9 @@ var _ = Describe("WarpgateConnection Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:                 mockServer.URL,
-					CredentialsSecretRef: warpgatev1alpha1.CredentialsSecretRef{Name: secretName},
-					InsecureSkipVerify:   true,
+					Host:               mockServer.URL,
+					AuthSecretRef:      warpgatev1alpha1.AuthSecretRef{Name: secretName},
+					InsecureSkipVerify: true,
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())

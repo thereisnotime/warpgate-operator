@@ -31,16 +31,23 @@ type SecretKeyRef struct {
 	Key string `json:"key,omitempty"`
 }
 
-// CredentialsSecretRef references a Kubernetes Secret containing login credentials.
-type CredentialsSecretRef struct {
+// AuthSecretRef references a Kubernetes Secret containing authentication credentials.
+type AuthSecretRef struct {
 	// name is the name of the Secret.
 	// +required
 	Name string `json:"name"`
-	// usernameKey is the key in the Secret that holds the username. Defaults to "username".
+	// tokenKey is the key in the Secret that holds the API bearer token. Defaults to "token".
+	// If this key exists in the Secret, token-based auth is used (recommended, bypasses OTP).
+	// +optional
+	// +kubebuilder:default="token"
+	TokenKey string `json:"tokenKey,omitempty"`
+	// usernameKey is the key in the Secret for username. Defaults to "username".
+	// Used only when the token key is not found in the Secret.
 	// +optional
 	// +kubebuilder:default="username"
 	UsernameKey string `json:"usernameKey,omitempty"`
-	// passwordKey is the key in the Secret that holds the password. Defaults to "password".
+	// passwordKey is the key in the Secret for password. Defaults to "password".
+	// Used only when the token key is not found in the Secret.
 	// +optional
 	// +kubebuilder:default="password"
 	PasswordKey string `json:"passwordKey,omitempty"`
@@ -51,10 +58,13 @@ type WarpgateConnectionSpec struct {
 	// host is the URL of the Warpgate instance (e.g. https://warpgate.example.com).
 	// +required
 	Host string `json:"host"`
-	// credentialsSecretRef references a Kubernetes Secret containing Warpgate admin credentials.
-	// The Secret must have keys for the username and password (configurable, defaults to "username" and "password").
+	// authSecretRef references a Kubernetes Secret containing authentication credentials.
+	// The Secret can contain either:
+	// - A bearer token (key configured by tokenKey, default "token") — recommended, bypasses OTP/2FA
+	// - Username and password (keys configured by usernameKey/passwordKey) — fallback, requires OTP disabled
+	// If the token key exists in the Secret, token auth is used. Otherwise, username/password auth is used.
 	// +required
-	CredentialsSecretRef CredentialsSecretRef `json:"credentialsSecretRef"`
+	AuthSecretRef AuthSecretRef `json:"authSecretRef"`
 	// insecureSkipVerify disables TLS certificate verification. Not recommended for production.
 	// +optional
 	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`

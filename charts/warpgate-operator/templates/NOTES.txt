@@ -2,9 +2,15 @@ The warpgate-operator has been installed.
 
 To get started, create a WarpgateConnection resource pointing to your Warpgate instance:
 
-  1. Create a Secret with your Warpgate admin credentials:
+  1. Create a Secret with your Warpgate API token (recommended):
 
-     kubectl create secret generic warpgate-credentials \
+     kubectl create secret generic warpgate-auth \
+       --namespace={{ .Release.Namespace }} \
+       --from-literal=token=<YOUR_WARPGATE_API_TOKEN>
+
+     Or, if your instance doesn't have OTP enabled, you can use username/password instead:
+
+     kubectl create secret generic warpgate-auth \
        --namespace={{ .Release.Namespace }} \
        --from-literal=username=admin \
        --from-literal=password=<YOUR_WARPGATE_ADMIN_PASSWORD>
@@ -19,8 +25,8 @@ To get started, create a WarpgateConnection resource pointing to your Warpgate i
        namespace: {{ .Release.Namespace }}
      spec:
        host: https://warpgate.example.com
-       tokenSecretRef:
-         name: warpgate-credentials
+       authSecretRef:
+         name: warpgate-auth
      EOF
 
   3. Verify the connection is ready:

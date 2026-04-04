@@ -38,29 +38,44 @@ func getWarpgateClient(ctx context.Context, r client.Reader, namespace, connecti
 
 	var secret corev1.Secret
 	if err := r.Get(ctx, types.NamespacedName{
-		Name:      conn.Spec.CredentialsSecretRef.Name,
+		Name:      conn.Spec.AuthSecretRef.Name,
 		Namespace: namespace,
 	}, &secret); err != nil {
-		return nil, fmt.Errorf("getting credentials secret %q: %w", conn.Spec.CredentialsSecretRef.Name, err)
+		return nil, fmt.Errorf("getting auth secret %q: %w", conn.Spec.AuthSecretRef.Name, err)
 	}
 
-	usernameKey := conn.Spec.CredentialsSecretRef.UsernameKey
+	tokenKey := conn.Spec.AuthSecretRef.TokenKey
+	if tokenKey == "" {
+		tokenKey = "token"
+	}
+
+	// Prefer token-based auth if the token key exists in the Secret.
+	if token, ok := secret.Data[tokenKey]; ok && len(token) > 0 {
+		return warpgate.NewClient(warpgate.Config{
+			Host:               conn.Spec.Host,
+			Token:              string(token),
+			InsecureSkipVerify: conn.Spec.InsecureSkipVerify,
+		}), nil
+	}
+
+	// Fall back to username/password auth.
+	usernameKey := conn.Spec.AuthSecretRef.UsernameKey
 	if usernameKey == "" {
 		usernameKey = "username"
 	}
-	passwordKey := conn.Spec.CredentialsSecretRef.PasswordKey
+	passwordKey := conn.Spec.AuthSecretRef.PasswordKey
 	if passwordKey == "" {
 		passwordKey = "password"
 	}
 
 	username, ok := secret.Data[usernameKey]
 	if !ok {
-		return nil, fmt.Errorf("key %q not found in credentials secret %q", usernameKey, conn.Spec.CredentialsSecretRef.Name)
+		return nil, fmt.Errorf("key %q not found in auth secret %q", usernameKey, conn.Spec.AuthSecretRef.Name)
 	}
 
 	password, ok := secret.Data[passwordKey]
 	if !ok {
-		return nil, fmt.Errorf("key %q not found in credentials secret %q", passwordKey, conn.Spec.CredentialsSecretRef.Name)
+		return nil, fmt.Errorf("key %q not found in auth secret %q", passwordKey, conn.Spec.AuthSecretRef.Name)
 	}
 
 	return warpgate.NewClient(warpgate.Config{

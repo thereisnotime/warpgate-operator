@@ -7,8 +7,9 @@ metadata:
   name: warpgateconnection-sample
 spec:
   host: https://warpgate.example.com
-  credentialsSecretRef:
-    name: warpgate-credentials
-    # usernameKey: username  # default
-    # passwordKey: password  # default
+  authSecretRef:
+    name: warpgate-auth
+    # tokenKey: token      # default — used for bearer auth
+    # usernameKey: username # default — fallback session auth
+    # passwordKey: password # default — fallback session auth
   insecureSkipVerify: false
