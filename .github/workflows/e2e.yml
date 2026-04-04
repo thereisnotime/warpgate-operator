@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch: {}
 
 concurrency:
   group: e2e-${{ github.ref }}
@@ -35,11 +36,19 @@ jobs:
       - name: Verify kind installation
         run: kind version
 
+      - name: Install cert-manager
+        run: |
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
+          kubectl wait --for=condition=Available deployment/cert-manager -n cert-manager --timeout=120s
+          kubectl wait --for=condition=Available deployment/cert-manager-webhook -n cert-manager --timeout=120s
+          kubectl wait --for=condition=Available deployment/cert-manager-cainjector -n cert-manager --timeout=120s
+
       # E2E uses make because the Go test harness calls make internally.
       # CONTAINER_TOOL=docker is required because kind load only sees Docker images.
       - name: Run E2E tests
         env:
           CONTAINER_TOOL: docker
+          CERT_MANAGER_INSTALL_SKIP: "true"
         run: |
           go mod tidy
           make test-e2e

@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -72,6 +73,58 @@ var _ = Describe("Manager", Ordered, func() {
 		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", managerImage))
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
+
+		By("creating webhook certificate issuer and certificate")
+		cmd = exec.Command("kubectl", "apply", "-f", "-")
+		cmd.Stdin = strings.NewReader(`
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: warpgate-operator-selfsigned
+  namespace: warpgate-operator-system
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: warpgate-operator-webhook-cert
+  namespace: warpgate-operator-system
+spec:
+  secretName: webhook-server-cert
+  issuerRef:
+    name: warpgate-operator-selfsigned
+    kind: Issuer
+  dnsNames:
+    - warpgate-operator-webhook-service.warpgate-operator-system.svc
+    - warpgate-operator-webhook-service.warpgate-operator-system.svc.cluster.local
+`)
+		_, err = utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred(), "Failed to create webhook certificate")
+
+		By("annotating mutating webhook configuration for CA injection")
+		cmd = exec.Command("kubectl", "annotate", "mutatingwebhookconfiguration",
+			"warpgate-operator-mutating-webhook-configuration",
+			"cert-manager.io/inject-ca-from=warpgate-operator-system/warpgate-operator-webhook-cert",
+			"--overwrite")
+		_, err = utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred(), "Failed to annotate mutating webhook configuration")
+
+		By("annotating validating webhook configuration for CA injection")
+		cmd = exec.Command("kubectl", "annotate", "validatingwebhookconfiguration",
+			"warpgate-operator-validating-webhook-configuration",
+			"cert-manager.io/inject-ca-from=warpgate-operator-system/warpgate-operator-webhook-cert",
+			"--overwrite")
+		_, err = utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred(), "Failed to annotate validating webhook configuration")
+
+		By("waiting for webhook certificate to be ready")
+		cmd = exec.Command("kubectl", "wait", "--for=condition=Ready",
+			"certificate/warpgate-operator-webhook-cert",
+			"-n", "warpgate-operator-system",
+			"--timeout=60s")
+		_, err = utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred(), "Webhook certificate not ready")
 	})
 
 	// After all tests have been executed, clean up by undeploying the controller, uninstalling CRDs,
