@@ -56,7 +56,7 @@ type WarpgateInstanceReconciler struct {
 // +kubebuilder:rbac:groups=warpgate.warpgate.warp.tech,resources=warpgateinstances/finalizers,verbs=update
 // +kubebuilder:rbac:groups=warpgate.warpgate.warp.tech,resources=warpgateinstances/scale,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=configmaps;persistentvolumeclaims;services,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=cert-manager.io,resources=issuers;certificates,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=warpgate.warpgate.warp.tech,resources=warpgateconnections,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
@@ -104,7 +104,7 @@ func (r *WarpgateInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		}
 	}
 
-	// 4. Ensure ConfigMap.
+	// 4. Ensure ConfigMap (operator-generated config + optional config override).
 	if err := r.ensureConfigMap(ctx, &inst); err != nil {
 		log.Error(err, "failed to ensure ConfigMap")
 		r.setCondition(&inst, metav1.ConditionFalse, "ConfigMapFailed", err.Error())
@@ -112,18 +112,31 @@ func (r *WarpgateInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 
-	// 5. Ensure PVC (create only, never update).
-	if err := r.ensurePVC(ctx, &inst); err != nil {
-		log.Error(err, "failed to ensure PVC")
-		r.setCondition(&inst, metav1.ConditionFalse, "PVCFailed", err.Error())
-		_ = r.Status().Update(ctx, &inst)
-		return ctrl.Result{}, err
+	// 4b. Ensure config override ConfigMap if needed.
+	if inst.Spec.ConfigOverride != "" {
+		if err := r.ensureConfigOverrideConfigMap(ctx, &inst); err != nil {
+			log.Error(err, "failed to ensure config override ConfigMap")
+			r.setCondition(&inst, metav1.ConditionFalse, "ConfigOverrideFailed", err.Error())
+			_ = r.Status().Update(ctx, &inst)
+			return ctrl.Result{}, err
+		}
 	}
 
-	// 6. Ensure StatefulSet (create/update).
-	if err := r.ensureStatefulSet(ctx, &inst); err != nil {
-		log.Error(err, "failed to ensure StatefulSet")
-		r.setCondition(&inst, metav1.ConditionFalse, "StatefulSetFailed", err.Error())
+	// 5. Ensure PVC (create only, never update) — only when storage is enabled
+	//    and no existing claim is referenced.
+	if storageEnabled(&inst) && !hasExistingClaim(&inst) {
+		if err := r.ensurePVC(ctx, &inst); err != nil {
+			log.Error(err, "failed to ensure PVC")
+			r.setCondition(&inst, metav1.ConditionFalse, "PVCFailed", err.Error())
+			_ = r.Status().Update(ctx, &inst)
+			return ctrl.Result{}, err
+		}
+	}
+
+	// 6. Ensure Deployment (create/update).
+	if err := r.ensureDeployment(ctx, &inst); err != nil {
+		log.Error(err, "failed to ensure Deployment")
+		r.setCondition(&inst, metav1.ConditionFalse, "DeploymentFailed", err.Error())
 		_ = r.Status().Update(ctx, &inst)
 		return ctrl.Result{}, err
 	}
@@ -156,14 +169,14 @@ func (r *WarpgateInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		}
 	}
 
-	// 10. Update status from StatefulSet.
+	// 10. Update status from Deployment.
 	r.refreshStatus(ctx, &inst)
 
 	// 11. Set Ready condition.
 	if inst.Status.ReadyReplicas > 0 {
 		r.setCondition(&inst, metav1.ConditionTrue, "Available", "Warpgate instance is running")
 	} else {
-		r.setCondition(&inst, metav1.ConditionFalse, "Unavailable", "StatefulSet has no ready replicas")
+		r.setCondition(&inst, metav1.ConditionFalse, "Unavailable", "Deployment has no ready replicas")
 	}
 	if err := r.Status().Update(ctx, &inst); err != nil {
 		return ctrl.Result{}, err
@@ -222,6 +235,13 @@ func pgEnabled(inst *warpgatev1alpha1.WarpgateInstance) bool {
 	return *inst.Spec.PostgreSQL.Enabled
 }
 
+func kubernetesEnabled(inst *warpgatev1alpha1.WarpgateInstance) bool {
+	if inst.Spec.Kubernetes == nil || inst.Spec.Kubernetes.Enabled == nil {
+		return false
+	}
+	return *inst.Spec.Kubernetes.Enabled
+}
+
 func instanceHTTPPort(inst *warpgatev1alpha1.WarpgateInstance) int32 {
 	if inst.Spec.HTTP != nil && inst.Spec.HTTP.Port != nil {
 		return *inst.Spec.HTTP.Port
@@ -250,6 +270,13 @@ func instancePGPort(inst *warpgatev1alpha1.WarpgateInstance) int32 {
 	return 55432
 }
 
+func instanceKubernetesPort(inst *warpgatev1alpha1.WarpgateInstance) int32 {
+	if inst.Spec.Kubernetes != nil && inst.Spec.Kubernetes.Port != nil {
+		return *inst.Spec.Kubernetes.Port
+	}
+	return 8443
+}
+
 func instanceStorageSize(inst *warpgatev1alpha1.WarpgateInstance) string {
 	if inst.Spec.Storage != nil && inst.Spec.Storage.Size != "" {
 		return inst.Spec.Storage.Size
@@ -257,8 +284,23 @@ func instanceStorageSize(inst *warpgatev1alpha1.WarpgateInstance) string {
 	return "1Gi"
 }
 
+func storageEnabled(inst *warpgatev1alpha1.WarpgateInstance) bool {
+	if inst.Spec.Storage == nil || inst.Spec.Storage.Enabled == nil {
+		return true // default on
+	}
+	return *inst.Spec.Storage.Enabled
+}
+
+func hasExistingClaim(inst *warpgatev1alpha1.WarpgateInstance) bool {
+	return inst.Spec.Storage != nil && inst.Spec.Storage.ExistingClaimName != ""
+}
+
 func certManagerEnabled(inst *warpgatev1alpha1.WarpgateInstance) bool {
 	return inst.Spec.TLS != nil && inst.Spec.TLS.CertManager != nil && *inst.Spec.TLS.CertManager
+}
+
+func tlsSecretProvided(inst *warpgatev1alpha1.WarpgateInstance) bool {
+	return inst.Spec.TLS != nil && inst.Spec.TLS.SecretName != ""
 }
 
 func shouldCreateConnection(inst *warpgatev1alpha1.WarpgateInstance) bool {
@@ -288,13 +330,18 @@ func instanceLabels(inst *warpgatev1alpha1.WarpgateInstance) map[string]string {
 func configHash(inst *warpgatev1alpha1.WarpgateInstance) string {
 	h := sha256.New()
 	h.Write([]byte(resolveImage(inst)))
-	h.Write(fmt.Appendf(nil, "%d%d%d%d",
+	h.Write(fmt.Appendf(nil, "%d%d%d%d%d",
 		instanceHTTPPort(inst), instanceSSHPort(inst),
-		instanceMySQLPort(inst), instancePGPort(inst)))
-	h.Write(fmt.Appendf(nil, "%v%v%v%v",
+		instanceMySQLPort(inst), instancePGPort(inst),
+		instanceKubernetesPort(inst)))
+	h.Write(fmt.Appendf(nil, "%v%v%v%v%v",
 		httpEnabled(inst), sshEnabled(inst),
-		mysqlEnabled(inst), pgEnabled(inst)))
+		mysqlEnabled(inst), pgEnabled(inst),
+		kubernetesEnabled(inst)))
 	h.Write([]byte(inst.Spec.ExternalHost))
+	h.Write([]byte(inst.Spec.ConfigOverride))
+	h.Write([]byte(inst.Spec.DatabaseURL))
+	h.Write([]byte(inst.Spec.SSHKeysSecretName))
 	return fmt.Sprintf("%x", h.Sum(nil))[:12]
 }
 
@@ -306,9 +353,14 @@ func (r *WarpgateInstanceReconciler) buildWarpgateConfig(inst *warpgatev1alpha1.
 	var b strings.Builder
 
 	b.WriteString("store:\n")
-	b.WriteString("  database_url:\n")
-	b.WriteString("    sqlite:\n")
-	b.WriteString("      path: /data/db\n")
+	if inst.Spec.DatabaseURL != "" {
+		fmt.Fprintf(&b, "  database_url:\n")
+		fmt.Fprintf(&b, "    postgres: \"%s\"\n", inst.Spec.DatabaseURL)
+	} else {
+		b.WriteString("  database_url:\n")
+		b.WriteString("    sqlite:\n")
+		b.WriteString("      path: /data/db\n")
+	}
 
 	// HTTP
 	b.WriteString("http:\n")
@@ -344,9 +396,23 @@ func (r *WarpgateInstanceReconciler) buildWarpgateConfig(inst *warpgatev1alpha1.
 		fmt.Fprintf(&b, "  listen: \"0.0.0.0:%d\"\n", instancePGPort(inst))
 	}
 
+	// Kubernetes
+	if kubernetesEnabled(inst) {
+		b.WriteString("kubernetes:\n")
+		b.WriteString("  enable: true\n")
+		fmt.Fprintf(&b, "  listen: \"0.0.0.0:%d\"\n", instanceKubernetesPort(inst))
+	}
+
 	// External host
 	if inst.Spec.ExternalHost != "" {
 		fmt.Fprintf(&b, "external_host: %s\n", inst.Spec.ExternalHost)
+	}
+
+	// Session recording
+	if inst.Spec.RecordSessions != nil && *inst.Spec.RecordSessions {
+		b.WriteString("recordings:\n")
+		b.WriteString("  enable: true\n")
+		b.WriteString("  path: /data/recordings\n")
 	}
 
 	return b.String()
@@ -366,6 +432,26 @@ func (r *WarpgateInstanceReconciler) ensureConfigMap(ctx context.Context, inst *
 		}
 		cm.Data = map[string]string{
 			"warpgate.yaml": r.buildWarpgateConfig(inst),
+		}
+		return nil
+	})
+	return err
+}
+
+func (r *WarpgateInstanceReconciler) ensureConfigOverrideConfigMap(ctx context.Context, inst *warpgatev1alpha1.WarpgateInstance) error {
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      inst.Name + "-config-override",
+			Namespace: inst.Namespace,
+		},
+	}
+
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, cm, func() error {
+		if err := controllerutil.SetControllerReference(inst, cm, r.Scheme); err != nil {
+			return err
+		}
+		cm.Data = map[string]string{
+			"warpgate.yaml": inst.Spec.ConfigOverride,
 		}
 		return nil
 	})
@@ -420,10 +506,10 @@ func (r *WarpgateInstanceReconciler) ensurePVC(ctx context.Context, inst *warpga
 }
 
 // ---------------------------------------------------------------------------
-// 6. StatefulSet — with init container for config copy + TLS cert generation
+// 6. Deployment — with init container matching the official Helm chart pattern
 // ---------------------------------------------------------------------------
 
-func (r *WarpgateInstanceReconciler) buildStatefulSet(inst *warpgatev1alpha1.WarpgateInstance) *appsv1.StatefulSet {
+func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.WarpgateInstance) *appsv1.Deployment {
 	labels := instanceLabels(inst)
 	rep := instanceReplicas(inst)
 	image := resolveImage(inst)
@@ -450,36 +536,123 @@ func (r *WarpgateInstanceReconciler) buildStatefulSet(inst *warpgatev1alpha1.War
 			Name: "postgresql", ContainerPort: instancePGPort(inst), Protocol: corev1.ProtocolTCP,
 		})
 	}
+	if kubernetesEnabled(inst) {
+		ports = append(ports, corev1.ContainerPort{
+			Name: "kubernetes", ContainerPort: instanceKubernetesPort(inst), Protocol: corev1.ProtocolTCP,
+		})
+	}
 
-	// Init container 1: run warpgate unattended-setup if the DB doesn't exist yet.
-	initSetupScript := fmt.Sprintf(`#!/bin/sh
-set -e
-if [ ! -f /data/db ]; then
-  echo "Running initial Warpgate setup..."
-  warpgate --skip-securing-files unattended-setup \
-    --data-path /data \
-    --http-port %d \
-    --admin-password "${ADMIN_PASSWORD}"
-  echo "Initial setup complete."
-else
-  echo "Warpgate already initialized, skipping setup."
-fi
-`, instanceHTTPPort(inst))
+	// Build the init script matching the official Helm chart pattern:
+	// 1. Copy SSH keys from secret mount to /data/ssh-keys/ (if mounted)
+	// 2. Copy TLS certs from secret mount (tls.crt -> tls.certificate.pem, tls.key -> tls.key.pem)
+	// 3. Run unattended-setup if /data/warpgate.yaml doesn't exist
+	// 4. Copy config override if provided
+	// 5. Set file permissions to 600
+	var scriptParts []string
+	scriptParts = append(scriptParts, "#!/bin/sh", "set -e")
 
-	// Init container 2: copy operator-generated config and generate self-signed TLS if needed.
-	initConfigScript := `#!/bin/sh
-set -e
-echo "Applying operator config..."
-cp /config/warpgate.yaml /data/warpgate.yaml
-if [ ! -f /data/tls.certificate.pem ]; then
-  echo "Generating self-signed TLS certificate..."
-  apk add --no-cache openssl >/dev/null 2>&1 || true
-  openssl req -x509 -newkey rsa:4096 \
-    -keyout /data/tls.key.pem -out /data/tls.certificate.pem \
-    -days 3650 -nodes -subj "/CN=warpgate"
-fi
-echo "Config init complete."
-`
+	// 1. Copy SSH keys if mounted
+	if inst.Spec.SSHKeysSecretName != "" {
+		scriptParts = append(scriptParts,
+			`echo "Copying SSH keys..."`,
+			`mkdir -p /data/ssh-keys`,
+			`if [ -d /ssh-keys ]; then`,
+			`  cp /ssh-keys/* /data/ssh-keys/ 2>/dev/null || true`,
+			`  chmod 600 /data/ssh-keys/* 2>/dev/null || true`,
+			`fi`,
+		)
+	}
+
+	// 2. Copy TLS certs from secret mount if provided
+	if tlsSecretProvided(inst) {
+		scriptParts = append(scriptParts,
+			`echo "Copying TLS certificates from secret..."`,
+			`if [ -f /tls-secret/tls.crt ]; then`,
+			`  cp /tls-secret/tls.crt /data/tls.certificate.pem`,
+			`  cp /tls-secret/tls.key /data/tls.key.pem`,
+			`  chmod 600 /data/tls.certificate.pem /data/tls.key.pem`,
+			`fi`,
+		)
+	}
+
+	// 3. Run unattended-setup if warpgate.yaml doesn't exist
+	setupCmd := fmt.Sprintf(
+		`warpgate --skip-securing-files unattended-setup --data-path /data --http-port %d --admin-password "${ADMIN_PASSWORD}"`,
+		instanceHTTPPort(inst),
+	)
+	if kubernetesEnabled(inst) {
+		setupCmd += fmt.Sprintf(` --kubernetes-port %d`, instanceKubernetesPort(inst))
+	}
+	if inst.Spec.DatabaseURL != "" {
+		setupCmd += fmt.Sprintf(` --database-url "%s"`, inst.Spec.DatabaseURL)
+	}
+
+	scriptParts = append(scriptParts,
+		`if [ ! -f /data/warpgate.yaml ]; then`,
+		`  echo "Running initial Warpgate setup..."`,
+		fmt.Sprintf("  %s", setupCmd),
+		`  echo "Initial setup complete."`,
+		`else`,
+		`  echo "Warpgate already initialized, skipping setup."`,
+		`fi`,
+	)
+
+	// 4. Copy config override if provided
+	if inst.Spec.ConfigOverride != "" {
+		scriptParts = append(scriptParts,
+			`echo "Applying config override..."`,
+			`cp /override/warpgate.yaml /data/warpgate.yaml`,
+		)
+	} else {
+		// Apply the operator-generated config
+		scriptParts = append(scriptParts,
+			`echo "Applying operator config..."`,
+			`cp /config/warpgate.yaml /data/warpgate.yaml`,
+		)
+	}
+
+	// 5. Generate self-signed TLS if no certs exist yet (and no TLS secret / cert-manager)
+	if !tlsSecretProvided(inst) && !certManagerEnabled(inst) {
+		scriptParts = append(scriptParts,
+			`if [ ! -f /data/tls.certificate.pem ]; then`,
+			`  echo "Generating self-signed TLS certificate..."`,
+			`  apk add --no-cache openssl >/dev/null 2>&1 || true`,
+			`  openssl req -x509 -newkey rsa:4096 \`,
+			`    -keyout /data/tls.key.pem -out /data/tls.certificate.pem \`,
+			`    -days 3650 -nodes -subj "/CN=warpgate"`,
+			`fi`,
+		)
+	}
+
+	// Set permissions on all sensitive files
+	scriptParts = append(scriptParts,
+		`chmod 600 /data/*.pem 2>/dev/null || true`,
+		`chmod 600 /data/warpgate.yaml 2>/dev/null || true`,
+		`echo "Init complete."`,
+	)
+
+	initScript := strings.Join(scriptParts, "\n")
+
+	// Init container volume mounts
+	initVolumeMounts := []corev1.VolumeMount{
+		{Name: "data", MountPath: "/data"},
+		{Name: "config", MountPath: "/config", ReadOnly: true},
+	}
+	if inst.Spec.SSHKeysSecretName != "" {
+		initVolumeMounts = append(initVolumeMounts, corev1.VolumeMount{
+			Name: "ssh-keys", MountPath: "/ssh-keys", ReadOnly: true,
+		})
+	}
+	if tlsSecretProvided(inst) {
+		initVolumeMounts = append(initVolumeMounts, corev1.VolumeMount{
+			Name: "tls-secret", MountPath: "/tls-secret", ReadOnly: true,
+		})
+	}
+	if inst.Spec.ConfigOverride != "" {
+		initVolumeMounts = append(initVolumeMounts, corev1.VolumeMount{
+			Name: "config-override", MountPath: "/override", ReadOnly: true,
+		})
+	}
 
 	// Probes — use HTTP health check on the Warpgate admin API when HTTP is enabled.
 	var livenessProbe, readinessProbe *corev1.Probe
@@ -514,24 +687,103 @@ echo "Config init complete."
 
 	hash := configHash(inst)
 
-	sts := &appsv1.StatefulSet{
+	// Deployment strategy — default Recreate for RWO PVC compatibility.
+	strategy := appsv1.DeploymentStrategy{
+		Type: appsv1.RecreateDeploymentStrategyType,
+	}
+	if inst.Spec.Strategy == "RollingUpdate" {
+		strategy = appsv1.DeploymentStrategy{
+			Type: appsv1.RollingUpdateDeploymentStrategyType,
+		}
+	}
+
+	// Volumes
+	volumes := []corev1.Volume{
+		{
+			Name: "config",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: inst.Name + "-config",
+					},
+				},
+			},
+		},
+	}
+
+	// Data volume — PVC (operator-created or existing) vs emptyDir
+	if storageEnabled(inst) {
+		claimName := inst.Name + "-data"
+		if hasExistingClaim(inst) {
+			claimName = inst.Spec.Storage.ExistingClaimName
+		}
+		volumes = append(volumes, corev1.Volume{
+			Name: "data",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: claimName,
+				},
+			},
+		})
+	} else {
+		volumes = append(volumes, corev1.Volume{
+			Name: "data",
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
+			},
+		})
+	}
+
+	// Optional SSH keys secret volume
+	if inst.Spec.SSHKeysSecretName != "" {
+		volumes = append(volumes, corev1.Volume{
+			Name: "ssh-keys",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: inst.Spec.SSHKeysSecretName,
+				},
+			},
+		})
+	}
+
+	// Optional TLS secret volume (spec.tls.secretName)
+	if tlsSecretProvided(inst) {
+		volumes = append(volumes, corev1.Volume{
+			Name: "tls-secret",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: inst.Spec.TLS.SecretName,
+				},
+			},
+		})
+	}
+
+	// Optional config override volume
+	if inst.Spec.ConfigOverride != "" {
+		volumes = append(volumes, corev1.Volume{
+			Name: "config-override",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: inst.Name + "-config-override",
+					},
+				},
+			},
+		})
+	}
+
+	deploy := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      inst.Name,
 			Namespace: inst.Namespace,
 			Labels:    labels,
 		},
-		Spec: appsv1.StatefulSetSpec{
+		Spec: appsv1.DeploymentSpec{
 			Replicas: &rep,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: labels,
 			},
-			ServiceName: inst.Name + "-http",
-			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
-				Type: appsv1.RollingUpdateStatefulSetStrategyType,
-				RollingUpdate: &appsv1.RollingUpdateStatefulSetStrategy{
-					MaxUnavailable: &intstr.IntOrString{Type: intstr.Int, IntVal: 1},
-				},
-			},
+			Strategy: strategy,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: labels,
@@ -542,12 +794,10 @@ echo "Config init complete."
 				Spec: corev1.PodSpec{
 					InitContainers: []corev1.Container{
 						{
-							Name:    "init-setup",
-							Image:   image,
-							Command: []string{"/bin/sh", "-c", initSetupScript},
-							VolumeMounts: []corev1.VolumeMount{
-								{Name: "data", MountPath: "/data"},
-							},
+							Name:         "init-setup",
+							Image:        image,
+							Command:      []string{"/bin/sh", "-c", initScript},
+							VolumeMounts: initVolumeMounts,
 							Env: []corev1.EnvVar{
 								{
 									Name: "ADMIN_PASSWORD",
@@ -560,15 +810,6 @@ echo "Config init complete."
 										},
 									},
 								},
-							},
-						},
-						{
-							Name:    "init-config",
-							Image:   "alpine:3.20",
-							Command: []string{"/bin/sh", "-c", initConfigScript},
-							VolumeMounts: []corev1.VolumeMount{
-								{Name: "config", MountPath: "/config", ReadOnly: true},
-								{Name: "data", MountPath: "/data"},
 							},
 						},
 					},
@@ -586,26 +827,7 @@ echo "Config init complete."
 							ReadinessProbe: readinessProbe,
 						},
 					},
-					Volumes: []corev1.Volume{
-						{
-							Name: "config",
-							VolumeSource: corev1.VolumeSource{
-								ConfigMap: &corev1.ConfigMapVolumeSource{
-									LocalObjectReference: corev1.LocalObjectReference{
-										Name: inst.Name + "-config",
-									},
-								},
-							},
-						},
-						{
-							Name: "data",
-							VolumeSource: corev1.VolumeSource{
-								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: inst.Name + "-data",
-								},
-							},
-						},
-					},
+					Volumes:      volumes,
 					NodeSelector: inst.Spec.NodeSelector,
 					Tolerations:  inst.Spec.Tolerations,
 				},
@@ -613,16 +835,16 @@ echo "Config init complete."
 		},
 	}
 
-	return sts
+	return deploy
 }
 
-func (r *WarpgateInstanceReconciler) ensureStatefulSet(ctx context.Context, inst *warpgatev1alpha1.WarpgateInstance) error {
-	desired := r.buildStatefulSet(inst)
+func (r *WarpgateInstanceReconciler) ensureDeployment(ctx context.Context, inst *warpgatev1alpha1.WarpgateInstance) error {
+	desired := r.buildDeployment(inst)
 	if err := controllerutil.SetControllerReference(inst, desired, r.Scheme); err != nil {
-		return fmt.Errorf("setting owner reference on StatefulSet: %w", err)
+		return fmt.Errorf("setting owner reference on Deployment: %w", err)
 	}
 
-	var existing appsv1.StatefulSet
+	var existing appsv1.Deployment
 	err := r.Get(ctx, types.NamespacedName{Name: desired.Name, Namespace: desired.Namespace}, &existing)
 	if apierrors.IsNotFound(err) {
 		return r.Create(ctx, desired)
@@ -640,7 +862,7 @@ func (r *WarpgateInstanceReconciler) ensureStatefulSet(ctx context.Context, inst
 	if existingImage != desiredImage || existingHash != desiredHash || *existing.Spec.Replicas != *desired.Spec.Replicas {
 		existing.Spec.Template = desired.Spec.Template
 		existing.Spec.Replicas = desired.Spec.Replicas
-		existing.Spec.UpdateStrategy = desired.Spec.UpdateStrategy
+		existing.Spec.Strategy = desired.Spec.Strategy
 		return r.Update(ctx, &existing)
 	}
 	return nil
@@ -927,11 +1149,11 @@ func (r *WarpgateInstanceReconciler) ensureWarpgateConnection(ctx context.Contex
 // ---------------------------------------------------------------------------
 
 func (r *WarpgateInstanceReconciler) refreshStatus(ctx context.Context, inst *warpgatev1alpha1.WarpgateInstance) {
-	var sts appsv1.StatefulSet
+	var deploy appsv1.Deployment
 	if err := r.Get(ctx, types.NamespacedName{
 		Name: inst.Name, Namespace: inst.Namespace,
-	}, &sts); err == nil {
-		inst.Status.ReadyReplicas = sts.Status.ReadyReplicas
+	}, &deploy); err == nil {
+		inst.Status.ReadyReplicas = deploy.Status.ReadyReplicas
 	} else {
 		inst.Status.ReadyReplicas = 0
 	}
@@ -959,11 +1181,11 @@ func (r *WarpgateInstanceReconciler) setCondition(inst *warpgatev1alpha1.Warpgat
 // ---------------------------------------------------------------------------
 
 // SetupWithManager sets up the controller with the Manager.
-// It watches StatefulSets and Services owned by WarpgateInstance.
+// It watches Deployments and Services owned by WarpgateInstance.
 func (r *WarpgateInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&warpgatev1alpha1.WarpgateInstance{}).
-		Owns(&appsv1.StatefulSet{}).
+		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.PersistentVolumeClaim{}).

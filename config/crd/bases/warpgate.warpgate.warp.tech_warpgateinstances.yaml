@@ -70,12 +70,22 @@ spec:
                 required:
                 - name
                 type: object
+              configOverride:
+                description: |-
+                  configOverride allows providing a complete warpgate.yaml config that replaces
+                  the auto-generated one. Mounted as a ConfigMap.
+                type: string
               createConnection:
                 default: true
                 description: |-
                   createConnection when true (default) auto-creates a WarpgateConnection CR
                   pointing to this instance, so other CRDs can reference it.
                 type: boolean
+              databaseURL:
+                description: |-
+                  databaseURL overrides the default SQLite database with a PostgreSQL connection string.
+                  Example: "postgres://user:pass@host:5432/warpgate"
+                type: string
               externalHost:
                 description: externalHost sets the external hostname for Warpgate
                   cookie domain and URL generation.
@@ -106,6 +116,65 @@ spec:
                 description: image overrides the full image reference. Defaults to
                   ghcr.io/warp-tech/warpgate:<version>.
                 type: string
+              ingress:
+                description: ingress configures an Ingress resource for the HTTP listener.
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  className:
+                    type: string
+                  enabled:
+                    type: boolean
+                  hosts:
+                    items:
+                      description: IngressHost defines a host entry for an Ingress
+                        resource.
+                      properties:
+                        host:
+                          type: string
+                        paths:
+                          items:
+                            description: IngressPath defines a path entry for an Ingress
+                              host.
+                            properties:
+                              path:
+                                type: string
+                              pathType:
+                                type: string
+                            required:
+                            - path
+                            type: object
+                          type: array
+                      required:
+                      - host
+                      type: object
+                    type: array
+                  tls:
+                    items:
+                      description: IngressTLS defines a TLS entry for an Ingress resource.
+                      properties:
+                        hosts:
+                          items:
+                            type: string
+                          type: array
+                        secretName:
+                          type: string
+                      type: object
+                    type: array
+                type: object
+              kubernetes:
+                description: kubernetes configures the Kubernetes protocol proxy listener.
+                properties:
+                  enabled:
+                    description: enabled enables this protocol listener.
+                    type: boolean
+                  port:
+                    description: port is the container port.
+                    format: int32
+                    type: integer
+                type: object
               mysql:
                 description: mysql configures the MySQL protocol proxy listener.
                 properties:
@@ -134,6 +203,10 @@ spec:
                     format: int32
                     type: integer
                 type: object
+              recordSessions:
+                description: recordSessions enables session recording. Defaults to
+                  false.
+                type: boolean
               replicas:
                 default: 1
                 description: replicas is the number of Warpgate pods. Defaults to
@@ -221,9 +294,24 @@ spec:
                     - LoadBalancer
                     type: string
                 type: object
+              sshKeysSecretName:
+                description: |-
+                  sshKeysSecretName references a Secret containing SSH host/client keys.
+                  Expected keys: client-ed25519, client-rsa, host-ed25519, host-rsa.
+                  If not set, Warpgate generates its own keys on first boot.
+                type: string
               storage:
                 description: storage configures persistent storage for Warpgate data.
                 properties:
+                  enabled:
+                    default: true
+                    description: enabled enables persistent storage via PVC. When
+                      false, uses emptyDir.
+                    type: boolean
+                  existingClaimName:
+                    description: existingClaimName uses an existing PVC instead of
+                      creating one.
+                    type: string
                   size:
                     default: 1Gi
                     description: size is the PVC size. Defaults to 1Gi.
@@ -232,17 +320,24 @@ spec:
                     description: storageClassName overrides the default StorageClass.
                     type: string
                 type: object
+              strategy:
+                default: Recreate
+                description: |-
+                  strategy overrides the default deployment update strategy.
+                  Use "Recreate" when using RWO persistent volumes (default).
+                enum:
+                - Recreate
+                - RollingUpdate
+                type: string
               tls:
                 description: tls configures TLS certificate provisioning.
                 properties:
                   certManager:
-                    default: true
                     description: certManager enables automatic TLS cert provisioning
                       via cert-manager.
                     type: boolean
                   issuerRef:
                     description: issuerRef references a custom cert-manager issuer.
-                      If empty, a self-signed issuer is created.
                     properties:
                       kind:
                         description: kind is the issuer kind — Issuer or ClusterIssuer.
@@ -253,6 +348,11 @@ spec:
                     required:
                     - name
                     type: object
+                  secretName:
+                    description: |-
+                      secretName references an existing TLS Secret (with tls.crt and tls.key).
+                      If set, cert-manager is not used and the secret is mounted directly.
+                    type: string
                 type: object
               tolerations:
                 description: tolerations for scheduling.

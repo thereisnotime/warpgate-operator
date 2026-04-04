@@ -131,6 +131,29 @@ func (d *WarpgateInstanceCustomDefaulter) Default(ctx context.Context, inst *War
 		inst.Spec.CreateConnection = &t
 	}
 
+	// Strategy defaults to Recreate.
+	if inst.Spec.Strategy == "" {
+		inst.Spec.Strategy = "Recreate"
+	}
+
+	// Kubernetes port defaults to 0 (disabled).
+	if inst.Spec.Kubernetes != nil && inst.Spec.Kubernetes.Port == nil {
+		p := int32(0)
+		inst.Spec.Kubernetes.Port = &p
+	}
+
+	// Storage enabled defaults to true.
+	if inst.Spec.Storage != nil && inst.Spec.Storage.Enabled == nil {
+		t := true
+		inst.Spec.Storage.Enabled = &t
+	}
+
+	// RecordSessions defaults to false.
+	if inst.Spec.RecordSessions == nil {
+		f := false
+		inst.Spec.RecordSessions = &f
+	}
+
 	return nil
 }
 
@@ -139,13 +162,15 @@ func (d *WarpgateInstanceCustomDefaulter) Default(ctx context.Context, inst *War
 // ValidateCreate implements admission.Validator.
 func (v *WarpgateInstanceCustomValidator) ValidateCreate(ctx context.Context, inst *WarpgateInstance) (admission.Warnings, error) {
 	warpgateinstancelog.Info("Validating create", "name", inst.GetName())
-	return nil, validateWarpgateInstance(inst)
+	warnings, err := validateWarpgateInstance(inst)
+	return warnings, err
 }
 
 // ValidateUpdate implements admission.Validator.
 func (v *WarpgateInstanceCustomValidator) ValidateUpdate(ctx context.Context, oldInst, inst *WarpgateInstance) (admission.Warnings, error) {
 	warpgateinstancelog.Info("Validating update", "name", inst.GetName())
-	return nil, validateWarpgateInstance(inst)
+	warnings, err := validateWarpgateInstance(inst)
+	return warnings, err
 }
 
 // ValidateDelete implements admission.Validator.
@@ -153,65 +178,91 @@ func (v *WarpgateInstanceCustomValidator) ValidateDelete(ctx context.Context, in
 	return nil, nil
 }
 
+// validatePort checks that a port pointer is within 1-65535 (or 0-65535 if allowZero).
+func validatePort(port *int32, fldPath *field.Path, allowZero bool) *field.Error {
+	if port == nil {
+		return nil
+	}
+	min := int32(1)
+	if allowZero {
+		min = 0
+	}
+	if *port < min || *port > 65535 {
+		msg := "port must be between 1 and 65535"
+		if allowZero {
+			msg = "port must be between 0 and 65535"
+		}
+		return field.Invalid(fldPath, *port, msg)
+	}
+	return nil
+}
+
 // validateWarpgateInstance runs all field-level validation checks.
-func validateWarpgateInstance(inst *WarpgateInstance) error {
+func validateWarpgateInstance(inst *WarpgateInstance) (admission.Warnings, error) {
 	var allErrs field.ErrorList
+	var warnings admission.Warnings
 	specPath := field.NewPath("spec")
 
-	// version must not be empty.
 	if inst.Spec.Version == "" {
 		allErrs = append(allErrs, field.Required(specPath.Child("version"), "version must not be empty"))
 	}
-
-	// adminPasswordSecretRef.name must not be empty.
 	if inst.Spec.AdminPasswordSecretRef.Name == "" {
 		allErrs = append(allErrs, field.Required(specPath.Child("adminPasswordSecretRef", "name"), "adminPasswordSecretRef.name must not be empty"))
 	}
 
-	// At least one of HTTP or SSH must be enabled.
-	httpEnabled := inst.Spec.HTTP != nil && inst.Spec.HTTP.Enabled != nil && *inst.Spec.HTTP.Enabled
-	sshEnabled := inst.Spec.SSH != nil && inst.Spec.SSH.Enabled != nil && *inst.Spec.SSH.Enabled
-	if !httpEnabled && !sshEnabled {
+	httpOn := inst.Spec.HTTP != nil && inst.Spec.HTTP.Enabled != nil && *inst.Spec.HTTP.Enabled
+	sshOn := inst.Spec.SSH != nil && inst.Spec.SSH.Enabled != nil && *inst.Spec.SSH.Enabled
+	if !httpOn && !sshOn {
 		allErrs = append(allErrs, field.Required(specPath, "at least one of http or ssh must be enabled"))
 	}
 
-	// Port validation for HTTP.
-	if inst.Spec.HTTP != nil && inst.Spec.HTTP.Port != nil {
-		if *inst.Spec.HTTP.Port < 1 || *inst.Spec.HTTP.Port > 65535 {
-			allErrs = append(allErrs, field.Invalid(specPath.Child("http", "port"), *inst.Spec.HTTP.Port, "port must be between 1 and 65535"))
+	// Validate all protocol ports.
+	for _, p := range []struct {
+		spec *ProtocolListenerSpec
+		http *HTTPListenerSpec
+		ssh  *SSHListenerSpec
+		name string
+		zero bool
+	}{
+		{http: inst.Spec.HTTP, name: "http"},
+		{ssh: inst.Spec.SSH, name: "ssh"},
+		{spec: inst.Spec.MySQL, name: "mysql"},
+		{spec: inst.Spec.PostgreSQL, name: "postgresql"},
+		{spec: inst.Spec.Kubernetes, name: "kubernetes", zero: true},
+	} {
+		var port *int32
+		switch {
+		case p.http != nil:
+			port = p.http.Port
+		case p.ssh != nil:
+			port = p.ssh.Port
+		case p.spec != nil:
+			port = p.spec.Port
+		}
+		if e := validatePort(port, specPath.Child(p.name, "port"), p.zero); e != nil {
+			allErrs = append(allErrs, e)
 		}
 	}
 
-	// Port validation for SSH.
-	if inst.Spec.SSH != nil && inst.Spec.SSH.Port != nil {
-		if *inst.Spec.SSH.Port < 1 || *inst.Spec.SSH.Port > 65535 {
-			allErrs = append(allErrs, field.Invalid(specPath.Child("ssh", "port"), *inst.Spec.SSH.Port, "port must be between 1 and 65535"))
-		}
+	if s := inst.Spec.Strategy; s != "" && s != "Recreate" && s != "RollingUpdate" {
+		allErrs = append(allErrs, field.Invalid(specPath.Child("strategy"), s, "must be Recreate or RollingUpdate"))
 	}
-
-	// Port validation for MySQL.
-	if inst.Spec.MySQL != nil && inst.Spec.MySQL.Port != nil {
-		if *inst.Spec.MySQL.Port < 1 || *inst.Spec.MySQL.Port > 65535 {
-			allErrs = append(allErrs, field.Invalid(specPath.Child("mysql", "port"), *inst.Spec.MySQL.Port, "port must be between 1 and 65535"))
-		}
-	}
-
-	// Port validation for PostgreSQL.
-	if inst.Spec.PostgreSQL != nil && inst.Spec.PostgreSQL.Port != nil {
-		if *inst.Spec.PostgreSQL.Port < 1 || *inst.Spec.PostgreSQL.Port > 65535 {
-			allErrs = append(allErrs, field.Invalid(specPath.Child("postgresql", "port"), *inst.Spec.PostgreSQL.Port, "port must be between 1 and 65535"))
-		}
-	}
-
-	// Storage size must be parseable as a resource quantity.
 	if inst.Spec.Storage != nil && inst.Spec.Storage.Size != "" {
 		if _, err := resource.ParseQuantity(inst.Spec.Storage.Size); err != nil {
 			allErrs = append(allErrs, field.Invalid(specPath.Child("storage", "size"), inst.Spec.Storage.Size, "must be a valid resource quantity"))
 		}
 	}
 
-	if len(allErrs) == 0 {
-		return nil
+	if inst.Spec.DatabaseURL != "" {
+		warnings = append(warnings, "databaseURL is set — SQLite persistence via PVC is not needed")
 	}
-	return allErrs.ToAggregate()
+	noStorage := inst.Spec.Storage != nil && inst.Spec.Storage.Enabled != nil && !*inst.Spec.Storage.Enabled
+	if noStorage && inst.Spec.DatabaseURL == "" {
+		warnings = append(warnings, "storage is disabled and no databaseURL is set — data will be lost on pod restart")
+	}
+
+	if len(allErrs) == 0 {
+		return warnings, nil
+	}
+	return warnings, allErrs.ToAggregate()
 }

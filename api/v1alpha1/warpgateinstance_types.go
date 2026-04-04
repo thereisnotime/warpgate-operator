@@ -49,6 +49,10 @@ type WarpgateInstanceSpec struct {
 	// +optional
 	SSH *SSHListenerSpec `json:"ssh,omitempty"`
 
+	// kubernetes configures the Kubernetes protocol proxy listener.
+	// +optional
+	Kubernetes *ProtocolListenerSpec `json:"kubernetes,omitempty"`
+
 	// mysql configures the MySQL protocol proxy listener.
 	// +optional
 	MySQL *ProtocolListenerSpec `json:"mysql,omitempty"`
@@ -64,6 +68,37 @@ type WarpgateInstanceSpec struct {
 	// tls configures TLS certificate provisioning.
 	// +optional
 	TLS *InstanceTLSSpec `json:"tls,omitempty"`
+
+	// sshKeysSecretName references a Secret containing SSH host/client keys.
+	// Expected keys: client-ed25519, client-rsa, host-ed25519, host-rsa.
+	// If not set, Warpgate generates its own keys on first boot.
+	// +optional
+	SSHKeysSecretName string `json:"sshKeysSecretName,omitempty"`
+
+	// configOverride allows providing a complete warpgate.yaml config that replaces
+	// the auto-generated one. Mounted as a ConfigMap.
+	// +optional
+	ConfigOverride string `json:"configOverride,omitempty"`
+
+	// databaseURL overrides the default SQLite database with a PostgreSQL connection string.
+	// Example: "postgres://user:pass@host:5432/warpgate"
+	// +optional
+	DatabaseURL string `json:"databaseURL,omitempty"`
+
+	// recordSessions enables session recording. Defaults to false.
+	// +optional
+	RecordSessions *bool `json:"recordSessions,omitempty"`
+
+	// strategy overrides the default deployment update strategy.
+	// Use "Recreate" when using RWO persistent volumes (default).
+	// +optional
+	// +kubebuilder:default="Recreate"
+	// +kubebuilder:validation:Enum=Recreate;RollingUpdate
+	Strategy string `json:"strategy,omitempty"`
+
+	// ingress configures an Ingress resource for the HTTP listener.
+	// +optional
+	Ingress *IngressSpec `json:"ingress,omitempty"`
 
 	// resources defines CPU/memory requests and limits for the Warpgate container.
 	// +optional
@@ -133,6 +168,10 @@ type ProtocolListenerSpec struct {
 
 // StorageSpec configures persistent storage for Warpgate data.
 type StorageSpec struct {
+	// enabled enables persistent storage via PVC. When false, uses emptyDir.
+	// +optional
+	// +kubebuilder:default=true
+	Enabled *bool `json:"enabled,omitempty"`
 	// size is the PVC size. Defaults to 1Gi.
 	// +optional
 	// +kubebuilder:default="1Gi"
@@ -140,17 +179,23 @@ type StorageSpec struct {
 	// storageClassName overrides the default StorageClass.
 	// +optional
 	StorageClassName *string `json:"storageClassName,omitempty"`
+	// existingClaimName uses an existing PVC instead of creating one.
+	// +optional
+	ExistingClaimName string `json:"existingClaimName,omitempty"`
 }
 
 // InstanceTLSSpec configures TLS certificate provisioning.
 type InstanceTLSSpec struct {
 	// certManager enables automatic TLS cert provisioning via cert-manager.
 	// +optional
-	// +kubebuilder:default=true
 	CertManager *bool `json:"certManager,omitempty"`
-	// issuerRef references a custom cert-manager issuer. If empty, a self-signed issuer is created.
+	// issuerRef references a custom cert-manager issuer.
 	// +optional
 	IssuerRef *CertIssuerRef `json:"issuerRef,omitempty"`
+	// secretName references an existing TLS Secret (with tls.crt and tls.key).
+	// If set, cert-manager is not used and the secret is mounted directly.
+	// +optional
+	SecretName string `json:"secretName,omitempty"`
 }
 
 // CertIssuerRef references a cert-manager Issuer or ClusterIssuer.
@@ -161,6 +206,33 @@ type CertIssuerRef struct {
 	// kind is the issuer kind — Issuer or ClusterIssuer.
 	// +optional
 	Kind string `json:"kind,omitempty"`
+}
+
+// IngressSpec configures an Ingress resource for the HTTP listener.
+type IngressSpec struct {
+	Enabled     bool              `json:"enabled,omitempty"`
+	ClassName   string            `json:"className,omitempty"`
+	Annotations map[string]string `json:"annotations,omitempty"`
+	Hosts       []IngressHost     `json:"hosts,omitempty"`
+	TLS         []IngressTLS      `json:"tls,omitempty"`
+}
+
+// IngressHost defines a host entry for an Ingress resource.
+type IngressHost struct {
+	Host  string        `json:"host"`
+	Paths []IngressPath `json:"paths,omitempty"`
+}
+
+// IngressPath defines a path entry for an Ingress host.
+type IngressPath struct {
+	Path     string `json:"path"`
+	PathType string `json:"pathType,omitempty"`
+}
+
+// IngressTLS defines a TLS entry for an Ingress resource.
+type IngressTLS struct {
+	SecretName string   `json:"secretName,omitempty"`
+	Hosts      []string `json:"hosts,omitempty"`
 }
 
 // WarpgateInstanceStatus defines the observed state of WarpgateInstance.

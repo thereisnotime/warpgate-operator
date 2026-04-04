@@ -411,3 +411,215 @@ func TestInstanceValidate_DeleteAlwaysSucceeds(t *testing.T) {
 		t.Errorf("delete validation should always succeed: %v", err)
 	}
 }
+
+// --- New defaulting tests ---
+
+func TestInstanceDefault_Strategy(t *testing.T) {
+	inst := validInstance()
+	inst.Spec.Strategy = ""
+
+	d := &WarpgateInstanceCustomDefaulter{}
+	if err := d.Default(context.Background(), inst); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if inst.Spec.Strategy != "Recreate" {
+		t.Errorf("expected strategy Recreate, got %q", inst.Spec.Strategy)
+	}
+}
+
+func TestInstanceDefault_StrategyPreserved(t *testing.T) {
+	inst := validInstance()
+	inst.Spec.Strategy = "RollingUpdate"
+
+	d := &WarpgateInstanceCustomDefaulter{}
+	if err := d.Default(context.Background(), inst); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if inst.Spec.Strategy != "RollingUpdate" {
+		t.Errorf("expected strategy RollingUpdate preserved, got %q", inst.Spec.Strategy)
+	}
+}
+
+func TestInstanceDefault_KubernetesPort(t *testing.T) {
+	inst := validInstance()
+	inst.Spec.Kubernetes = &ProtocolListenerSpec{}
+
+	d := &WarpgateInstanceCustomDefaulter{}
+	if err := d.Default(context.Background(), inst); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if inst.Spec.Kubernetes.Port == nil || *inst.Spec.Kubernetes.Port != 0 {
+		t.Errorf("expected kubernetes port 0, got %v", inst.Spec.Kubernetes.Port)
+	}
+}
+
+func TestInstanceDefault_StorageEnabled(t *testing.T) {
+	inst := validInstance()
+	inst.Spec.Storage = &StorageSpec{}
+
+	d := &WarpgateInstanceCustomDefaulter{}
+	if err := d.Default(context.Background(), inst); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if inst.Spec.Storage.Enabled == nil || !*inst.Spec.Storage.Enabled {
+		t.Error("expected storage.enabled to default to true")
+	}
+}
+
+func TestInstanceDefault_StorageEnabledPreserved(t *testing.T) {
+	inst := validInstance()
+	inst.Spec.Storage = &StorageSpec{Enabled: boolPtr(false)}
+
+	d := &WarpgateInstanceCustomDefaulter{}
+	if err := d.Default(context.Background(), inst); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if *inst.Spec.Storage.Enabled {
+		t.Error("expected storage.enabled=false to be preserved")
+	}
+}
+
+func TestInstanceDefault_RecordSessions(t *testing.T) {
+	inst := validInstance()
+	inst.Spec.RecordSessions = nil
+
+	d := &WarpgateInstanceCustomDefaulter{}
+	if err := d.Default(context.Background(), inst); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if inst.Spec.RecordSessions == nil || *inst.Spec.RecordSessions {
+		t.Error("expected recordSessions to default to false")
+	}
+}
+
+func TestInstanceDefault_RecordSessionsPreserved(t *testing.T) {
+	inst := validInstance()
+	inst.Spec.RecordSessions = boolPtr(true)
+
+	d := &WarpgateInstanceCustomDefaulter{}
+	if err := d.Default(context.Background(), inst); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !*inst.Spec.RecordSessions {
+		t.Error("expected recordSessions=true to be preserved")
+	}
+}
+
+// --- New validation tests ---
+
+func TestInstanceValidate_InvalidStrategy(t *testing.T) {
+	inst := validInstance()
+	inst.Spec.Strategy = "BlueGreen"
+
+	v := &WarpgateInstanceCustomValidator{}
+	_, err := v.ValidateCreate(context.Background(), inst)
+	if err == nil {
+		t.Fatal("expected error for invalid strategy")
+	}
+	if !strings.Contains(err.Error(), "strategy") {
+		t.Errorf("error should mention strategy: %v", err)
+	}
+}
+
+func TestInstanceValidate_ValidStrategies(t *testing.T) {
+	for _, s := range []string{"Recreate", "RollingUpdate"} {
+		inst := validInstance()
+		inst.Spec.Strategy = s
+
+		v := &WarpgateInstanceCustomValidator{}
+		if _, err := v.ValidateCreate(context.Background(), inst); err != nil {
+			t.Errorf("expected strategy %q to be valid, got: %v", s, err)
+		}
+	}
+}
+
+func TestInstanceValidate_InvalidKubernetesPort(t *testing.T) {
+	inst := validInstance()
+	inst.Spec.Kubernetes = &ProtocolListenerSpec{Port: int32Ptr(70000)}
+
+	v := &WarpgateInstanceCustomValidator{}
+	_, err := v.ValidateCreate(context.Background(), inst)
+	if err == nil {
+		t.Fatal("expected error for invalid kubernetes port")
+	}
+	if !strings.Contains(err.Error(), "port") {
+		t.Errorf("error should mention port: %v", err)
+	}
+}
+
+func TestInstanceValidate_KubernetesPortZeroIsValid(t *testing.T) {
+	inst := validInstance()
+	inst.Spec.Kubernetes = &ProtocolListenerSpec{Port: int32Ptr(0)}
+
+	v := &WarpgateInstanceCustomValidator{}
+	if _, err := v.ValidateCreate(context.Background(), inst); err != nil {
+		t.Errorf("expected kubernetes port 0 to be valid, got: %v", err)
+	}
+}
+
+func TestInstanceValidate_WarnDatabaseURLSet(t *testing.T) {
+	inst := validInstance()
+	inst.Spec.DatabaseURL = "postgres://user:pass@host:5432/warpgate"
+
+	v := &WarpgateInstanceCustomValidator{}
+	warnings, err := v.ValidateCreate(context.Background(), inst)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(warnings) == 0 {
+		t.Fatal("expected a warning when databaseURL is set")
+	}
+	found := false
+	for _, w := range warnings {
+		if strings.Contains(w, "SQLite") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected warning about SQLite persistence, got: %v", warnings)
+	}
+}
+
+func TestInstanceValidate_WarnStorageDisabledNoDB(t *testing.T) {
+	inst := validInstance()
+	inst.Spec.Storage = &StorageSpec{Enabled: boolPtr(false), Size: "1Gi"}
+	inst.Spec.DatabaseURL = ""
+
+	v := &WarpgateInstanceCustomValidator{}
+	warnings, err := v.ValidateCreate(context.Background(), inst)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(warnings) == 0 {
+		t.Fatal("expected a warning when storage disabled and no databaseURL")
+	}
+	found := false
+	for _, w := range warnings {
+		if strings.Contains(w, "data will be lost") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected warning about data loss, got: %v", warnings)
+	}
+}
+
+func TestInstanceValidate_NoWarnStorageDisabledWithDB(t *testing.T) {
+	inst := validInstance()
+	inst.Spec.Storage = &StorageSpec{Enabled: boolPtr(false), Size: "1Gi"}
+	inst.Spec.DatabaseURL = "postgres://user:pass@host:5432/warpgate"
+
+	v := &WarpgateInstanceCustomValidator{}
+	warnings, err := v.ValidateCreate(context.Background(), inst)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Should have the databaseURL warning but NOT the data-loss warning.
+	for _, w := range warnings {
+		if strings.Contains(w, "data will be lost") {
+			t.Errorf("should not warn about data loss when databaseURL is set, got: %v", warnings)
+		}
+	}
+}

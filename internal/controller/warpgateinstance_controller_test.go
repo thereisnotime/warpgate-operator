@@ -108,7 +108,7 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			}
 		})
 
-		It("should create ConfigMap, StatefulSet, HTTP Service, and set status", func() {
+		It("should create ConfigMap, Deployment, HTTP Service, and set status", func() {
 			nn := types.NamespacedName{Name: instName, Namespace: testNamespace}
 
 			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
@@ -122,8 +122,8 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			Expect(cm.Data["warpgate.yaml"]).To(ContainSubstring("enable: true"))
 			Expect(cm.Data["warpgate.yaml"]).To(ContainSubstring("8888"))
 
-			// Verify StatefulSet is created with the right image and ports.
-			var sts appsv1.StatefulSet
+			// Verify Deployment is created with the right image and ports.
+			var sts appsv1.Deployment
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, &sts)).To(Succeed())
 			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(1))
 			Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("ghcr.io/warp-tech/warpgate:v0.21.1"))
@@ -238,8 +238,8 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			Expect(sshSvc.Spec.Ports).To(HaveLen(1))
 			Expect(sshSvc.Spec.Ports[0].Port).To(Equal(int32(2222)))
 
-			// StatefulSet should have both ports.
-			var sts appsv1.StatefulSet
+			// Deployment should have both ports.
+			var sts appsv1.Deployment
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, &sts)).To(Succeed())
 			ports := sts.Spec.Template.Spec.Containers[0].Ports
 			Expect(ports).To(ContainElement(
@@ -410,7 +410,7 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			}
 		})
 
-		It("should update the StatefulSet image when version changes", func() {
+		It("should update the Deployment image when version changes", func() {
 			nn := types.NamespacedName{Name: instName, Namespace: testNamespace}
 
 			// First reconcile creates all resources.
@@ -418,7 +418,7 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify initial image.
-			var sts appsv1.StatefulSet
+			var sts appsv1.Deployment
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, &sts)).To(Succeed())
 			Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("ghcr.io/warp-tech/warpgate:v0.20.0"))
 
@@ -428,7 +428,7 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			inst.Spec.Version = "0.21.1"
 			Expect(k8sClient.Update(ctx, &inst)).To(Succeed())
 
-			// Second reconcile should update the StatefulSet.
+			// Second reconcile should update the Deployment.
 			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -931,8 +931,8 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			// External host
 			Expect(yaml).To(ContainSubstring("external_host: warpgate.example.com"))
 
-			// StatefulSet should have all four protocol ports.
-			var sts appsv1.StatefulSet
+			// Deployment should have all four protocol ports.
+			var sts appsv1.Deployment
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, &sts)).To(Succeed())
 			ports := sts.Spec.Template.Spec.Containers[0].Ports
 			Expect(ports).To(ContainElement(
@@ -1020,13 +1020,13 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			}
 		})
 
-		It("should add MySQL and PostgreSQL ports to the StatefulSet", func() {
+		It("should add MySQL and PostgreSQL ports to the Deployment", func() {
 			nn := types.NamespacedName{Name: instName, Namespace: testNamespace}
 
 			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 
-			var sts appsv1.StatefulSet
+			var sts appsv1.Deployment
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, &sts)).To(Succeed())
 			ports := sts.Spec.Template.Spec.Containers[0].Ports
 
@@ -1116,7 +1116,7 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 
-			var sts appsv1.StatefulSet
+			var sts appsv1.Deployment
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, &sts)).To(Succeed())
 			Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("my-registry.io/custom-warpgate:nightly"))
 		})
@@ -1282,8 +1282,8 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName + "-ssh", Namespace: testNamespace}, &sshSvc)).To(Succeed())
 			Expect(sshSvc.Spec.Ports[0].Port).To(Equal(int32(2222)))
 
-			// StatefulSet should only have SSH port, no HTTP port.
-			var sts appsv1.StatefulSet
+			// Deployment should only have SSH port, no HTTP port.
+			var sts appsv1.Deployment
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, &sts)).To(Succeed())
 			ports := sts.Spec.Template.Spec.Containers[0].Ports
 			Expect(ports).To(ContainElement(
@@ -1383,9 +1383,9 @@ var _ = Describe("WarpgateInstance Controller", func() {
 	})
 
 	// -----------------------------------------------------------------------
-	// 6. Update triggers StatefulSet update (replicas change)
+	// 6. Update triggers Deployment update (replicas change)
 	// -----------------------------------------------------------------------
-	Context("Update triggers StatefulSet update", func() {
+	Context("Update triggers Deployment update", func() {
 		const (
 			instName   = "inst-sts-update"
 			secretName = "inst-sts-update-pw"
@@ -1444,14 +1444,14 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			}
 		})
 
-		It("should update StatefulSet replicas when spec.replicas changes", func() {
+		It("should update Deployment replicas when spec.replicas changes", func() {
 			nn := types.NamespacedName{Name: instName, Namespace: testNamespace}
 
 			// First reconcile creates with 1 replica.
 			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 
-			var sts appsv1.StatefulSet
+			var sts appsv1.Deployment
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, &sts)).To(Succeed())
 			Expect(*sts.Spec.Replicas).To(Equal(int32(1)))
 
@@ -1461,7 +1461,7 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			inst.Spec.Replicas = int32Ptr(3)
 			Expect(k8sClient.Update(ctx, &inst)).To(Succeed())
 
-			// Second reconcile should update the StatefulSet.
+			// Second reconcile should update the Deployment.
 			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -1566,8 +1566,8 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			actualQty := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
 			Expect(actualQty.Cmp(originalQty)).To(Equal(0))
 
-			// StatefulSet should still be created despite pre-existing PVC.
-			var sts appsv1.StatefulSet
+			// Deployment should still be created despite pre-existing PVC.
+			var sts appsv1.Deployment
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, &sts)).To(Succeed())
 		})
 	})
@@ -1820,6 +1820,283 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			Expect(yaml).NotTo(ContainSubstring("mysql:"))
 			Expect(yaml).NotTo(ContainSubstring("postgres:"))
 			Expect(yaml).NotTo(ContainSubstring("external_host"))
+		})
+	})
+
+	// -----------------------------------------------------------------------
+	// 11. Recreate strategy default
+	// -----------------------------------------------------------------------
+	Context("Recreate strategy default", func() {
+		const (
+			instName   = "inst-recreate"
+			secretName = "inst-recreate-pw"
+		)
+
+		BeforeEach(func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: testNamespace,
+				},
+				Data: map[string][]byte{
+					"password": []byte("recreate-secret"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      instName,
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: secretName,
+					},
+					Replicas: int32Ptr(1),
+					Strategy: "Recreate",
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled:     boolPtr(true),
+						Port:        int32Ptr(8888),
+						ServiceType: "ClusterIP",
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						Size: "1Gi",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+					CreateConnection: boolPtr(false),
+				},
+			}
+			Expect(k8sClient.Create(ctx, inst)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, inst); err == nil {
+				controllerutil.RemoveFinalizer(inst, instanceFinalizer)
+				_ = k8sClient.Update(ctx, inst)
+				_ = k8sClient.Delete(ctx, inst)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: testNamespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should create a Deployment with Recreate strategy", func() {
+			nn := types.NamespacedName{Name: instName, Namespace: testNamespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var deploy appsv1.Deployment
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, &deploy)).To(Succeed())
+			Expect(deploy.Spec.Strategy.Type).To(Equal(appsv1.RecreateDeploymentStrategyType))
+		})
+	})
+
+	// -----------------------------------------------------------------------
+	// 12. EmptyDir storage (storage.enabled=false)
+	// -----------------------------------------------------------------------
+	Context("EmptyDir storage when storage disabled", func() {
+		const (
+			instName   = "inst-emptydir"
+			secretName = "inst-emptydir-pw"
+		)
+
+		BeforeEach(func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: testNamespace,
+				},
+				Data: map[string][]byte{
+					"password": []byte("emptydir-secret"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      instName,
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: secretName,
+					},
+					Replicas: int32Ptr(1),
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled:     boolPtr(true),
+						Port:        int32Ptr(8888),
+						ServiceType: "ClusterIP",
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						Enabled: boolPtr(false),
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+					CreateConnection: boolPtr(false),
+				},
+			}
+			Expect(k8sClient.Create(ctx, inst)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, inst); err == nil {
+				controllerutil.RemoveFinalizer(inst, instanceFinalizer)
+				_ = k8sClient.Update(ctx, inst)
+				_ = k8sClient.Delete(ctx, inst)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: testNamespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should not create a PVC and use emptyDir volume", func() {
+			nn := types.NamespacedName{Name: instName, Namespace: testNamespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// PVC should NOT exist.
+			var pvc corev1.PersistentVolumeClaim
+			err = k8sClient.Get(ctx, types.NamespacedName{Name: instName + "-data", Namespace: testNamespace}, &pvc)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+
+			// Deployment should have an emptyDir volume for data.
+			var deploy appsv1.Deployment
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, &deploy)).To(Succeed())
+
+			foundEmptyDir := false
+			for _, vol := range deploy.Spec.Template.Spec.Volumes {
+				if vol.Name == "data" && vol.EmptyDir != nil {
+					foundEmptyDir = true
+					break
+				}
+			}
+			Expect(foundEmptyDir).To(BeTrue(), "expected data volume to use emptyDir")
+		})
+	})
+
+	// -----------------------------------------------------------------------
+	// 13. Existing PVC reference
+	// -----------------------------------------------------------------------
+	Context("Existing PVC via storage.existingClaimName", func() {
+		const (
+			instName      = "inst-existpvc"
+			secretName    = "inst-existpvc-pw"
+			existingClaim = "my-preexisting-pvc"
+		)
+
+		BeforeEach(func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: testNamespace,
+				},
+				Data: map[string][]byte{
+					"password": []byte("existpvc-secret"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			// Create the existing PVC so the controller can reference it.
+			pvc := &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      existingClaim,
+					Namespace: testNamespace,
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+					Resources: corev1.VolumeResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceStorage: resource.MustParse("20Gi"),
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, pvc)).To(Succeed())
+
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      instName,
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: secretName,
+					},
+					Replicas: int32Ptr(1),
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled:     boolPtr(true),
+						Port:        int32Ptr(8888),
+						ServiceType: "ClusterIP",
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						ExistingClaimName: existingClaim,
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+					CreateConnection: boolPtr(false),
+				},
+			}
+			Expect(k8sClient.Create(ctx, inst)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, inst); err == nil {
+				controllerutil.RemoveFinalizer(inst, instanceFinalizer)
+				_ = k8sClient.Update(ctx, inst)
+				_ = k8sClient.Delete(ctx, inst)
+			}
+			pvc := &corev1.PersistentVolumeClaim{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: existingClaim, Namespace: testNamespace}, pvc); err == nil {
+				_ = k8sClient.Delete(ctx, pvc)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: testNamespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should reference the existing PVC instead of creating a new one", func() {
+			nn := types.NamespacedName{Name: instName, Namespace: testNamespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// The auto-generated PVC should NOT be created.
+			var autoPVC corev1.PersistentVolumeClaim
+			err = k8sClient.Get(ctx, types.NamespacedName{Name: instName + "-data", Namespace: testNamespace}, &autoPVC)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+
+			// Deployment should reference the existing claim.
+			var deploy appsv1.Deployment
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, &deploy)).To(Succeed())
+
+			foundPVCRef := false
+			for _, vol := range deploy.Spec.Template.Spec.Volumes {
+				if vol.Name == "data" && vol.PersistentVolumeClaim != nil {
+					if vol.PersistentVolumeClaim.ClaimName == existingClaim {
+						foundPVCRef = true
+						break
+					}
+				}
+			}
+			Expect(foundPVCRef).To(BeTrue(), "expected data volume to reference existing PVC %q", existingClaim)
 		})
 	})
 })
