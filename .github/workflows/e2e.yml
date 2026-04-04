@@ -27,6 +27,9 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Install just
+        uses: taiki-e/install-action@just
+
       - name: Install kind
         run: |
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-$(go env GOARCH)
@@ -34,7 +37,9 @@ jobs:
           sudo mv ./kind /usr/local/bin/kind
 
       - name: Create Kind cluster
-        run: make setup-test-e2e
+        run: |
+          kind create cluster --name warpgate-operator-test-e2e
+          kubectl cluster-info
 
       - name: Install cert-manager
         run: |
@@ -46,7 +51,14 @@ jobs:
       - name: Run E2E tests
         env:
           CONTAINER_TOOL: docker
+          IMG: example.com/warpgate-operator:v0.0.1
+          KIND: kind
+          KIND_CLUSTER: warpgate-operator-test-e2e
           CERT_MANAGER_INSTALL_SKIP: "true"
         run: |
           go mod tidy
-          make test-e2e
+          go test -tags=e2e ./test/e2e/ -v -ginkgo.v
+
+      - name: Cleanup
+        if: always()
+        run: kind delete cluster --name warpgate-operator-test-e2e
