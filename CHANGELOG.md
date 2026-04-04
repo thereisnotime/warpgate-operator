@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.0...v0.4.1) (2026-04-04)
+
+
+### Bug Fixes
+
+* add missing RBAC for WarpgateInstance, Deployments, ConfigMaps, PVCs, cert-manager ([8adca00](https://github.com/thereisnotime/warpgate-operator/commit/8adca00ffd01f587c8de336b60a9c5f4fdb2386d))
+
 ## [0.4.0](https://github.com/thereisnotime/warpgate-operator/compare/v0.3.0...v0.4.0) (2026-04-04)
 
 
