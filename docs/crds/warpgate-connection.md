@@ -2,6 +2,8 @@
 
 A `WarpgateConnection` represents a connection to a Warpgate instance. All other CRDs reference a connection by name via the `connectionRef` field, so you need at least one before creating any other resources.
 
+You can create a `WarpgateConnection` manually, or let a [`WarpgateInstance`](warpgate-instance.md) auto-create one when deploying a self-hosted Warpgate server.
+
 The operator supports two authentication modes against the Warpgate REST API:
 
 1. **Bearer token** (recommended) -- a single API token that bypasses OTP/2FA requirements.
