@@ -17,6 +17,10 @@ limitations under the License.
 package controller
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -455,9 +459,21 @@ var _ = Describe("getWarpgateClient helper", func() {
 		var (
 			connName   = "helper-conn-token-prio"
 			secretName = "helper-secret-token-prio"
+			mockServer *httptest.Server
+			gotToken   string
 		)
 
 		BeforeEach(func() {
+			gotToken = ""
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
+				gotToken = r.Header.Get("X-Warpgate-Token")
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode([]map[string]any{})
+			})
+			mockServer = httptest.NewServer(mux)
+
 			secret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: helperNS},
 				Data: map[string][]byte{
@@ -471,14 +487,16 @@ var _ = Describe("getWarpgateClient helper", func() {
 			conn := &warpgatev1alpha1.WarpgateConnection{
 				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
 				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
-					Host:          "https://warpgate.example.com",
-					AuthSecretRef: warpgatev1alpha1.AuthSecretRef{Name: secretName},
+					Host:               mockServer.URL,
+					AuthSecretRef:      warpgatev1alpha1.AuthSecretRef{Name: secretName},
+					InsecureSkipVerify: true,
 				},
 			}
 			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
 		})
 
 		AfterEach(func() {
+			mockServer.Close()
 			conn := &warpgatev1alpha1.WarpgateConnection{}
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: helperNS}, conn); err == nil {
 				_ = k8sClient.Delete(ctx, conn)
@@ -489,10 +507,77 @@ var _ = Describe("getWarpgateClient helper", func() {
 			}
 		})
 
-		It("should use token auth when the secret has both token and username+password", func() {
-			client, err := getWarpgateClient(ctx, k8sClient, helperNS, connName)
+		It("should use token auth (not session auth) when the secret has both token and username+password", func() {
+			wgClient, err := getWarpgateClient(ctx, k8sClient, helperNS, connName)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(client).NotTo(BeNil())
+			Expect(wgClient).NotTo(BeNil())
+
+			// Hit the mock to prove the token header is sent instead of session auth.
+			_, err = wgClient.ListRoles("")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(gotToken).To(Equal("my-bearer-token"))
+		})
+	})
+
+	Context("Custom tokenKey", func() {
+		var (
+			connName   = "helper-conn-custom-tkey"
+			secretName = "helper-secret-custom-tkey"
+			mockServer *httptest.Server
+			gotToken   string
+		)
+
+		BeforeEach(func() {
+			gotToken = ""
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
+				gotToken = r.Header.Get("X-Warpgate-Token")
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode([]map[string]any{})
+			})
+			mockServer = httptest.NewServer(mux)
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: helperNS},
+				Data:       map[string][]byte{"api-key": []byte("custom-token-value")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host: mockServer.URL,
+					AuthSecretRef: warpgatev1alpha1.AuthSecretRef{
+						Name:     secretName,
+						TokenKey: "api-key",
+					},
+					InsecureSkipVerify: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: helperNS}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: helperNS}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should use the custom tokenKey to read the token from the secret", func() {
+			wgClient, err := getWarpgateClient(ctx, k8sClient, helperNS, connName)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(wgClient).NotTo(BeNil())
+
+			_, err = wgClient.ListRoles("")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(gotToken).To(Equal("custom-token-value"))
 		})
 	})
 })

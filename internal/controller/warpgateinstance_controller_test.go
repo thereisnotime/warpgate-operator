@@ -2099,4 +2099,1857 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			Expect(foundPVCRef).To(BeTrue(), "expected data volume to reference existing PVC %q", existingClaim)
 		})
 	})
+
+	// -----------------------------------------------------------------------
+	// 14. Config override ConfigMap
+	// -----------------------------------------------------------------------
+	Context("Config override creates a second ConfigMap", func() {
+		const (
+			instName   = "inst-cfg-override"
+			secretName = "inst-cfg-override-pw"
+		)
+
+		BeforeEach(func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: testNamespace,
+				},
+				Data: map[string][]byte{
+					"password": []byte("cfg-override-secret"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      instName,
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: secretName,
+					},
+					Replicas: int32Ptr(1),
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled:     boolPtr(true),
+						Port:        int32Ptr(8888),
+						ServiceType: "ClusterIP",
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						Size: "1Gi",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+					CreateConnection: boolPtr(false),
+					ConfigOverride:   "custom: config",
+				},
+			}
+			Expect(k8sClient.Create(ctx, inst)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, inst); err == nil {
+				controllerutil.RemoveFinalizer(inst, instanceFinalizer)
+				_ = k8sClient.Update(ctx, inst)
+				_ = k8sClient.Delete(ctx, inst)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: testNamespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should create a config-override ConfigMap with the override content", func() {
+			nn := types.NamespacedName{Name: instName, Namespace: testNamespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// The override ConfigMap should exist with the custom content.
+			var overrideCM corev1.ConfigMap
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: instName + "-config-override", Namespace: testNamespace,
+			}, &overrideCM)).To(Succeed())
+			Expect(overrideCM.Data).To(HaveKey("warpgate.yaml"))
+			Expect(overrideCM.Data["warpgate.yaml"]).To(Equal("custom: config"))
+
+			// The base ConfigMap should still exist too.
+			var baseCM corev1.ConfigMap
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: instName + "-config", Namespace: testNamespace,
+			}, &baseCM)).To(Succeed())
+
+			// Deployment should have a config-override volume.
+			var deploy appsv1.Deployment
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, &deploy)).To(Succeed())
+			foundOverrideVol := false
+			for _, vol := range deploy.Spec.Template.Spec.Volumes {
+				if vol.Name == "config-override" && vol.ConfigMap != nil {
+					Expect(vol.ConfigMap.Name).To(Equal(instName + "-config-override"))
+					foundOverrideVol = true
+					break
+				}
+			}
+			Expect(foundOverrideVol).To(BeTrue(), "expected config-override volume in Deployment")
+		})
+	})
+
+	// -----------------------------------------------------------------------
+	// 15. Database URL in config (PostgreSQL branch)
+	// -----------------------------------------------------------------------
+	Context("Database URL produces postgres config instead of sqlite", func() {
+		const (
+			instName   = "inst-dburl"
+			secretName = "inst-dburl-pw"
+		)
+
+		BeforeEach(func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: testNamespace,
+				},
+				Data: map[string][]byte{
+					"password": []byte("dburl-secret"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      instName,
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: secretName,
+					},
+					Replicas: int32Ptr(1),
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled:     boolPtr(true),
+						Port:        int32Ptr(8888),
+						ServiceType: "ClusterIP",
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						Size: "1Gi",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+					CreateConnection: boolPtr(false),
+					DatabaseURL:      "postgres://host/db",
+				},
+			}
+			Expect(k8sClient.Create(ctx, inst)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, inst); err == nil {
+				controllerutil.RemoveFinalizer(inst, instanceFinalizer)
+				_ = k8sClient.Update(ctx, inst)
+				_ = k8sClient.Delete(ctx, inst)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: testNamespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should generate config with postgres database_url instead of sqlite", func() {
+			nn := types.NamespacedName{Name: instName, Namespace: testNamespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var cm corev1.ConfigMap
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: instName + "-config", Namespace: testNamespace,
+			}, &cm)).To(Succeed())
+
+			yaml := cm.Data["warpgate.yaml"]
+			Expect(yaml).To(ContainSubstring("postgres:"))
+			Expect(yaml).To(ContainSubstring("postgres://host/db"))
+			Expect(yaml).NotTo(ContainSubstring("sqlite:"))
+		})
+	})
+
+	// -----------------------------------------------------------------------
+	// 16. TLS from existing secret
+	// -----------------------------------------------------------------------
+	Context("TLS from existing secret", func() {
+		const (
+			instName      = "inst-tls-secret"
+			secretName    = "inst-tls-secret-pw"
+			tlsSecretName = "my-tls"
+		)
+
+		BeforeEach(func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: testNamespace,
+				},
+				Data: map[string][]byte{
+					"password": []byte("tls-secret-pw"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			tlsSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      tlsSecretName,
+					Namespace: testNamespace,
+				},
+				Type: corev1.SecretTypeTLS,
+				Data: map[string][]byte{
+					"tls.crt": []byte("fake-cert"),
+					"tls.key": []byte("fake-key"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, tlsSecret)).To(Succeed())
+
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      instName,
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: secretName,
+					},
+					Replicas: int32Ptr(1),
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled:     boolPtr(true),
+						Port:        int32Ptr(8888),
+						ServiceType: "ClusterIP",
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						Size: "1Gi",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+						SecretName:  tlsSecretName,
+					},
+					CreateConnection: boolPtr(false),
+				},
+			}
+			Expect(k8sClient.Create(ctx, inst)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, inst); err == nil {
+				controllerutil.RemoveFinalizer(inst, instanceFinalizer)
+				_ = k8sClient.Update(ctx, inst)
+				_ = k8sClient.Delete(ctx, inst)
+			}
+			for _, name := range []string{secretName, tlsSecretName} {
+				s := &corev1.Secret{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: testNamespace}, s); err == nil {
+					_ = k8sClient.Delete(ctx, s)
+				}
+			}
+		})
+
+		It("should mount the TLS secret as a volume in the Deployment", func() {
+			nn := types.NamespacedName{Name: instName, Namespace: testNamespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var deploy appsv1.Deployment
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, &deploy)).To(Succeed())
+
+			// Should have a tls-secret volume referencing the TLS secret.
+			foundTLSVol := false
+			for _, vol := range deploy.Spec.Template.Spec.Volumes {
+				if vol.Name == "tls-secret" && vol.Secret != nil {
+					Expect(vol.Secret.SecretName).To(Equal(tlsSecretName))
+					foundTLSVol = true
+					break
+				}
+			}
+			Expect(foundTLSVol).To(BeTrue(), "expected tls-secret volume in Deployment")
+
+			// Init container should have a tls-secret volume mount.
+			initMounts := deploy.Spec.Template.Spec.InitContainers[0].VolumeMounts
+			foundTLSMount := false
+			for _, m := range initMounts {
+				if m.Name == "tls-secret" && m.MountPath == "/tls-secret" {
+					foundTLSMount = true
+					break
+				}
+			}
+			Expect(foundTLSMount).To(BeTrue(), "expected tls-secret volume mount in init container")
+		})
+	})
+
+	// -----------------------------------------------------------------------
+	// 17. SSH keys secret volume
+	// -----------------------------------------------------------------------
+	Context("SSH keys secret volume mount", func() {
+		const (
+			instName      = "inst-ssh-keys"
+			secretName    = "inst-ssh-keys-pw"
+			sshKeysSecret = "my-ssh-keys"
+		)
+
+		BeforeEach(func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: testNamespace,
+				},
+				Data: map[string][]byte{
+					"password": []byte("ssh-keys-pw"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			sshSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      sshKeysSecret,
+					Namespace: testNamespace,
+				},
+				Data: map[string][]byte{
+					"host-ed25519": []byte("fake-host-key"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, sshSecret)).To(Succeed())
+
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      instName,
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: secretName,
+					},
+					Replicas: int32Ptr(1),
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled:     boolPtr(true),
+						Port:        int32Ptr(8888),
+						ServiceType: "ClusterIP",
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						Size: "1Gi",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+					CreateConnection:  boolPtr(false),
+					SSHKeysSecretName: sshKeysSecret,
+				},
+			}
+			Expect(k8sClient.Create(ctx, inst)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, inst); err == nil {
+				controllerutil.RemoveFinalizer(inst, instanceFinalizer)
+				_ = k8sClient.Update(ctx, inst)
+				_ = k8sClient.Delete(ctx, inst)
+			}
+			for _, name := range []string{secretName, sshKeysSecret} {
+				s := &corev1.Secret{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: testNamespace}, s); err == nil {
+					_ = k8sClient.Delete(ctx, s)
+				}
+			}
+		})
+
+		It("should mount the SSH keys secret as a volume in the Deployment", func() {
+			nn := types.NamespacedName{Name: instName, Namespace: testNamespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var deploy appsv1.Deployment
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, &deploy)).To(Succeed())
+
+			// Should have an ssh-keys volume referencing the secret.
+			foundSSHVol := false
+			for _, vol := range deploy.Spec.Template.Spec.Volumes {
+				if vol.Name == "ssh-keys" && vol.Secret != nil {
+					Expect(vol.Secret.SecretName).To(Equal(sshKeysSecret))
+					foundSSHVol = true
+					break
+				}
+			}
+			Expect(foundSSHVol).To(BeTrue(), "expected ssh-keys volume in Deployment")
+
+			// Init container should have an ssh-keys volume mount.
+			initMounts := deploy.Spec.Template.Spec.InitContainers[0].VolumeMounts
+			foundSSHMount := false
+			for _, m := range initMounts {
+				if m.Name == "ssh-keys" && m.MountPath == "/ssh-keys" {
+					foundSSHMount = true
+					break
+				}
+			}
+			Expect(foundSSHMount).To(BeTrue(), "expected ssh-keys volume mount in init container")
+		})
+	})
+
+	// -----------------------------------------------------------------------
+	// 18. Kubernetes protocol enabled
+	// -----------------------------------------------------------------------
+	Context("Kubernetes protocol enabled", func() {
+		const (
+			instName   = "inst-k8s-proto"
+			secretName = "inst-k8s-proto-pw"
+		)
+
+		BeforeEach(func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: testNamespace,
+				},
+				Data: map[string][]byte{
+					"password": []byte("k8s-proto-secret"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      instName,
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: secretName,
+					},
+					Replicas: int32Ptr(1),
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled:     boolPtr(true),
+						Port:        int32Ptr(8888),
+						ServiceType: "ClusterIP",
+					},
+					Kubernetes: &warpgatev1alpha1.ProtocolListenerSpec{
+						Enabled: boolPtr(true),
+						Port:    int32Ptr(8443),
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						Size: "1Gi",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+					CreateConnection: boolPtr(false),
+				},
+			}
+			Expect(k8sClient.Create(ctx, inst)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, inst); err == nil {
+				controllerutil.RemoveFinalizer(inst, instanceFinalizer)
+				_ = k8sClient.Update(ctx, inst)
+				_ = k8sClient.Delete(ctx, inst)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: testNamespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should add the kubernetes port to Deployment and kubernetes section to ConfigMap", func() {
+			nn := types.NamespacedName{Name: instName, Namespace: testNamespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Deployment should have the kubernetes port.
+			var deploy appsv1.Deployment
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, &deploy)).To(Succeed())
+			ports := deploy.Spec.Template.Spec.Containers[0].Ports
+			Expect(ports).To(ContainElement(
+				corev1.ContainerPort{Name: "kubernetes", ContainerPort: 8443, Protocol: corev1.ProtocolTCP},
+			))
+
+			// ConfigMap should have the kubernetes section.
+			var cm corev1.ConfigMap
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: instName + "-config", Namespace: testNamespace,
+			}, &cm)).To(Succeed())
+			yaml := cm.Data["warpgate.yaml"]
+			Expect(yaml).To(ContainSubstring("kubernetes:"))
+			Expect(yaml).To(ContainSubstring("enable: true"))
+			Expect(yaml).To(ContainSubstring("8443"))
+		})
+	})
+
+	// -----------------------------------------------------------------------
+	// 19. Delete instance with connection cleanup
+	// -----------------------------------------------------------------------
+	Context("Delete instance with createConnection cleans up connection", func() {
+		const (
+			instName   = "inst-del-conn"
+			secretName = "inst-del-conn-pw"
+		)
+
+		BeforeEach(func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: testNamespace,
+				},
+				Data: map[string][]byte{
+					"password": []byte("del-conn-secret"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      instName,
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: secretName,
+					},
+					Replicas: int32Ptr(1),
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled:     boolPtr(true),
+						Port:        int32Ptr(8888),
+						ServiceType: "ClusterIP",
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						Size: "1Gi",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+					CreateConnection: boolPtr(true),
+				},
+			}
+			Expect(k8sClient.Create(ctx, inst)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			// Clean up any leftover connection.
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			connNN := types.NamespacedName{Name: instName + "-connection", Namespace: testNamespace}
+			if err := k8sClient.Get(ctx, connNN, conn); err == nil {
+				controllerutil.RemoveFinalizer(conn, warpgateFinalizer)
+				_ = k8sClient.Update(ctx, conn)
+				_ = k8sClient.Delete(ctx, conn)
+			}
+
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, inst); err == nil {
+				controllerutil.RemoveFinalizer(inst, instanceFinalizer)
+				_ = k8sClient.Update(ctx, inst)
+				_ = k8sClient.Delete(ctx, inst)
+			}
+
+			authSecret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: instName + "-admin-auth", Namespace: testNamespace}, authSecret); err == nil {
+				_ = k8sClient.Delete(ctx, authSecret)
+			}
+
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: testNamespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should delete the WarpgateConnection when the instance is deleted", func() {
+			nn := types.NamespacedName{Name: instName, Namespace: testNamespace}
+			connNN := types.NamespacedName{Name: instName + "-connection", Namespace: testNamespace}
+
+			// First reconcile: creates instance + connection.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Connection should exist.
+			var conn warpgatev1alpha1.WarpgateConnection
+			Expect(k8sClient.Get(ctx, connNN, &conn)).To(Succeed())
+
+			// Status should have connectionRef.
+			var inst warpgatev1alpha1.WarpgateInstance
+			Expect(k8sClient.Get(ctx, nn, &inst)).To(Succeed())
+			Expect(inst.Status.ConnectionRef).To(Equal(instName + "-connection"))
+
+			// Remove finalizer from connection so deletion can proceed.
+			if controllerutil.ContainsFinalizer(&conn, warpgateFinalizer) {
+				controllerutil.RemoveFinalizer(&conn, warpgateFinalizer)
+				Expect(k8sClient.Update(ctx, &conn)).To(Succeed())
+			}
+
+			// Delete the instance.
+			Expect(k8sClient.Get(ctx, nn, &inst)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &inst)).To(Succeed())
+
+			// Reconcile deletion — finalizer should clean up the connection.
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Connection should be gone (deleted by the finalizer).
+			err = k8sClient.Get(ctx, connNN, &conn)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+
+			// Instance should be fully gone too.
+			var deleted warpgatev1alpha1.WarpgateInstance
+			err = k8sClient.Get(ctx, nn, &deleted)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+		})
+	})
+
+	// -----------------------------------------------------------------------
+	// 20. Reconcile error on missing admin secret
+	// -----------------------------------------------------------------------
+	Context("Missing admin password secret with createConnection", func() {
+		const (
+			instName   = "inst-missing-sec"
+			secretName = "inst-missing-sec-pw"
+		)
+
+		BeforeEach(func() {
+			// Create the admin password secret so the instance passes validation,
+			// but we will delete it before reconcile triggers connection creation.
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: testNamespace,
+				},
+				Data: map[string][]byte{
+					"password": []byte("will-be-deleted"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      instName,
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: "nonexistent-admin-pw-secret",
+					},
+					Replicas: int32Ptr(1),
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled:     boolPtr(true),
+						Port:        int32Ptr(8888),
+						ServiceType: "ClusterIP",
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						Size: "1Gi",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+					CreateConnection: boolPtr(true),
+				},
+			}
+			Expect(k8sClient.Create(ctx, inst)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, inst); err == nil {
+				controllerutil.RemoveFinalizer(inst, instanceFinalizer)
+				_ = k8sClient.Update(ctx, inst)
+				_ = k8sClient.Delete(ctx, inst)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: testNamespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+			// Clean up auth secret if it was partially created.
+			authSecret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: instName + "-admin-auth", Namespace: testNamespace}, authSecret); err == nil {
+				_ = k8sClient.Delete(ctx, authSecret)
+			}
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: instName + "-connection", Namespace: testNamespace}, conn); err == nil {
+				controllerutil.RemoveFinalizer(conn, warpgateFinalizer)
+				_ = k8sClient.Update(ctx, conn)
+				_ = k8sClient.Delete(ctx, conn)
+			}
+		})
+
+		It("should return an error and set a Failed condition when the admin secret is missing", func() {
+			nn := types.NamespacedName{Name: instName, Namespace: testNamespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("nonexistent-admin-pw-secret"))
+
+			// The instance should have a ConnectionFailed condition.
+			var inst warpgatev1alpha1.WarpgateInstance
+			Expect(k8sClient.Get(ctx, nn, &inst)).To(Succeed())
+			readyCond := findReadyCondition(inst.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("ConnectionFailed"))
+		})
+	})
+
+	// -----------------------------------------------------------------------
+	// 21. Helper function unit tests
+	// -----------------------------------------------------------------------
+	Context("Helper functions", func() {
+		It("instanceReplicas returns 1 when Replicas is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			Expect(instanceReplicas(inst)).To(Equal(int32(1)))
+		})
+
+		It("instanceReplicas returns the value when set", func() {
+			r := int32(5)
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{Replicas: &r},
+			}
+			Expect(instanceReplicas(inst)).To(Equal(int32(5)))
+		})
+
+		It("httpEnabled returns true when HTTP is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			Expect(httpEnabled(inst)).To(BeTrue())
+		})
+
+		It("httpEnabled returns true when HTTP.Enabled is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{},
+				},
+			}
+			Expect(httpEnabled(inst)).To(BeTrue())
+		})
+
+		It("httpEnabled returns false when explicitly disabled", func() {
+			f := false
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{Enabled: &f},
+				},
+			}
+			Expect(httpEnabled(inst)).To(BeFalse())
+		})
+
+		It("kubernetesEnabled returns false when Kubernetes is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			Expect(kubernetesEnabled(inst)).To(BeFalse())
+		})
+
+		It("kubernetesEnabled returns false when Kubernetes.Enabled is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Kubernetes: &warpgatev1alpha1.ProtocolListenerSpec{},
+				},
+			}
+			Expect(kubernetesEnabled(inst)).To(BeFalse())
+		})
+
+		It("kubernetesEnabled returns true when explicitly enabled", func() {
+			t := true
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Kubernetes: &warpgatev1alpha1.ProtocolListenerSpec{Enabled: &t},
+				},
+			}
+			Expect(kubernetesEnabled(inst)).To(BeTrue())
+		})
+
+		It("instanceHTTPPort returns 8888 when HTTP is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			Expect(instanceHTTPPort(inst)).To(Equal(int32(8888)))
+		})
+
+		It("instanceHTTPPort returns 8888 when HTTP.Port is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{},
+				},
+			}
+			Expect(instanceHTTPPort(inst)).To(Equal(int32(8888)))
+		})
+
+		It("instanceHTTPPort returns the custom value when set", func() {
+			p := int32(9999)
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{Port: &p},
+				},
+			}
+			Expect(instanceHTTPPort(inst)).To(Equal(int32(9999)))
+		})
+
+		It("instanceKubernetesPort returns 8443 when Kubernetes is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			Expect(instanceKubernetesPort(inst)).To(Equal(int32(8443)))
+		})
+
+		It("instanceKubernetesPort returns 8443 when Kubernetes.Port is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Kubernetes: &warpgatev1alpha1.ProtocolListenerSpec{},
+				},
+			}
+			Expect(instanceKubernetesPort(inst)).To(Equal(int32(8443)))
+		})
+
+		It("instanceKubernetesPort returns the custom value when set", func() {
+			p := int32(6443)
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Kubernetes: &warpgatev1alpha1.ProtocolListenerSpec{Port: &p},
+				},
+			}
+			Expect(instanceKubernetesPort(inst)).To(Equal(int32(6443)))
+		})
+
+		It("instanceStorageSize returns 1Gi when Storage is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			Expect(instanceStorageSize(inst)).To(Equal("1Gi"))
+		})
+
+		It("instanceStorageSize returns 1Gi when Storage.Size is empty", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Storage: &warpgatev1alpha1.StorageSpec{},
+				},
+			}
+			Expect(instanceStorageSize(inst)).To(Equal("1Gi"))
+		})
+
+		It("instanceStorageSize returns the custom value when set", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Storage: &warpgatev1alpha1.StorageSpec{Size: "50Gi"},
+				},
+			}
+			Expect(instanceStorageSize(inst)).To(Equal("50Gi"))
+		})
+
+		It("storageEnabled returns true when Storage is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			Expect(storageEnabled(inst)).To(BeTrue())
+		})
+
+		It("storageEnabled returns true when Storage.Enabled is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Storage: &warpgatev1alpha1.StorageSpec{},
+				},
+			}
+			Expect(storageEnabled(inst)).To(BeTrue())
+		})
+
+		It("storageEnabled returns false when explicitly disabled", func() {
+			f := false
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Storage: &warpgatev1alpha1.StorageSpec{Enabled: &f},
+				},
+			}
+			Expect(storageEnabled(inst)).To(BeFalse())
+		})
+
+		It("shouldCreateConnection returns true when CreateConnection is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			Expect(shouldCreateConnection(inst)).To(BeTrue())
+		})
+
+		It("shouldCreateConnection returns false when explicitly set to false", func() {
+			f := false
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{CreateConnection: &f},
+			}
+			Expect(shouldCreateConnection(inst)).To(BeFalse())
+		})
+
+		It("shouldCreateConnection returns true when explicitly set to true", func() {
+			t := true
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{CreateConnection: &t},
+			}
+			Expect(shouldCreateConnection(inst)).To(BeTrue())
+		})
+
+		It("adminPasswordKey returns 'password' when Key is empty", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{Name: "s"},
+				},
+			}
+			Expect(adminPasswordKey(inst)).To(Equal("password"))
+		})
+
+		It("adminPasswordKey returns the custom key when set", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: "s",
+						Key:  "admin-pw",
+					},
+				},
+			}
+			Expect(adminPasswordKey(inst)).To(Equal("admin-pw"))
+		})
+
+		It("sshEnabled returns false when SSH is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			Expect(sshEnabled(inst)).To(BeFalse())
+		})
+
+		It("mysqlEnabled returns false when MySQL is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			Expect(mysqlEnabled(inst)).To(BeFalse())
+		})
+
+		It("pgEnabled returns false when PostgreSQL is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			Expect(pgEnabled(inst)).To(BeFalse())
+		})
+
+		It("certManagerEnabled returns false when TLS is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			Expect(certManagerEnabled(inst)).To(BeFalse())
+		})
+
+		It("certManagerEnabled returns false when CertManager is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{},
+				},
+			}
+			Expect(certManagerEnabled(inst)).To(BeFalse())
+		})
+
+		It("certManagerEnabled returns true when CertManager is true", func() {
+			t := true
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{CertManager: &t},
+				},
+			}
+			Expect(certManagerEnabled(inst)).To(BeTrue())
+		})
+
+		It("tlsSecretProvided returns false when TLS is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			Expect(tlsSecretProvided(inst)).To(BeFalse())
+		})
+
+		It("tlsSecretProvided returns false when SecretName is empty", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{},
+				},
+			}
+			Expect(tlsSecretProvided(inst)).To(BeFalse())
+		})
+
+		It("tlsSecretProvided returns true when SecretName is set", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{SecretName: "my-tls-secret"},
+				},
+			}
+			Expect(tlsSecretProvided(inst)).To(BeTrue())
+		})
+
+		It("hasExistingClaim returns false when Storage is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			Expect(hasExistingClaim(inst)).To(BeFalse())
+		})
+
+		It("hasExistingClaim returns true when ExistingClaimName is set", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Storage: &warpgatev1alpha1.StorageSpec{ExistingClaimName: "my-pvc"},
+				},
+			}
+			Expect(hasExistingClaim(inst)).To(BeTrue())
+		})
+
+		It("instanceSSHPort returns 2222 when SSH is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			Expect(instanceSSHPort(inst)).To(Equal(int32(2222)))
+		})
+
+		It("instanceMySQLPort returns 33306 when MySQL is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			Expect(instanceMySQLPort(inst)).To(Equal(int32(33306)))
+		})
+
+		It("instancePGPort returns 55432 when PostgreSQL is nil", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			Expect(instancePGPort(inst)).To(Equal(int32(55432)))
+		})
+
+		It("resolveImage uses custom image when set", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					Image:   "custom-registry.io/warpgate:custom",
+				},
+			}
+			Expect(resolveImage(inst)).To(Equal("custom-registry.io/warpgate:custom"))
+		})
+
+		It("resolveImage builds default image from version", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+				},
+			}
+			Expect(resolveImage(inst)).To(Equal("ghcr.io/warp-tech/warpgate:v0.21.1"))
+		})
+
+		It("resolveImage does not double-prefix 'v'", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "v0.21.1",
+				},
+			}
+			Expect(resolveImage(inst)).To(Equal("ghcr.io/warp-tech/warpgate:v0.21.1"))
+		})
+
+		It("configHash changes when DatabaseURL changes", func() {
+			base := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{Version: "0.21.1"},
+			}
+			withDB := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version:     "0.21.1",
+					DatabaseURL: "postgres://host/db",
+				},
+			}
+			Expect(configHash(base)).NotTo(Equal(configHash(withDB)))
+		})
+
+		It("configHash changes when SSHKeysSecretName changes", func() {
+			base := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{Version: "0.21.1"},
+			}
+			withKeys := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version:           "0.21.1",
+					SSHKeysSecretName: "my-keys",
+				},
+			}
+			Expect(configHash(base)).NotTo(Equal(configHash(withKeys)))
+		})
+	})
+
+	// -----------------------------------------------------------------------
+	// 22. buildWarpgateConfig edge cases
+	// -----------------------------------------------------------------------
+	Context("buildWarpgateConfig edge cases", func() {
+		It("should include database_url postgres section when DatabaseURL is set", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cfg-dburl",
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version:     "0.21.1",
+					DatabaseURL: "postgres://user:pass@host:5432/warpgate",
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled: boolPtr(true),
+						Port:    int32Ptr(8888),
+					},
+				},
+			}
+			yaml := reconciler.buildWarpgateConfig(inst)
+			Expect(yaml).To(ContainSubstring("postgres: \"postgres://user:pass@host:5432/warpgate\""))
+			Expect(yaml).NotTo(ContainSubstring("sqlite"))
+		})
+
+		It("should use sqlite when DatabaseURL is empty", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cfg-sqlite",
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled: boolPtr(true),
+						Port:    int32Ptr(8888),
+					},
+				},
+			}
+			yaml := reconciler.buildWarpgateConfig(inst)
+			Expect(yaml).To(ContainSubstring("sqlite:"))
+			Expect(yaml).To(ContainSubstring("path: /data/db"))
+		})
+
+		It("should include kubernetes section when enabled", func() {
+			t := true
+			p := int32(6443)
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cfg-k8s",
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled: boolPtr(true),
+						Port:    int32Ptr(8888),
+					},
+					Kubernetes: &warpgatev1alpha1.ProtocolListenerSpec{
+						Enabled: &t,
+						Port:    &p,
+					},
+				},
+			}
+			yaml := reconciler.buildWarpgateConfig(inst)
+			Expect(yaml).To(ContainSubstring("kubernetes:"))
+			Expect(yaml).To(ContainSubstring("enable: true"))
+			Expect(yaml).To(ContainSubstring("0.0.0.0:6443"))
+		})
+
+		It("should include recordings section when RecordSessions is true", func() {
+			t := true
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cfg-rec",
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version:        "0.21.1",
+					RecordSessions: &t,
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled: boolPtr(true),
+						Port:    int32Ptr(8888),
+					},
+				},
+			}
+			yaml := reconciler.buildWarpgateConfig(inst)
+			Expect(yaml).To(ContainSubstring("recordings:"))
+			Expect(yaml).To(ContainSubstring("enable: true"))
+			Expect(yaml).To(ContainSubstring("path: /data/recordings"))
+		})
+
+		It("should set HTTP enable: false when HTTP is disabled", func() {
+			f := false
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cfg-no-http",
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled: &f,
+						Port:    int32Ptr(8888),
+					},
+				},
+			}
+			yaml := reconciler.buildWarpgateConfig(inst)
+			Expect(yaml).To(ContainSubstring("http:"))
+			Expect(yaml).To(ContainSubstring("enable: false"))
+		})
+	})
+
+	// -----------------------------------------------------------------------
+	// 23. buildDeployment edge cases
+	// -----------------------------------------------------------------------
+	Context("buildDeployment variations", func() {
+		It("should include config-override volume mount when ConfigOverride is set", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "deploy-override",
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: "dummy",
+					},
+					Replicas: int32Ptr(1),
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled: boolPtr(true),
+						Port:    int32Ptr(8888),
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						Size: "1Gi",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+					ConfigOverride: "custom: override",
+				},
+			}
+			deploy := reconciler.buildDeployment(inst)
+			initMounts := deploy.Spec.Template.Spec.InitContainers[0].VolumeMounts
+			foundOverride := false
+			for _, m := range initMounts {
+				if m.Name == "config-override" && m.MountPath == "/override" {
+					foundOverride = true
+					break
+				}
+			}
+			Expect(foundOverride).To(BeTrue(), "expected config-override mount in init container")
+
+			// Init script should mention applying config override.
+			initCmd := deploy.Spec.Template.Spec.InitContainers[0].Command[2]
+			Expect(initCmd).To(ContainSubstring("Applying config override"))
+			Expect(initCmd).To(ContainSubstring("cp /override/warpgate.yaml /data/warpgate.yaml"))
+		})
+
+		It("should include SSH keys volume mount when SSHKeysSecretName is set", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "deploy-ssh-keys",
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: "dummy",
+					},
+					Replicas: int32Ptr(1),
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled: boolPtr(true),
+						Port:    int32Ptr(8888),
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						Size: "1Gi",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+					SSHKeysSecretName: "my-ssh-keys",
+				},
+			}
+			deploy := reconciler.buildDeployment(inst)
+
+			// Volume should exist.
+			foundVol := false
+			for _, vol := range deploy.Spec.Template.Spec.Volumes {
+				if vol.Name == "ssh-keys" && vol.Secret != nil && vol.Secret.SecretName == "my-ssh-keys" {
+					foundVol = true
+					break
+				}
+			}
+			Expect(foundVol).To(BeTrue(), "expected ssh-keys volume")
+
+			// Init container mount should exist.
+			initMounts := deploy.Spec.Template.Spec.InitContainers[0].VolumeMounts
+			foundMount := false
+			for _, m := range initMounts {
+				if m.Name == "ssh-keys" && m.MountPath == "/ssh-keys" {
+					foundMount = true
+					break
+				}
+			}
+			Expect(foundMount).To(BeTrue(), "expected ssh-keys mount in init container")
+
+			// Init script should mention SSH keys.
+			initCmd := deploy.Spec.Template.Spec.InitContainers[0].Command[2]
+			Expect(initCmd).To(ContainSubstring("Copying SSH keys"))
+		})
+
+		It("should include TLS secret volume mount when tls.secretName is set", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "deploy-tls-sec",
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: "dummy",
+					},
+					Replicas: int32Ptr(1),
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled: boolPtr(true),
+						Port:    int32Ptr(8888),
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						Size: "1Gi",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+						SecretName:  "my-tls-cert",
+					},
+				},
+			}
+			deploy := reconciler.buildDeployment(inst)
+
+			// Volume should reference the TLS secret.
+			foundVol := false
+			for _, vol := range deploy.Spec.Template.Spec.Volumes {
+				if vol.Name == "tls-secret" && vol.Secret != nil && vol.Secret.SecretName == "my-tls-cert" {
+					foundVol = true
+					break
+				}
+			}
+			Expect(foundVol).To(BeTrue(), "expected tls-secret volume")
+
+			// Init container mount should exist.
+			initMounts := deploy.Spec.Template.Spec.InitContainers[0].VolumeMounts
+			foundMount := false
+			for _, m := range initMounts {
+				if m.Name == "tls-secret" && m.MountPath == "/tls-secret" {
+					foundMount = true
+					break
+				}
+			}
+			Expect(foundMount).To(BeTrue(), "expected tls-secret mount in init container")
+
+			// Init script should NOT include self-signed cert generation.
+			initCmd := deploy.Spec.Template.Spec.InitContainers[0].Command[2]
+			Expect(initCmd).To(ContainSubstring("Copying TLS certificates"))
+			Expect(initCmd).NotTo(ContainSubstring("Generating self-signed TLS"))
+		})
+
+		It("should include kubernetes port and --kubernetes-port in setup when enabled", func() {
+			t := true
+			p := int32(8443)
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "deploy-k8s",
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: "dummy",
+					},
+					Replicas: int32Ptr(1),
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled: boolPtr(true),
+						Port:    int32Ptr(8888),
+					},
+					Kubernetes: &warpgatev1alpha1.ProtocolListenerSpec{
+						Enabled: &t,
+						Port:    &p,
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						Size: "1Gi",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+				},
+			}
+			deploy := reconciler.buildDeployment(inst)
+
+			// Container ports should include kubernetes.
+			ports := deploy.Spec.Template.Spec.Containers[0].Ports
+			Expect(ports).To(ContainElement(
+				corev1.ContainerPort{Name: "kubernetes", ContainerPort: 8443, Protocol: corev1.ProtocolTCP},
+			))
+
+			// Init script should contain --kubernetes-port.
+			initCmd := deploy.Spec.Template.Spec.InitContainers[0].Command[2]
+			Expect(initCmd).To(ContainSubstring("--kubernetes-port 8443"))
+		})
+
+		It("should include --database-url in setup when DatabaseURL is set", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "deploy-dburl",
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: "dummy",
+					},
+					Replicas: int32Ptr(1),
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled: boolPtr(true),
+						Port:    int32Ptr(8888),
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						Size: "1Gi",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+					DatabaseURL: "postgres://host/db",
+				},
+			}
+			deploy := reconciler.buildDeployment(inst)
+			initCmd := deploy.Spec.Template.Spec.InitContainers[0].Command[2]
+			Expect(initCmd).To(ContainSubstring("--database-url"))
+			Expect(initCmd).To(ContainSubstring("postgres://host/db"))
+		})
+
+		It("should use emptyDir volume when storage is disabled", func() {
+			f := false
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "deploy-emptydir",
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: "dummy",
+					},
+					Replicas: int32Ptr(1),
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled: boolPtr(true),
+						Port:    int32Ptr(8888),
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						Enabled: &f,
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+				},
+			}
+			deploy := reconciler.buildDeployment(inst)
+			foundEmptyDir := false
+			for _, vol := range deploy.Spec.Template.Spec.Volumes {
+				if vol.Name == "data" && vol.EmptyDir != nil {
+					foundEmptyDir = true
+					break
+				}
+			}
+			Expect(foundEmptyDir).To(BeTrue(), "expected emptyDir for data volume")
+		})
+
+		It("should use RollingUpdate strategy when configured", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "deploy-rolling",
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: "dummy",
+					},
+					Replicas: int32Ptr(1),
+					Strategy: "RollingUpdate",
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled: boolPtr(true),
+						Port:    int32Ptr(8888),
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						Size: "1Gi",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+				},
+			}
+			deploy := reconciler.buildDeployment(inst)
+			Expect(deploy.Spec.Strategy.Type).To(Equal(appsv1.RollingUpdateDeploymentStrategyType))
+		})
+
+		It("should use custom adminPasswordKey in init container env", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "deploy-custom-key",
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: "my-secret",
+						Key:  "admin-pw",
+					},
+					Replicas: int32Ptr(1),
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled: boolPtr(true),
+						Port:    int32Ptr(8888),
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						Size: "1Gi",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+				},
+			}
+			deploy := reconciler.buildDeployment(inst)
+			initEnv := deploy.Spec.Template.Spec.InitContainers[0].Env
+			Expect(initEnv).To(HaveLen(1))
+			Expect(initEnv[0].ValueFrom.SecretKeyRef.Key).To(Equal("admin-pw"))
+		})
+
+		It("should not have probes when HTTP is disabled", func() {
+			f := false
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "deploy-no-probes",
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: "dummy",
+					},
+					Replicas: int32Ptr(1),
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled: &f,
+						Port:    int32Ptr(8888),
+					},
+					SSH: &warpgatev1alpha1.SSHListenerSpec{
+						Enabled: boolPtr(true),
+						Port:    int32Ptr(2222),
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						Size: "1Gi",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+				},
+			}
+			deploy := reconciler.buildDeployment(inst)
+			container := deploy.Spec.Template.Spec.Containers[0]
+			Expect(container.LivenessProbe).To(BeNil())
+			Expect(container.ReadinessProbe).To(BeNil())
+		})
+
+		It("should use existing claim name when ExistingClaimName is set", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "deploy-existing-pvc",
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: "dummy",
+					},
+					Replicas: int32Ptr(1),
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled: boolPtr(true),
+						Port:    int32Ptr(8888),
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						ExistingClaimName: "pre-existing-pvc",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+				},
+			}
+			deploy := reconciler.buildDeployment(inst)
+			foundPVC := false
+			for _, vol := range deploy.Spec.Template.Spec.Volumes {
+				if vol.Name == "data" && vol.PersistentVolumeClaim != nil {
+					Expect(vol.PersistentVolumeClaim.ClaimName).To(Equal("pre-existing-pvc"))
+					foundPVC = true
+					break
+				}
+			}
+			Expect(foundPVC).To(BeTrue())
+		})
+
+		It("should generate self-signed TLS when no TLS secret and no cert-manager", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "deploy-selfcert",
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: "dummy",
+					},
+					Replicas: int32Ptr(1),
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled: boolPtr(true),
+						Port:    int32Ptr(8888),
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						Size: "1Gi",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+				},
+			}
+			deploy := reconciler.buildDeployment(inst)
+			initCmd := deploy.Spec.Template.Spec.InitContainers[0].Command[2]
+			Expect(initCmd).To(ContainSubstring("Generating self-signed TLS certificate"))
+		})
+	})
+
+	// -----------------------------------------------------------------------
+	// 24. createConnection=nil defaults to true
+	// -----------------------------------------------------------------------
+	Context("createConnection nil defaults to true", func() {
+		const (
+			instName   = "inst-conn-nil"
+			secretName = "inst-conn-nil-pw"
+		)
+
+		BeforeEach(func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: testNamespace,
+				},
+				Data: map[string][]byte{
+					"password": []byte("conn-nil-secret"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      instName,
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: secretName,
+					},
+					Replicas: int32Ptr(1),
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled:     boolPtr(true),
+						Port:        int32Ptr(8888),
+						ServiceType: "ClusterIP",
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						Size: "1Gi",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+					// CreateConnection deliberately not set (nil) -- defaults to true.
+				},
+			}
+			Expect(k8sClient.Create(ctx, inst)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			connNN := types.NamespacedName{Name: instName + "-connection", Namespace: testNamespace}
+			if err := k8sClient.Get(ctx, connNN, conn); err == nil {
+				controllerutil.RemoveFinalizer(conn, warpgateFinalizer)
+				_ = k8sClient.Update(ctx, conn)
+				_ = k8sClient.Delete(ctx, conn)
+			}
+
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, inst); err == nil {
+				controllerutil.RemoveFinalizer(inst, instanceFinalizer)
+				_ = k8sClient.Update(ctx, inst)
+				_ = k8sClient.Delete(ctx, inst)
+			}
+
+			authSecret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: instName + "-admin-auth", Namespace: testNamespace}, authSecret); err == nil {
+				_ = k8sClient.Delete(ctx, authSecret)
+			}
+
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: testNamespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should create a WarpgateConnection when CreateConnection is nil", func() {
+			nn := types.NamespacedName{Name: instName, Namespace: testNamespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var conn warpgatev1alpha1.WarpgateConnection
+			connNN := types.NamespacedName{Name: instName + "-connection", Namespace: testNamespace}
+			Expect(k8sClient.Get(ctx, connNN, &conn)).To(Succeed())
+			Expect(conn.Spec.Host).To(ContainSubstring(instName + "-http"))
+		})
+	})
+
+	// -----------------------------------------------------------------------
+	// 25. Session recordings in config
+	// -----------------------------------------------------------------------
+	Context("Session recordings enabled", func() {
+		const (
+			instName   = "inst-rec"
+			secretName = "inst-rec-pw"
+		)
+
+		BeforeEach(func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: testNamespace,
+				},
+				Data: map[string][]byte{
+					"password": []byte("rec-secret"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      instName,
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: secretName,
+					},
+					Replicas: int32Ptr(1),
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled:     boolPtr(true),
+						Port:        int32Ptr(8888),
+						ServiceType: "ClusterIP",
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						Size: "1Gi",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+					CreateConnection: boolPtr(false),
+					RecordSessions:   boolPtr(true),
+				},
+			}
+			Expect(k8sClient.Create(ctx, inst)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, inst); err == nil {
+				controllerutil.RemoveFinalizer(inst, instanceFinalizer)
+				_ = k8sClient.Update(ctx, inst)
+				_ = k8sClient.Delete(ctx, inst)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: testNamespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should include recordings section in ConfigMap", func() {
+			nn := types.NamespacedName{Name: instName, Namespace: testNamespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var cm corev1.ConfigMap
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: instName + "-config", Namespace: testNamespace,
+			}, &cm)).To(Succeed())
+
+			yaml := cm.Data["warpgate.yaml"]
+			Expect(yaml).To(ContainSubstring("recordings:"))
+			Expect(yaml).To(ContainSubstring("enable: true"))
+			Expect(yaml).To(ContainSubstring("path: /data/recordings"))
+		})
+	})
+
+	// -----------------------------------------------------------------------
+	// 26. Custom admin password key
+	// -----------------------------------------------------------------------
+	Context("Custom admin password key with createConnection", func() {
+		const (
+			instName   = "inst-custom-key"
+			secretName = "inst-custom-key-pw"
+		)
+
+		BeforeEach(func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: testNamespace,
+				},
+				Data: map[string][]byte{
+					"admin-pw": []byte("custom-key-secret"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      instName,
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: secretName,
+						Key:  "admin-pw",
+					},
+					Replicas: int32Ptr(1),
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled:     boolPtr(true),
+						Port:        int32Ptr(8888),
+						ServiceType: "ClusterIP",
+					},
+					Storage: &warpgatev1alpha1.StorageSpec{
+						Size: "1Gi",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+					CreateConnection: boolPtr(true),
+				},
+			}
+			Expect(k8sClient.Create(ctx, inst)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			connNN := types.NamespacedName{Name: instName + "-connection", Namespace: testNamespace}
+			if err := k8sClient.Get(ctx, connNN, conn); err == nil {
+				controllerutil.RemoveFinalizer(conn, warpgateFinalizer)
+				_ = k8sClient.Update(ctx, conn)
+				_ = k8sClient.Delete(ctx, conn)
+			}
+
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, inst); err == nil {
+				controllerutil.RemoveFinalizer(inst, instanceFinalizer)
+				_ = k8sClient.Update(ctx, inst)
+				_ = k8sClient.Delete(ctx, inst)
+			}
+
+			authSecret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: instName + "-admin-auth", Namespace: testNamespace}, authSecret); err == nil {
+				_ = k8sClient.Delete(ctx, authSecret)
+			}
+
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: testNamespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should read the password from the custom key and create the auth secret", func() {
+			nn := types.NamespacedName{Name: instName, Namespace: testNamespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Auth secret should use the password from the custom key.
+			var authSecret corev1.Secret
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: instName + "-admin-auth", Namespace: testNamespace,
+			}, &authSecret)).To(Succeed())
+			Expect(authSecret.Data["password"]).To(Equal([]byte("custom-key-secret")))
+			Expect(authSecret.Data["username"]).To(Equal([]byte("admin")))
+		})
+	})
 })

@@ -788,6 +788,153 @@ var _ = Describe("WarpgateConnection Controller", func() {
 		})
 	})
 
+	Context("Token-based auth via buildClient", func() {
+		var (
+			mockServer *httptest.Server
+			secretName string
+			connName   string
+			namespace  string
+			gotToken   string
+		)
+
+		BeforeEach(func() {
+			secretName = "wg-secret-tokenauth"
+			connName = "wg-conn-tokenauth"
+			namespace = testNamespace
+			gotToken = ""
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
+				gotToken = r.Header.Get("X-Warpgate-Token")
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode([]map[string]any{})
+			})
+			mockServer = httptest.NewServer(mux)
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"token": []byte("my-super-token"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      connName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:               mockServer.URL,
+					AuthSecretRef:      warpgatev1alpha1.AuthSecretRef{Name: secretName},
+					InsecureSkipVerify: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				controllerutil.RemoveFinalizer(conn, warpgateFinalizer)
+				_ = k8sClient.Update(ctx, conn)
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should send the X-Warpgate-Token header and set Ready=True", func() {
+			nn := types.NamespacedName{Name: connName, Namespace: namespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(gotToken).To(Equal("my-super-token"))
+
+			var updated warpgatev1alpha1.WarpgateConnection
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(readyCond.Reason).To(Equal("Connected"))
+		})
+	})
+
+	Context("buildClient with missing token and missing username", func() {
+		var (
+			secretName string
+			connName   string
+			namespace  string
+		)
+
+		BeforeEach(func() {
+			secretName = "wg-secret-empty"
+			connName = "wg-conn-empty"
+			namespace = testNamespace
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"password": []byte("only-password"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      connName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:          "https://warpgate.example.com",
+					AuthSecretRef: warpgatev1alpha1.AuthSecretRef{Name: secretName},
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				controllerutil.RemoveFinalizer(conn, warpgateFinalizer)
+				_ = k8sClient.Update(ctx, conn)
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should set Ready=False when the secret has neither token nor username", func() {
+			nn := types.NamespacedName{Name: connName, Namespace: namespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateConnection
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("ConnectionFailed"))
+			Expect(readyCond.Message).To(ContainSubstring(`key "username" not found`))
+		})
+	})
+
 	Context("API returns 500 on validation", func() {
 		var (
 			mockServer *httptest.Server
