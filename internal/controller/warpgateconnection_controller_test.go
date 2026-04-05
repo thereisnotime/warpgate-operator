@@ -1016,6 +1016,252 @@ var _ = Describe("WarpgateConnection Controller", func() {
 			Expect(readyCond.Message).To(ContainSubstring("Connection check failed"))
 		})
 	})
+
+	Context("buildClient with custom UsernameKey via reconcile", func() {
+		var (
+			mockServer *httptest.Server
+			secretName string
+			connName   string
+			namespace  string
+		)
+
+		BeforeEach(func() {
+			secretName = "wg-secret-custukey"
+			connName = "wg-conn-custukey"
+			namespace = testNamespace
+
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode([]map[string]any{})
+			})
+			mockServer = httptest.NewServer(mux)
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"wg-user": []byte("admin"),
+					"wg-pass": []byte("test-pass"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      connName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host: mockServer.URL,
+					AuthSecretRef: warpgatev1alpha1.AuthSecretRef{
+						Name:        secretName,
+						UsernameKey: "wg-user",
+						PasswordKey: "wg-pass",
+					},
+					InsecureSkipVerify: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				controllerutil.RemoveFinalizer(conn, warpgateFinalizer)
+				_ = k8sClient.Update(ctx, conn)
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should use custom UsernameKey and PasswordKey from AuthSecretRef and set Ready=True", func() {
+			nn := types.NamespacedName{Name: connName, Namespace: namespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateConnection
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(readyCond.Reason).To(Equal("Connected"))
+		})
+	})
+
+	Context("buildClient falls back to password when token key is empty", func() {
+		var (
+			mockServer *httptest.Server
+			secretName string
+			connName   string
+			namespace  string
+		)
+
+		BeforeEach(func() {
+			secretName = "wg-secret-emptytoken"
+			connName = "wg-conn-emptytoken"
+			namespace = testNamespace
+
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode([]map[string]any{})
+			})
+			mockServer = httptest.NewServer(mux)
+
+			// Secret has a "token" key, but it's empty -- should fall back to password auth.
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"token":    []byte(""),
+					"username": []byte("admin"),
+					"password": []byte("test-pass"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      connName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:               mockServer.URL,
+					AuthSecretRef:      warpgatev1alpha1.AuthSecretRef{Name: secretName},
+					InsecureSkipVerify: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				controllerutil.RemoveFinalizer(conn, warpgateFinalizer)
+				_ = k8sClient.Update(ctx, conn)
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should fall back to username/password when token key exists but is empty", func() {
+			nn := types.NamespacedName{Name: connName, Namespace: namespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateConnection
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(readyCond.Reason).To(Equal("Connected"))
+		})
+	})
+
+	Context("buildClient with custom TokenKey via reconcile", func() {
+		var (
+			mockServer *httptest.Server
+			secretName string
+			connName   string
+			namespace  string
+			gotToken   string
+		)
+
+		BeforeEach(func() {
+			secretName = "wg-secret-custtkey"
+			connName = "wg-conn-custtkey"
+			namespace = testNamespace
+			gotToken = ""
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
+				gotToken = r.Header.Get("X-Warpgate-Token")
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode([]map[string]any{})
+			})
+			mockServer = httptest.NewServer(mux)
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"my-api-key": []byte("custom-token-via-reconcile"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      connName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host: mockServer.URL,
+					AuthSecretRef: warpgatev1alpha1.AuthSecretRef{
+						Name:     secretName,
+						TokenKey: "my-api-key",
+					},
+					InsecureSkipVerify: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				controllerutil.RemoveFinalizer(conn, warpgateFinalizer)
+				_ = k8sClient.Update(ctx, conn)
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should use the custom TokenKey from AuthSecretRef and set Ready=True", func() {
+			nn := types.NamespacedName{Name: connName, Namespace: namespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(gotToken).To(Equal("custom-token-via-reconcile"))
+
+			var updated warpgatev1alpha1.WarpgateConnection
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(readyCond.Reason).To(Equal("Connected"))
+		})
+	})
 })
 
 // findReadyCondition returns the "Ready" condition, or nil if not found.

@@ -929,4 +929,146 @@ var _ = Describe("WarpgateTicket Controller", func() {
 			Expect(controllerutil.ContainsFinalizer(&cr, ticketFinalizer)).To(BeTrue())
 		})
 	})
+
+	Context("Delete ticket when API returns 404 (already gone)", func() {
+		var (
+			mockServer  *httptest.Server
+			tokenSecret string
+			connName    string
+			crName      string
+			namespace   string
+		)
+
+		BeforeEach(func() {
+			tokenSecret = "ticket-del404-token"
+			connName = "ticket-del404-conn"
+			crName = "ticket-del404-tkt"
+			namespace = testNamespace
+
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/tickets/gone-ticket-id", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodDelete {
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: tokenSecret, Namespace: namespace},
+				Data:       map[string][]byte{"username": []byte("admin"), "password": []byte("test-pass")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:               mockServer.URL,
+					AuthSecretRef:      warpgatev1alpha1.AuthSecretRef{Name: tokenSecret},
+					InsecureSkipVerify: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+
+			cr := &warpgatev1alpha1.WarpgateTicket{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       crName,
+					Namespace:  namespace,
+					Finalizers: []string{ticketFinalizer},
+				},
+				Spec: warpgatev1alpha1.WarpgateTicketSpec{
+					ConnectionRef: connName,
+					Username:      "del404user",
+					TargetName:    "del404target",
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+
+			cr.Status.TicketID = "gone-ticket-id"
+			Expect(k8sClient.Status().Update(ctx, cr)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: namespace}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: tokenSecret, Namespace: namespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should treat a 404 as success and remove the finalizer", func() {
+			nn := types.NamespacedName{Name: crName, Namespace: namespace}
+
+			var cr warpgatev1alpha1.WarpgateTicket
+			Expect(k8sClient.Get(ctx, nn, &cr)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// CR should be gone.
+			err = k8sClient.Get(ctx, nn, &cr)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+		})
+	})
+
+	Context("Client error on deletion path", func() {
+		var (
+			crName    string
+			namespace string
+		)
+
+		BeforeEach(func() {
+			crName = "ticket-delclientfail-tkt"
+			namespace = testNamespace
+
+			cr := &warpgatev1alpha1.WarpgateTicket{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       crName,
+					Namespace:  namespace,
+					Finalizers: []string{ticketFinalizer},
+				},
+				Spec: warpgatev1alpha1.WarpgateTicketSpec{
+					ConnectionRef: "nonexistent-del-conn",
+					Username:      "someuser",
+					TargetName:    "sometarget",
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+
+			cr.Status.TicketID = "some-ticket-id"
+			Expect(k8sClient.Status().Update(ctx, cr)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			cr := &warpgatev1alpha1.WarpgateTicket{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: namespace}, cr); err == nil {
+				controllerutil.RemoveFinalizer(cr, ticketFinalizer)
+				_ = k8sClient.Update(ctx, cr)
+				_ = k8sClient.Delete(ctx, cr)
+			}
+		})
+
+		It("should return an error when the connection cannot be resolved during deletion", func() {
+			nn := types.NamespacedName{Name: crName, Namespace: namespace}
+
+			var cr warpgatev1alpha1.WarpgateTicket
+			Expect(k8sClient.Get(ctx, nn, &cr)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).To(HaveOccurred())
+
+			// CR should still exist (couldn't build client for deletion).
+			Expect(k8sClient.Get(ctx, nn, &cr)).To(Succeed())
+			Expect(controllerutil.ContainsFinalizer(&cr, ticketFinalizer)).To(BeTrue())
+		})
+	})
 })

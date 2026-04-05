@@ -1810,4 +1810,146 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			Expect(readyCond.Message).To(ContainSubstring("PostgreSQL password"))
 		})
 	})
+
+	Context("SSH target with AllowInsecureAlgos and Description", func() {
+		var (
+			mockServer   *httptest.Server
+			namespace    = testNamespace
+			secretName   = "wg-token-target-insecalg"
+			connName     = "wg-conn-target-insecalg"
+			targetName   = "target-insecalg-test"
+			capturedBody []byte
+			mu           sync.Mutex
+		)
+
+		BeforeEach(func() {
+			capturedBody = nil
+
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					mu.Lock()
+					capturedBody, _ = io.ReadAll(r.Body)
+					mu.Unlock()
+
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":      "target-insecalg-001",
+						"name":    "my-insecalg-target",
+						"options": json.RawMessage(`{"kind":"Ssh"}`),
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+		})
+
+		It("should pass AllowInsecureAlgos and Description to the API", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-insecalg-target",
+					Description:   "a target with insecure algos enabled",
+					SSH: &warpgatev1alpha1.SSHTargetSpec{
+						Host:               "10.0.0.77",
+						Port:               22,
+						Username:           "admin",
+						AuthKind:           "PublicKey",
+						AllowInsecureAlgos: true,
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(Equal("target-insecalg-001"))
+
+			mu.Lock()
+			defer mu.Unlock()
+			Expect(capturedBody).NotTo(BeNil())
+
+			var req map[string]json.RawMessage
+			Expect(json.Unmarshal(capturedBody, &req)).To(Succeed())
+
+			// Verify description was included.
+			var desc string
+			Expect(json.Unmarshal(req["description"], &desc)).To(Succeed())
+			Expect(desc).To(Equal("a target with insecure algos enabled"))
+
+			var opts map[string]any
+			Expect(json.Unmarshal(req["options"], &opts)).To(Succeed())
+			Expect(opts["kind"]).To(Equal("Ssh"))
+			Expect(opts["allow_insecure_algos"]).To(BeTrue())
+		})
+	})
+
+	Context("Delete target with missing connection skips API call", func() {
+		var (
+			namespace  = testNamespace
+			targetName = "target-delnoconn-test"
+		)
+
+		AfterEach(func() {
+			cleanupTarget(namespace, targetName)
+		})
+
+		It("should set ClientError on deletion when the connection doesn't exist but still requeue", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       targetName,
+					Namespace:  namespace,
+					Finalizers: []string{targetFinalizerName},
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: "nonexistent-conn-delpath",
+					Name:          "delnoconn-target",
+					SSH: &warpgatev1alpha1.SSHTargetSpec{
+						Host:     "10.0.0.1",
+						Port:     22,
+						Username: "admin",
+						AuthKind: "PublicKey",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			// Set a status with an ExternalID so the delete path tries to call the API.
+			target.Status.ExternalID = "some-external-id"
+			Expect(k8sClient.Status().Update(ctx, target)).To(Succeed())
+
+			// Delete the CR.
+			var fetched warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: targetName, Namespace: namespace}, &fetched)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &fetched)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			// Should requeue since it can't build the client.
+			Expect(result.RequeueAfter).NotTo(BeZero())
+
+			// CR should still exist since the client error prevented cleanup.
+			Expect(k8sClient.Get(ctx, nn, &fetched)).To(Succeed())
+			readyCond := findReadyCondition(fetched.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("ClientError"))
+		})
+	})
 })

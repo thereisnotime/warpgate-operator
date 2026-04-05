@@ -580,4 +580,143 @@ var _ = Describe("getWarpgateClient helper", func() {
 			Expect(gotToken).To(Equal("custom-token-value"))
 		})
 	})
+
+	Context("Empty token value falls back to username/password", func() {
+		var (
+			connName    = "helper-conn-emptytoken"
+			secretName  = "helper-secret-emptytoken"
+			mockServer  *httptest.Server
+			usedSession bool
+		)
+
+		BeforeEach(func() {
+			usedSession = false
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/api/auth/login", func(w http.ResponseWriter, r *http.Request) {
+				usedSession = true
+				http.SetCookie(w, &http.Cookie{Name: "warpgate", Value: "test-session", Path: "/"})
+				w.WriteHeader(http.StatusCreated)
+			})
+			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode([]map[string]any{})
+			})
+			mockServer = httptest.NewServer(mux)
+
+			// Secret has "token" key but with empty value -- should fall back to username/password.
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: helperNS},
+				Data: map[string][]byte{
+					"token":    []byte(""),
+					"username": []byte("admin"),
+					"password": []byte("pass"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host:               mockServer.URL,
+					AuthSecretRef:      warpgatev1alpha1.AuthSecretRef{Name: secretName},
+					InsecureSkipVerify: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: helperNS}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: helperNS}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should use session auth when the token key exists but is empty", func() {
+			wgClient, err := getWarpgateClient(ctx, k8sClient, helperNS, connName)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(wgClient).NotTo(BeNil())
+
+			// Make a request to trigger the auth path.
+			_, err = wgClient.ListRoles("")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(usedSession).To(BeTrue())
+		})
+	})
+
+	Context("Custom TokenKey with missing key falls back to password", func() {
+		var (
+			connName    = "helper-conn-missingtkey"
+			secretName  = "helper-secret-missingtkey"
+			mockServer  *httptest.Server
+			usedSession bool
+		)
+
+		BeforeEach(func() {
+			usedSession = false
+			mux := http.NewServeMux()
+			mux.HandleFunc("/@warpgate/api/auth/login", func(w http.ResponseWriter, r *http.Request) {
+				usedSession = true
+				http.SetCookie(w, &http.Cookie{Name: "warpgate", Value: "test-session", Path: "/"})
+				w.WriteHeader(http.StatusCreated)
+			})
+			mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode([]map[string]any{})
+			})
+			mockServer = httptest.NewServer(mux)
+
+			// Secret does not have the custom token key, should fall back to username/password.
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: helperNS},
+				Data: map[string][]byte{
+					"username": []byte("admin"),
+					"password": []byte("pass"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			conn := &warpgatev1alpha1.WarpgateConnection{
+				ObjectMeta: metav1.ObjectMeta{Name: connName, Namespace: helperNS},
+				Spec: warpgatev1alpha1.WarpgateConnectionSpec{
+					Host: mockServer.URL,
+					AuthSecretRef: warpgatev1alpha1.AuthSecretRef{
+						Name:     secretName,
+						TokenKey: "my-missing-key",
+					},
+					InsecureSkipVerify: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, conn)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			conn := &warpgatev1alpha1.WarpgateConnection{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: connName, Namespace: helperNS}, conn); err == nil {
+				_ = k8sClient.Delete(ctx, conn)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: helperNS}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should fall back to username/password when custom TokenKey doesn't exist in the secret", func() {
+			wgClient, err := getWarpgateClient(ctx, k8sClient, helperNS, connName)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(wgClient).NotTo(BeNil())
+
+			_, err = wgClient.ListRoles("")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(usedSession).To(BeTrue())
+		})
+	})
 })

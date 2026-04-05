@@ -845,6 +845,148 @@ var _ = Describe("WarpgateUser Controller", func() {
 		})
 	})
 
+	Context("Create user with nil GeneratePassword defaults to true", func() {
+		It("should generate a password credential when GeneratePassword is nil", func() {
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(warpgate.User{ID: "user-nilpw-001", Username: "nilpwuser"})
+				}
+			})
+			mux.HandleFunc("/@warpgate/admin/api/users/user-nilpw-001/credentials/passwords", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(warpgate.PasswordCredential{ID: "cred-nilpw-001", Password: "gen-pw"})
+				}
+			})
+			srv := setupMockAndConnection(mux, "-nilpw")
+			defer srv.Close()
+
+			user := &warpgatev1alpha1.WarpgateUser{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nilpw-user",
+					Namespace: userNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateUserSpec{
+					ConnectionRef: connName + "-nilpw",
+					Username:      "nilpwuser",
+					// GeneratePassword is nil -- should default to true.
+				},
+			}
+			Expect(k8sClient.Create(ctx, user)).To(Succeed())
+
+			nn := types.NamespacedName{Name: user.Name, Namespace: userNamespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateUser
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(Equal("user-nilpw-001"))
+			Expect(updated.Status.PasswordCredentialID).To(Equal("cred-nilpw-001"))
+			Expect(updated.Status.PasswordSecretRef).To(Equal("test-nilpw-user-password"))
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+		})
+	})
+
+	Context("Delete user with empty ExternalID", func() {
+		It("should skip API calls and just remove the finalizer", func() {
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			srv := setupMockAndConnection(mux, "-delempty")
+			defer srv.Close()
+
+			user := &warpgatev1alpha1.WarpgateUser{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-delempty-user",
+					Namespace:  userNamespace,
+					Finalizers: []string{userFinalizer},
+				},
+				Spec: warpgatev1alpha1.WarpgateUserSpec{
+					ConnectionRef:    connName + "-delempty",
+					Username:         "emptyiduser",
+					GeneratePassword: boolPtr(false),
+				},
+			}
+			Expect(k8sClient.Create(ctx, user)).To(Succeed())
+
+			nn := types.NamespacedName{Name: user.Name, Namespace: userNamespace}
+
+			// Delete without ever creating in Warpgate (no ExternalID).
+			Expect(k8sClient.Delete(ctx, user)).To(Succeed())
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// CR should be fully gone.
+			var deleted warpgatev1alpha1.WarpgateUser
+			err = k8sClient.Get(ctx, nn, &deleted)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+		})
+	})
+
+	Context("Delete user with ExternalID but no password credential", func() {
+		It("should skip password credential cleanup and just delete the user", func() {
+			userDeleteCalled := false
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/users", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(warpgate.User{ID: "user-delnopw-001", Username: "delnopwuser"})
+				}
+			})
+			mux.HandleFunc("/@warpgate/admin/api/users/user-delnopw-001", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodDelete {
+					userDeleteCalled = true
+					w.WriteHeader(http.StatusNoContent)
+				}
+			})
+			srv := setupMockAndConnection(mux, "-delnopw")
+			defer srv.Close()
+
+			user := &warpgatev1alpha1.WarpgateUser{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-delnopw-user",
+					Namespace: userNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateUserSpec{
+					ConnectionRef:    connName + "-delnopw",
+					Username:         "delnopwuser",
+					GeneratePassword: boolPtr(false),
+				},
+			}
+			Expect(k8sClient.Create(ctx, user)).To(Succeed())
+
+			nn := types.NamespacedName{Name: user.Name, Namespace: userNamespace}
+
+			// Create user (no password gen).
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var created warpgatev1alpha1.WarpgateUser
+			Expect(k8sClient.Get(ctx, nn, &created)).To(Succeed())
+			Expect(created.Status.ExternalID).To(Equal("user-delnopw-001"))
+			Expect(created.Status.PasswordCredentialID).To(BeEmpty())
+
+			// Delete.
+			Expect(k8sClient.Delete(ctx, &created)).To(Succeed())
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(userDeleteCalled).To(BeTrue())
+
+			var deleted warpgatev1alpha1.WarpgateUser
+			err = k8sClient.Get(ctx, nn, &deleted)
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
 	Context("Missing connection", func() {
 		It("should return an error when the WarpgateConnection does not exist", func() {
 			user := &warpgatev1alpha1.WarpgateUser{
