@@ -86,6 +86,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
@@ -98,13 +99,26 @@ jobs:
       - name: Install just
         uses: taiki-e/install-action@95a61fa68a926d027cdc08016c7303a6ce8d1f87  # just
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb  # v3.8.2
+
       - name: Build install manifest
         run: IMG=ghcr.io/thereisnotime/warpgate-operator:${{ needs.release-please.outputs.operator_tag_name }} just build-installer
 
-      - name: Upload install.yaml as release asset
+      - name: Sign install.yaml
+        run: |
+          cosign sign-blob --yes \
+            --bundle dist/install.yaml.bundle \
+            dist/install.yaml
+
+      - name: Upload install.yaml and bundle as release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ needs.release-please.outputs.operator_tag_name }}" dist/install.yaml --clobber
+        run: |
+          gh release upload "${{ needs.release-please.outputs.operator_tag_name }}" \
+            dist/install.yaml \
+            dist/install.yaml.bundle \
+            --clobber
 
   helm:
     name: Package & Push Helm Chart
