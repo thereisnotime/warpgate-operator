@@ -41,9 +41,6 @@ jobs:
   govulncheck:
     name: Go Vulnerability Check
     runs-on: ubuntu-latest
-    # continue-on-error: stdlib vulns GO-2026-4947/4946/4870/4866/4865 are fixed in
-    # go1.26.2 which has not been released yet. Remove this once we upgrade the toolchain.
-    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
@@ -57,7 +54,25 @@ jobs:
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
 
       - name: Run govulncheck
-        run: govulncheck ./...
+        run: |
+          govulncheck ./... 2>&1 > /tmp/govuln.txt; VULN_EXIT=$?
+          cat /tmp/govuln.txt
+
+          [ "${VULN_EXIT}" -eq 0 ] && exit 0
+
+          # Count total vulnerabilities vs stdlib-only vulnerabilities.
+          # Third-party module vulnerabilities always fail. Stdlib-only vulnerabilities
+          # warn and pass — the fix may require a Go toolchain version not yet released.
+          VULN_COUNT=$(grep -c "^Vulnerability" /tmp/govuln.txt || true)
+          STDLIB_COUNT=$(grep -c "Standard library" /tmp/govuln.txt || true)
+
+          if [ "${VULN_COUNT}" -gt 0 ] && [ "${STDLIB_COUNT}" -ge "${VULN_COUNT}" ]; then
+            echo "::warning::${VULN_COUNT} Go stdlib vulnerability(s) found — no fix available in current toolchain. Upgrade the Go toolchain when a patched version is released."
+            exit 0
+          fi
+
+          echo "::error::Third-party module vulnerabilities found."
+          exit "${VULN_EXIT}"
 
   trivy:
     name: Trivy Vulnerability Scan

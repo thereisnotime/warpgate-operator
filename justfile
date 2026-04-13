@@ -84,9 +84,14 @@ vet:
     go vet ./...
 
 # Run unit tests (not e2e)
+# cmd/ is excluded: it's wiring-only with no unit tests (covered by E2E instead).
+# test/ is excluded: test utilities, not test targets.
+# This matches the exclusions in codecov.yml.
 test: manifests generate fmt vet _setup-envtest
     KUBEBUILDER_ASSETS="$("{{envtest}}" use {{envtest_k8s_version}} --bin-dir "{{localbin}}" -p path)" \
-        go test -race -shuffle=on -covermode=atomic $(go list ./... | grep -v /e2e) -coverprofile cover.out
+        go test -race -shuffle=on -covermode=atomic \
+        $(go list ./... | grep -v /e2e | grep -v "/cmd$" | grep -v "/test/") \
+        -coverprofile cover.out
 
 # ─── Build ────────────────────────────────────────────────────────────
 
