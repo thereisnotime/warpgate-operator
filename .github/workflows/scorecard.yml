@@ -12,16 +12,17 @@ concurrency:
   group: scorecard-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
-  security-events: write
-  id-token: write
-  actions: read
+permissions: read-all
 
 jobs:
   scorecard:
     name: Scorecard Analysis
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      id-token: write
+      contents: read
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
