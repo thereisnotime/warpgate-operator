@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.7](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.6...v0.4.7) (2026-04-13)
+
+
+### Bug Fixes
+
+* **chart:** remove double blank line from CHANGELOG, use latest image tag in ArtifactHub annotation ([a51635e](https://github.com/thereisnotime/warpgate-operator/commit/a51635e339282f473e4990eb058d404a0460796d))
+* **ci:** never cancel SAST runs so every commit gets coverage ([fbdde2b](https://github.com/thereisnotime/warpgate-operator/commit/fbdde2ba6d81fcec12fb3d966550de7fc4f2a482))
+
 ## [0.4.6](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.5...v0.4.6) (2026-04-13)
 
 
