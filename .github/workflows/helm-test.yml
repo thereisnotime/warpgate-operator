@@ -5,10 +5,13 @@ on:
     paths:
       - "charts/**"
       - "config/crd/**"
+      - ".github/workflows/helm-test.yml"
   pull_request:
     paths:
       - "charts/**"
       - "config/crd/**"
+      - ".github/workflows/helm-test.yml"
+  workflow_dispatch: {}
 
 concurrency:
   group: helm-test-${{ github.ref }}
