@@ -52,9 +52,12 @@ jobs:
         run: helm template warpgate-operator charts/warpgate-operator > /tmp/rendered.yaml
 
       - name: Install kubeconform
-        uses: taiki-e/install-action@95a61fa68a926d027cdc08016c7303a6ce8d1f87  # just
-        with:
-          tool: kubeconform
+        run: |
+          curl -sL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz \
+            -o kubeconform.tar.gz
+          echo "c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3  kubeconform.tar.gz" | sha256sum -c
+          tar xzf kubeconform.tar.gz kubeconform
+          sudo mv kubeconform /usr/local/bin/kubeconform
 
       - name: Validate with kubeconform
         run: kubeconform -strict -ignore-missing-schemas -summary /tmp/rendered.yaml
@@ -78,6 +81,11 @@ jobs:
 
       - name: Create kind cluster
         uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc  # v1
+
+      - name: Install cert-manager
+        run: |
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.2/cert-manager.yaml
+          kubectl wait --for=condition=Available deployment --all -n cert-manager --timeout=120s
 
       - name: Install and test chart
         run: ct install --charts charts/warpgate-operator
