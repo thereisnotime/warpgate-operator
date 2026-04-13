@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.4](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.3...v0.4.4) (2026-04-13)
+
+
+### Bug Fixes
+
+* **release:** add setup-oras step, pin Helm to v3.20.2 in release job ([23552a5](https://github.com/thereisnotime/warpgate-operator/commit/23552a5a6055e1d86683562384fe4b755c7a90e2))
+
 ## [0.4.3](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.2...v0.4.3) (2026-04-13)
 
 
