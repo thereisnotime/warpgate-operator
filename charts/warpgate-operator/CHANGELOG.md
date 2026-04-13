@@ -2,7 +2,6 @@
 
 ## [0.4.6](https://github.com/thereisnotime/warpgate-operator/compare/warpgate-operator-v0.4.5...warpgate-operator-v0.4.6) (2026-04-13)
 
-
 ### Bug Fixes
 
 * **chart:** add README and artifacthub images annotation ([aefbb00](https://github.com/thereisnotime/warpgate-operator/commit/aefbb00b900464d62cf3aa5342a4df39db1dee75))
