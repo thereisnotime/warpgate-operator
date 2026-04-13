@@ -27,3 +27,6 @@ annotations:
   artifacthub.io/containsSecurityUpdates: 'false'
   artifacthub.io/operator: 'true'
   artifacthub.io/operatorCapabilities: Full Lifecycle
+  artifacthub.io/images: |
+    - name: warpgate-operator
+      image: ghcr.io/thereisnotime/warpgate-operator:0.4.5
