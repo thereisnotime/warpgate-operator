@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.6](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.5...v0.4.6) (2026-04-13)
+
+
+### Features
+
+* **security:** sign install.yaml with cosign keyless signing for Signed-Releases scorecard check ([21b1dc1](https://github.com/thereisnotime/warpgate-operator/commit/21b1dc16776783a5c6aef7ec8e201fd4b2f1ad99))
+
+
+### Bug Fixes
+
+* **chart:** add README and artifacthub images annotation ([aefbb00](https://github.com/thereisnotime/warpgate-operator/commit/aefbb00b900464d62cf3aa5342a4df39db1dee75))
+* **ci:** use operator_version tag (no v prefix) for install manifest image ([acc410c](https://github.com/thereisnotime/warpgate-operator/commit/acc410c017526d228756e9f6ed1c87cae8b9d5c8))
+* markdown lint errors in CONTRIBUTORS.md and chart CHANGELOG ([aaff9e3](https://github.com/thereisnotime/warpgate-operator/commit/aaff9e345543c49f547347ebcb065131475faf8a))
+
 ## [0.4.5](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.4...v0.4.5) (2026-04-13)
 
 
