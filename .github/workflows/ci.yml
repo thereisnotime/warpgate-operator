@@ -57,10 +57,12 @@ jobs:
 
       - name: Check coverage threshold
         run: |
-          COVERAGE=$(go tool cover -func=cover.out | grep total | awk '{print $3}' | tr -d '%')
+          # Strip generated files before computing total — matches codecov.yml ignore list
+          grep -v "zz_generated" cover.out > cover.filtered.out
+          COVERAGE=$(go tool cover -func=cover.filtered.out | grep total | awk '{print $3}' | tr -d '%')
           echo "Total coverage: ${COVERAGE}%"
           if awk "BEGIN {exit !(${COVERAGE} < 75)}"; then
-            echo "::error::Coverage ${COVERAGE}% is below 75% threshold (cmd/ and test/ excluded, matching codecov.yml)"
+            echo "::error::Coverage ${COVERAGE}% is below 75% threshold (cmd/, test/, and generated files excluded)"
             exit 1
           fi
 
