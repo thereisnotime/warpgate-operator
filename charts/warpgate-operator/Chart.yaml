@@ -2,8 +2,8 @@ apiVersion: v2
 name: warpgate-operator
 description: Kubernetes operator for managing Warpgate bastion host resources
 type: application
-version: 0.4.2  # x-release-please-version
-appVersion: "0.4.2"  # x-release-please-version
+version: 0.4.4
+appVersion: "0.4.4"  # x-release-please-version
 home: https://github.com/thereisnotime/warpgate-operator
 sources:
   - https://github.com/thereisnotime/warpgate-operator

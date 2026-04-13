@@ -9,7 +9,12 @@
       "extra-files": [
         "charts/warpgate-operator/Chart.yaml"
       ]
+    },
+    "charts/warpgate-operator": {
+      "release-type": "helm",
+      "changelog-path": "charts/warpgate-operator/CHANGELOG.md",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true
     }
-  },
-  "last-release-sha": "8bd19619c1a3d5940475b726f45b16e0acf4f88a"
+  }
 }
