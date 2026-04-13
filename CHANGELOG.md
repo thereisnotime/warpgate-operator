@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.5](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.4...v0.4.5) (2026-04-13)
+
+
+### Features
+
+* **release:** independent versioning for operator and helm chart ([4359f22](https://github.com/thereisnotime/warpgate-operator/commit/4359f22760efbd9d714f7e8ce352f1f09a17ab0f))
+* **release:** jsonpath extra-files for appVersion, manifest-read for chart/operator versions, document release flow ([2fef1ac](https://github.com/thereisnotime/warpgate-operator/commit/2fef1ac78cc299d866f13d1368a80cc488a8d0ae))
+
+
+### Bug Fixes
+
+* **release:** changelog-path in chart package is relative to package root ([7d97330](https://github.com/thereisnotime/warpgate-operator/commit/7d973309697764532a99d533eeaedbb927336dfa))
+
 ## [0.4.4](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.3...v0.4.4) (2026-04-13)
 
 
