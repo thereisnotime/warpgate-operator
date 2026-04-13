@@ -12,6 +12,7 @@
 [![License](https://img.shields.io/github/license/thereisnotime/warpgate-operator)](LICENSE)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/thereisnotime/warpgate-operator)](go.mod)
 [![Release](https://img.shields.io/github/v/release/thereisnotime/warpgate-operator?include_prereleases)](https://github.com/thereisnotime/warpgate-operator/releases)
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/warpgate-operator)](https://artifacthub.io/packages/search?repo=warpgate-operator)
 
 A Kubernetes operator that manages [Warpgate](https://github.com/warp-tech/warpgate) bastion host resources
 declaratively through Custom Resource Definitions. Define your Warpgate roles, users, targets, credentials, and
