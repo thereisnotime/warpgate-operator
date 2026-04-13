@@ -23,11 +23,26 @@ jobs:
       tag_name: ${{ steps.release.outputs.tag_name }}
       version: ${{ steps.release.outputs.version }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
       - name: Run release-please
         id: release
         uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38  # v4
         with:
           release-type: go
+
+      - name: Sync Chart.yaml version
+        if: steps.release.outputs.release_created == 'true'
+        run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          sed -i "s/^version: .*/version: ${VERSION}  # x-release-please-version/" charts/warpgate-operator/Chart.yaml
+          sed -i "s/^appVersion: .*/appVersion: \"${VERSION}\"  # x-release-please-version/" charts/warpgate-operator/Chart.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add charts/warpgate-operator/Chart.yaml
+          git commit -m "chore: sync Chart.yaml to ${VERSION} [skip ci]"
+          git push
 
   container:
     name: Build & Push Container
