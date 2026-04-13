@@ -90,6 +90,8 @@ jobs:
 
       - name: Set up Helm
         uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2  # v5
+        with:
+          version: v3.20.2
 
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
@@ -102,6 +104,9 @@ jobs:
 
       - name: Push Helm chart to OCI registry
         run: helm push warpgate-operator-${{ needs.release-please.outputs.version }}.tgz oci://ghcr.io/thereisnotime/charts
+
+      - name: Install oras
+        uses: oras-project/setup-oras@38de303aac69abb66f3e6255b7198bff35f323e3  # v2.0.0
 
       - name: Push artifacthub-repo.yml to OCI registry
         run: |
