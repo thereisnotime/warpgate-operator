@@ -6,3 +6,4 @@ globs:
   - "!openspec/**"
   - "!node_modules/**"
   - "!CHANGELOG.md"
+  - "!charts/warpgate-operator/CHANGELOG.md"
