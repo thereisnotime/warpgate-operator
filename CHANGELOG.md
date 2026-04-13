@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.4.3](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.2...v0.4.3) (2026-04-13)
+
+
+### Bug Fixes
+
+* bump opentelemetry-go to 1.43.0 to resolve CVE-2026-39883 ([643b8e7](https://github.com/thereisnotime/warpgate-operator/commit/643b8e755b67f695e89184d1d770b0879d77be00))
+* **ci:** pin Helm to v3.20.2 to avoid Helm 4 breaking changes ([c7fd8e2](https://github.com/thereisnotime/warpgate-operator/commit/c7fd8e28d8975ca08b91784d3401d05afd14402f))
+* **ci:** pin kubeconform with checksum, install cert-manager for kind tests ([089d94d](https://github.com/thereisnotime/warpgate-operator/commit/089d94da35813594ac79634dc0e27047a4c7cbc4))
+* **ci:** replace kubectl dry-run with kubeconform for manifest validation ([e460d51](https://github.com/thereisnotime/warpgate-operator/commit/e460d51c8e9a5c4d40b8b79841ce3aef476010a2))
+* **ci:** scope security-events permission to SARIF jobs, fix coverage gate ([5691d8f](https://github.com/thereisnotime/warpgate-operator/commit/5691d8f12424f386262239b5256081194ecbe865))
+* **ci:** use go install for gosec instead of Docker action ([261204a](https://github.com/thereisnotime/warpgate-operator/commit/261204a37d7c3c3de02f3f72134990f8c6b75e33))
+* **release:** properly bump Chart.yaml on release, add Artifact Hub metadata ([738dfc4](https://github.com/thereisnotime/warpgate-operator/commit/738dfc4094fc2f63d466ae91c98c3c731ff1ea12))
+* **release:** push container image with version tag (no v prefix), add ct-values ([442b053](https://github.com/thereisnotime/warpgate-operator/commit/442b0536cc2b83f8269c000d9e541228f920dd6d))
+* resolve three pipeline failures from the best-practices commit ([d05ddf1](https://github.com/thereisnotime/warpgate-operator/commit/d05ddf1d9505e9ed4ed0002f59faf1c2877ffdd7))
+* restore govulncheck and coverage gate with smarter logic ([e4f134b](https://github.com/thereisnotime/warpgate-operator/commit/e4f134b9f57398e7ad032734cd80315afa8274a9))
+* upgrade to go1.26.2 and fix scorecard permissions ([6a90fde](https://github.com/thereisnotime/warpgate-operator/commit/6a90fde9e899bf5aeb3c9be6be68698958487aa0))
+
 ## [0.4.2](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.1...v0.4.2) (2026-04-04)
 
 
