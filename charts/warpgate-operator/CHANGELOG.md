@@ -2,7 +2,6 @@
 
 ## [0.4.5](https://github.com/thereisnotime/warpgate-operator/compare/warpgate-operator-v0.4.4...warpgate-operator-v0.4.5) (2026-04-13)
 
-
 ### Features
 
 * add Helm chart for operator deployment ([d3724ee](https://github.com/thereisnotime/warpgate-operator/commit/d3724ee4a7f815a6199be66896d425b20ef94b72))
@@ -12,7 +11,6 @@
 * complete webhook validation with cert-manager, tests, and docs ([6ae468a](https://github.com/thereisnotime/warpgate-operator/commit/6ae468aac36efd1ae8033fc4613f7475ff2419cc))
 * **release:** independent versioning for operator and helm chart ([4359f22](https://github.com/thereisnotime/warpgate-operator/commit/4359f22760efbd9d714f7e8ce352f1f09a17ab0f))
 * support bearer token auth for OTP-enabled Warpgate instances ([915e1c6](https://github.com/thereisnotime/warpgate-operator/commit/915e1c6897c59a2ea85e29c0c6674de04555c62c))
-
 
 ### Bug Fixes
 

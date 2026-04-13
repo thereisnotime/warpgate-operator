@@ -2,7 +2,8 @@
 
 ## Conventional Commits
 
-All commits must follow [Conventional Commits](https://www.conventionalcommits.org/). This drives automated versioning — no conventional commit, no release.
+All commits must follow [Conventional Commits](https://www.conventionalcommits.org/). This drives
+automated versioning — no conventional commit, no release.
 
 | Prefix | Effect |
 |--------|--------|
@@ -13,7 +14,7 @@ All commits must follow [Conventional Commits](https://www.conventionalcommits.o
 
 Examples:
 
-```
+```text
 feat: add MySQL target reconciler
 fix: handle nil pointer when Warpgate is unreachable
 feat!: rename WarpgateConnection.spec.token to spec.tokenRef
@@ -21,22 +22,25 @@ feat!: rename WarpgateConnection.spec.token to spec.tokenRef
 
 ## Release Tracks
 
-This repo maintains two independent release tracks via [release-please](https://github.com/googleapis/release-please):
+This repo maintains two independent release tracks via
+[release-please](https://github.com/googleapis/release-please):
 
 | Track | Package root | Version file | Released when |
 |-------|-------------|--------------|---------------|
 | Operator | `.` | `CHANGELOG.md` | `feat:`/`fix:` commits touch Go source files |
-| Helm chart | `charts/warpgate-operator` | `charts/warpgate-operator/CHANGELOG.md` | `feat:`/`fix:` commits touch files under `charts/warpgate-operator/` |
+| Helm chart | `charts/warpgate-operator` | `charts/warpgate-operator/CHANGELOG.md` | `feat:`/`fix:` commits touch chart files |
 
-Versions are stored in `.release-please-manifest.json`. Merging a release-please PR cuts the release and tags it.
+Versions are stored in `.release-please-manifest.json`. Merging a release-please PR cuts the
+release and tags it.
 
 ---
 
 ## Operator Release Flow
 
-Triggered by any `feat:` or `fix:` commit that touches Go source, `go.mod`, `Makefile`, CRD types, etc.
+Triggered by any `feat:` or `fix:` commit that touches Go source, `go.mod`, `Makefile`, CRD
+types, etc.
 
-```
+```text
 commit merged to main
         │
         ▼
@@ -57,17 +61,23 @@ release-please opens PR:
 ```
 
 Key points:
-- The container image is tagged with both `v0.4.6` (with `v`, for the GitHub release tag) and `0.4.6` (without `v`, matches `appVersion` in Chart.yaml).
-- The Helm chart `version` does **not** bump on an operator-only release. The chart `version` stays at whatever it was last bumped to by a chart release. The existing OCI tag for that chart version is overwritten with the new `appVersion`.
-- `charts/warpgate-operator/Chart.yaml` `appVersion` is updated in the release-please PR itself via the `extra-files` jsonpath updater, so the source tree always reflects the current operator version.
+
+- The container image is tagged with both `v0.4.6` (with `v`, for the GitHub release tag) and
+  `0.4.6` (without `v`, matching `appVersion` in Chart.yaml).
+- The Helm chart `version` does **not** bump on an operator-only release. The chart `version`
+  stays at whatever it was last bumped to by a chart release. The existing OCI tag for that chart
+  version is overwritten with the new `appVersion`.
+- `Chart.yaml` `appVersion` is updated in the release-please PR itself via the `extra-files`
+  jsonpath updater, so the source tree always reflects the current operator version.
 
 ---
 
 ## Helm Chart Release Flow
 
-Triggered by any `feat:` or `fix:` commit that touches files under `charts/warpgate-operator/` (templates, values, RBAC, helpers, etc.).
+Triggered by any `feat:` or `fix:` commit that touches files under `charts/warpgate-operator/`
+(templates, values, RBAC, helpers, etc.).
 
-```
+```text
 commit merged to main
         │
         ▼
@@ -91,14 +101,18 @@ release-please opens PR:
 ```
 
 Key points:
+
 - No new container image or `install.yaml` is published.
-- `appVersion` in the packaged chart is read from `.release-please-manifest.json` (the `"."` key), which always holds the current operator version.
+- `appVersion` in the packaged chart is read from `.release-please-manifest.json` (the `"."` key),
+  which always holds the current operator version.
 
 ---
 
 ## Both Release Simultaneously
 
-When a single commit (or a batch of commits) touches both Go source and chart files, release-please creates **one PR** that bumps both packages. Both release workflows run, each using their own release-please outputs.
+When a single commit (or a batch of commits) touches both Go source and chart files, release-please
+creates **one PR** that bumps both packages. Both release workflows run, each using their own
+release-please outputs.
 
 ---
 
@@ -115,8 +129,10 @@ When a single commit (or a batch of commits) touches both Go source and chart fi
 ## Version Scheme
 
 Both tracks use the same semver rules pre-1.0 (configured in `release-please-config.json`):
+
 - `feat:` → patch bump (not minor, because `bump-patch-for-minor-pre-major: true`)
 - `fix:` → patch bump
 - Breaking change → minor bump (not major, because `bump-minor-pre-major: true`)
 
-Once the project hits 1.0 these flags should be removed so `feat:` bumps minor and breaking changes bump major.
+Once the project hits 1.0 these flags should be removed so `feat:` bumps minor and breaking
+changes bump major.
