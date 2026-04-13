@@ -48,13 +48,13 @@ jobs:
       - name: Template chart
         run: helm template warpgate-operator charts/warpgate-operator > /tmp/rendered.yaml
 
-      - name: Validate with dry-run
-        run: |
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-          chmod +x kubectl
-          sudo mv kubectl /usr/local/bin/
-          # --validate=false since there's no cluster to fetch the OpenAPI schema from
-          kubectl apply --dry-run=client --validate=false -f /tmp/rendered.yaml
+      - name: Install kubeconform
+        uses: taiki-e/install-action@95a61fa68a926d027cdc08016c7303a6ce8d1f87  # just
+        with:
+          tool: kubeconform
+
+      - name: Validate with kubeconform
+        run: kubeconform -strict -ignore-missing-schemas -summary /tmp/rendered.yaml
 
   install-test:
     name: Install Test (kind)
