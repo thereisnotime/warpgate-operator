@@ -129,11 +129,21 @@ jobs:
 
       - name: Package Helm chart
         run: |
-          CHART_VERSION="${{ needs.release-please.outputs.chart_version || needs.release-please.outputs.operator_version }}"
-          APP_VERSION="${{ needs.release-please.outputs.operator_version || needs.release-please.outputs.chart_version }}"
+          # chart_version is only set when the chart package itself releases.
+          # For operator-only releases the chart version stays the same — read it from the manifest.
+          CHART_VERSION="${{ needs.release-please.outputs.chart_version }}"
+          if [ -z "${CHART_VERSION}" ]; then
+            CHART_VERSION=$(jq -r '."charts/warpgate-operator"' .release-please-manifest.json)
+          fi
+          # operator_version is only set when the operator package releases.
+          # For chart-only releases read the current operator version from the manifest.
+          OPERATOR_VERSION="${{ needs.release-please.outputs.operator_version }}"
+          if [ -z "${OPERATOR_VERSION}" ]; then
+            OPERATOR_VERSION=$(jq -r '."."' .release-please-manifest.json)
+          fi
           helm package charts/warpgate-operator \
             --version "${CHART_VERSION}" \
-            --app-version "${APP_VERSION}"
+            --app-version "${OPERATOR_VERSION}"
           echo "CHART_VERSION=${CHART_VERSION}" >> $GITHUB_ENV
 
       - name: Push Helm chart to OCI registry

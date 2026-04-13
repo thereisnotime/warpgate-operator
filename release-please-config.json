@@ -7,7 +7,11 @@
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [
-        "charts/warpgate-operator/Chart.yaml"
+        {
+          "type": "yaml",
+          "path": "charts/warpgate-operator/Chart.yaml",
+          "jsonpath": "$.appVersion"
+        }
       ]
     },
     "charts/warpgate-operator": {
