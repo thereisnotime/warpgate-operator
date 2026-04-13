@@ -1,0 +1,4 @@
+# Values used by chart-testing (ct install) in CI.
+# Uses the latest published image so the test isn't tied to a specific release tag.
+image:
+  tag: latest

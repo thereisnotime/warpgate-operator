@@ -59,6 +59,7 @@ jobs:
           push: true
           tags: |
             ghcr.io/thereisnotime/warpgate-operator:${{ needs.release-please.outputs.tag_name }}
+            ghcr.io/thereisnotime/warpgate-operator:${{ needs.release-please.outputs.version }}
             ghcr.io/thereisnotime/warpgate-operator:latest
 
       - name: Generate SBOM
