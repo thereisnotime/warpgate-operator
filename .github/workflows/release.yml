@@ -103,7 +103,7 @@ jobs:
         uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb  # v3.8.2
 
       - name: Build install manifest
-        run: IMG=ghcr.io/thereisnotime/warpgate-operator:${{ needs.release-please.outputs.operator_tag_name }} just build-installer
+        run: IMG=ghcr.io/thereisnotime/warpgate-operator:${{ needs.release-please.outputs.operator_version }} just build-installer
 
       - name: Sign install.yaml
         run: |
