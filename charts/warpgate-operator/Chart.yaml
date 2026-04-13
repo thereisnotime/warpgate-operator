@@ -2,16 +2,28 @@ apiVersion: v2
 name: warpgate-operator
 description: Kubernetes operator for managing Warpgate bastion host resources
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.4.2
+appVersion: "0.4.2"
 home: https://github.com/thereisnotime/warpgate-operator
 sources:
   - https://github.com/thereisnotime/warpgate-operator
 maintainers:
   - name: thereisnotime
+    url: https://github.com/thereisnotime
 keywords:
   - warpgate
   - operator
   - bastion
   - kubernetes
   - access-management
+  - pam
+annotations:
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/links: |
+    - name: GitHub
+      url: https://github.com/thereisnotime/warpgate-operator
+    - name: Warpgate
+      url: https://github.com/warp-tech/warpgate
+  artifacthub.io/containsSecurityUpdates: "false"
+  artifacthub.io/operator: "true"
+  artifacthub.io/operatorCapabilities: Full Lifecycle
