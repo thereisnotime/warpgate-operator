@@ -23,27 +23,35 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
       - name: Run gosec
-        uses: securego/gosec@master
+        id: gosec
+        uses: securego/gosec@223e19b8856e00f02cc67804499a83f77e208f3c  # v2.25.0
         with:
-          args: -exclude-dir=test ./...
+          args: -fmt sarif -out gosec.sarif -exclude-dir=test ./...
+
+      - name: Upload gosec SARIF
+        uses: github/codeql-action/upload-sarif@5c8a8a642e79153f5d047b10ec1cba1d1cc65699  # v3
+        if: always()
+        with:
+          sarif_file: gosec.sarif
+          category: gosec
 
   govulncheck:
     name: Go Vulnerability Check
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
           go-version-file: go.mod
 
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
 
       - name: Run govulncheck
         run: govulncheck ./...
@@ -53,26 +61,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
       - name: Run Trivy (filesystem)
-        uses: aquasecurity/trivy-action@master
+        id: trivy
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1  # v0.35.0
         with:
           scan-type: fs
           scan-ref: .
           severity: CRITICAL,HIGH
-          exit-code: 1
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: "1"
+
+      - name: Upload Trivy SARIF
+        uses: github/codeql-action/upload-sarif@5c8a8a642e79153f5d047b10ec1cba1d1cc65699  # v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy
 
   gitleaks:
     name: Secret Scanning (gitleaks)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
           fetch-depth: 0
 
       - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -5,6 +5,7 @@
 [![Helm Test](https://github.com/thereisnotime/warpgate-operator/actions/workflows/helm-test.yml/badge.svg)](https://github.com/thereisnotime/warpgate-operator/actions/workflows/helm-test.yml)
 [![Security](https://github.com/thereisnotime/warpgate-operator/actions/workflows/security.yml/badge.svg)](https://github.com/thereisnotime/warpgate-operator/actions/workflows/security.yml)
 [![Release](https://github.com/thereisnotime/warpgate-operator/actions/workflows/release.yml/badge.svg)](https://github.com/thereisnotime/warpgate-operator/actions/workflows/release.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/thereisnotime/warpgate-operator/badge)](https://securityscorecards.dev/viewer/?uri=github.com/thereisnotime/warpgate-operator)
 [![codecov](https://codecov.io/gh/thereisnotime/warpgate-operator/graph/badge.svg)](https://codecov.io/gh/thereisnotime/warpgate-operator)
 [![Go Report Card](https://goreportcard.com/badge/github.com/thereisnotime/warpgate-operator)](https://goreportcard.com/report/github.com/thereisnotime/warpgate-operator)
 [![License](https://img.shields.io/github/license/thereisnotime/warpgate-operator)](LICENSE)

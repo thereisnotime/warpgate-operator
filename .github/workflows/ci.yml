@@ -19,15 +19,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
           go-version-file: go.mod
 
       - name: Install just
-        uses: taiki-e/install-action@just
+        uses: taiki-e/install-action@95a61fa68a926d027cdc08016c7303a6ce8d1f87  # just
 
       - name: Run linter
         run: just lint
@@ -37,21 +37,35 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
           go-version-file: go.mod
 
       - name: Install just
-        uses: taiki-e/install-action@just
+        uses: taiki-e/install-action@95a61fa68a926d027cdc08016c7303a6ce8d1f87  # just
+
+      - name: Verify go.sum is tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.sum
 
       - name: Run tests
         run: just test
 
+      - name: Check coverage threshold
+        run: |
+          COVERAGE=$(go tool cover -func=cover.out | grep total | awk '{print $3}' | tr -d '%')
+          echo "Total coverage: ${COVERAGE}%"
+          if awk "BEGIN {exit !(${COVERAGE} < 75)}"; then
+            echo "::error::Coverage ${COVERAGE}% is below 75% threshold"
+            exit 1
+          fi
+
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2  # v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: cover.out
@@ -62,15 +76,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
           go-version-file: go.mod
 
       - name: Install just
-        uses: taiki-e/install-action@just
+        uses: taiki-e/install-action@95a61fa68a926d027cdc08016c7303a6ce8d1f87  # just
 
       - name: Verify compilation
         run: just build
@@ -80,10 +94,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
       - name: Lint markdown files
-        uses: DavidAnson/markdownlint-cli2-action@v23
+        uses: DavidAnson/markdownlint-cli2-action@ce4853d43830c74c1753b39f3cf40f71c2031eb9  # v23
 
   lint-commits:
     name: Commit Lint
@@ -91,27 +105,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
           fetch-depth: 0
 
       - name: Lint commits
-        uses: wagoid/commitlint-github-action@v6
+        uses: wagoid/commitlint-github-action@b948419dd99f3fd78a6548d48f94e3df7f6bf3ed  # v6
 
   lint-helm:
     name: Helm Lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
           fetch-depth: 0
 
       - name: Set up Helm
-        uses: azure/setup-helm@v5
+        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2  # v5
 
       - name: Set up chart-testing
-        uses: helm/chart-testing-action@v2.8.0
+        uses: helm/chart-testing-action@6ec842c01de15ebb84c8627d2744a0c2f2755c9f  # v2.8.0
 
       - name: Lint Helm chart
         run: ct lint --charts charts/warpgate-operator --validate-maintainers=false
@@ -121,15 +135,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
           go-version-file: go.mod
 
       - name: Install just
-        uses: taiki-e/install-action@just
+        uses: taiki-e/install-action@95a61fa68a926d027cdc08016c7303a6ce8d1f87  # just
 
       - name: Generate manifests
         run: just manifests

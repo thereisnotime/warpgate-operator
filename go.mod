@@ -2,6 +2,8 @@ module github.com/thereisnotime/warpgate-operator
 
 go 1.26
 
+toolchain go1.26.1
+
 require (
 	github.com/onsi/ginkgo/v2 v2.28.1
 	github.com/onsi/gomega v1.39.1

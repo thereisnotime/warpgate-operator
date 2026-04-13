@@ -37,6 +37,7 @@ import (
 
 	warpgatev1alpha1 "github.com/thereisnotime/warpgate-operator/api/v1alpha1"
 	"github.com/thereisnotime/warpgate-operator/internal/controller"
+	"github.com/thereisnotime/warpgate-operator/internal/version"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -308,7 +309,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLog.Info("Starting manager")
+	setupLog.Info("Starting manager", "version", version.Version, "commit", version.Commit, "date", version.Date)
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)

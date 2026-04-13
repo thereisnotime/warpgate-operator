@@ -19,6 +19,14 @@ minikube_k8s_version := env("MINIKUBE_K8S_VERSION", "stable")
 kustomize_version := "v5.8.1"
 controller_tools_version := "v0.20.1"
 golangci_lint_version := "v2.8.0"
+gosec_version := "v2.25.0"
+govulncheck_version := "v1.1.4"
+
+# Build-time version info (injected via ldflags)
+version := `git describe --tags --always --dirty 2>/dev/null || echo "dev"`
+commit := `git rev-parse --short HEAD 2>/dev/null || echo "none"`
+date := `date -u +%Y-%m-%dT%H:%M:%SZ`
+ldflags := "-s -w -X github.com/thereisnotime/warpgate-operator/internal/version.Version=" + version + " -X github.com/thereisnotime/warpgate-operator/internal/version.Commit=" + commit + " -X github.com/thereisnotime/warpgate-operator/internal/version.Date=" + date
 
 # Tool paths
 kustomize := localbin / "kustomize"
@@ -78,13 +86,13 @@ vet:
 # Run unit tests (not e2e)
 test: manifests generate fmt vet _setup-envtest
     KUBEBUILDER_ASSETS="$("{{envtest}}" use {{envtest_k8s_version}} --bin-dir "{{localbin}}" -p path)" \
-        go test $(go list ./... | grep -v /e2e) -coverprofile cover.out
+        go test -race -shuffle=on -covermode=atomic $(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 # ─── Build ────────────────────────────────────────────────────────────
 
 # Build the operator binary
 build: manifests generate fmt vet
-    go build -o bin/manager cmd/main.go
+    go build -ldflags "{{ldflags}}" -o bin/manager cmd/main.go
 
 # Run the operator locally against current kubeconfig
 run: manifests generate fmt vet
@@ -304,12 +312,12 @@ lint-fix: lint-go-fix
 
 # Run Go security scanner (gosec)
 sec-gosec:
-    go install github.com/securego/gosec/v2/cmd/gosec@latest
+    go install github.com/securego/gosec/v2/cmd/gosec@{{gosec_version}}
     gosec -exclude-dir=test ./...
 
 # Run Go vulnerability checker
 sec-vulncheck:
-    go install golang.org/x/vuln/cmd/govulncheck@latest
+    go install golang.org/x/vuln/cmd/govulncheck@{{govulncheck_version}}
     govulncheck ./...
 
 # Run secret scanner (gitleaks)
