@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.7](https://github.com/thereisnotime/warpgate-operator/compare/warpgate-operator-v0.4.6...warpgate-operator-v0.4.7) (2026-04-13)
+
+
+### Bug Fixes
+
+* **chart:** remove double blank line from CHANGELOG, use latest image tag in ArtifactHub annotation ([a51635e](https://github.com/thereisnotime/warpgate-operator/commit/a51635e339282f473e4990eb058d404a0460796d))
+
 ## [0.4.6](https://github.com/thereisnotime/warpgate-operator/compare/warpgate-operator-v0.4.5...warpgate-operator-v0.4.6) (2026-04-13)
 
 ### Bug Fixes
