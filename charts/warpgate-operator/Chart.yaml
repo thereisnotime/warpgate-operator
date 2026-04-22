@@ -3,7 +3,7 @@ name: warpgate-operator
 description: Kubernetes operator for managing Warpgate bastion host resources
 type: application
 version: 0.4.7
-appVersion: 0.4.7
+appVersion: 0.4.8
 home: https://github.com/thereisnotime/warpgate-operator
 sources:
   - https://github.com/thereisnotime/warpgate-operator
