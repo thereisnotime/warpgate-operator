@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.8](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.7...v0.4.8) (2026-04-22)
+
+
+### Bug Fixes
+
+* **ci:** include dependency updates in release changelogs ([280b52c](https://github.com/thereisnotime/warpgate-operator/commit/280b52cbbde3870f5c10b7d6ef4f8a07dd994415))
+
+
+### Dependencies
+
+* **deps:** bump actions/attest-build-provenance from 2.4.0 to 4.1.0 ([#32](https://github.com/thereisnotime/warpgate-operator/issues/32)) ([58d8bb5](https://github.com/thereisnotime/warpgate-operator/commit/58d8bb5634c7fa6d61d61fe65b93bf2220605ea1))
+* **deps:** bump github/codeql-action from 3.35.1 to 4.35.2 ([#34](https://github.com/thereisnotime/warpgate-operator/issues/34)) ([449cb00](https://github.com/thereisnotime/warpgate-operator/commit/449cb004d217a74f8bce88cef97873f82a2e2313))
+* **deps:** bump googleapis/release-please-action from 4.4.0 to 4.4.1 ([#35](https://github.com/thereisnotime/warpgate-operator/issues/35)) ([d5ac440](https://github.com/thereisnotime/warpgate-operator/commit/d5ac44071850d1299d134d23b9ba186cb300f400))
+* **deps:** bump k8s.io/client-go from 0.35.3 to 0.35.4 ([#33](https://github.com/thereisnotime/warpgate-operator/issues/33)) ([6c35028](https://github.com/thereisnotime/warpgate-operator/commit/6c35028b09c753ee04d74e9f5a92cd8836261533))
+* **deps:** bump sigstore/cosign-installer from 3.8.2 to 4.1.1 ([#31](https://github.com/thereisnotime/warpgate-operator/issues/31)) ([2439c2d](https://github.com/thereisnotime/warpgate-operator/commit/2439c2d9a88522bf699a59074b3acadf3d0ea583))
+
 ## [0.4.7](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.6...v0.4.7) (2026-04-13)
 
 
