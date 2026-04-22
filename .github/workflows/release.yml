@@ -100,7 +100,7 @@ jobs:
         uses: taiki-e/install-action@95a61fa68a926d027cdc08016c7303a6ce8d1f87  # just
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb  # v3.8.2
+        uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003  # v4.1.1
 
       - name: Build install manifest
         run: IMG=ghcr.io/thereisnotime/warpgate-operator:${{ needs.release-please.outputs.operator_version }} just build-installer
