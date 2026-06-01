@@ -66,7 +66,22 @@ make deploy IMG=<registry>/warpgate-operator:<tag>
 
 # Undeploy
 make undeploy
+
+# Generate dist/install.yaml (single-file install manifest)
+just build-installer
 ```
+
+## Distribution
+
+| Artifact | Location |
+| --- | --- |
+| Container image | `ghcr.io/thereisnotime/warpgate-operator:<tag>` |
+| Helm chart (OCI) | `oci://ghcr.io/thereisnotime/charts/warpgate-operator` |
+| Install manifest | Uploaded to each GitHub release as `dist/install.yaml` |
+
+## Release Flow
+
+Two independent release tracks (operator and Helm chart) managed by release-please. See `CONTRIBUTORS.md` for the full release flow documentation before making any changes that touch versioning, Chart.yaml, or the CI pipeline.
 
 ## Runtime Environment Variables
 
