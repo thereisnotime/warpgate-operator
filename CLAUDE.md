@@ -81,7 +81,9 @@ just build-installer
 
 ## Release Flow
 
-Two independent release tracks (operator and Helm chart) managed by release-please. See `CONTRIBUTORS.md` for the full release flow documentation before making any changes that touch versioning, Chart.yaml, or the CI pipeline.
+Two independent release tracks (operator and Helm chart) managed by release-please.
+See `CONTRIBUTORS.md` for the full release flow documentation before making any changes
+that touch versioning, Chart.yaml, or the CI pipeline.
 
 ## Runtime Environment Variables
 
