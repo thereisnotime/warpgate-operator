@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.8](https://github.com/thereisnotime/warpgate-operator/compare/warpgate-operator-v0.4.7...warpgate-operator-v0.4.8) (2026-06-11)
+
+
+### Features
+
+* add rate limit and ticket configuration fields to targets ([1752f1f](https://github.com/thereisnotime/warpgate-operator/commit/1752f1f707b6c2995ae4b3be600059a36f8c9ad5))
+* add rate limit and ticket configuration fields to targets ([ef3abc7](https://github.com/thereisnotime/warpgate-operator/commit/ef3abc702d89eb358366a8d1fdf1d0eee0f6f5b4))
+* add SSH jump host support ([0714c51](https://github.com/thereisnotime/warpgate-operator/commit/0714c51e0592cfcfc3b6defd89427a2f95c599dc))
+* add SSH jump host support ([b7ebd52](https://github.com/thereisnotime/warpgate-operator/commit/b7ebd52327c09fd500cc9de91a097780fa8eef1b))
+
 ## [0.4.7](https://github.com/thereisnotime/warpgate-operator/compare/warpgate-operator-v0.4.6...warpgate-operator-v0.4.7) (2026-04-13)
 
 
