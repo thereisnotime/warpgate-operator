@@ -239,10 +239,11 @@ func (r *WarpgateTargetReconciler) buildTargetRequest(ctx context.Context, targe
 	case spec.PostgreSQL != nil:
 		targetType = "PostgreSQL"
 		pgOpts := warpgate.PostgresOptions{
-			Kind:     "Postgres",
-			Host:     spec.PostgreSQL.Host,
-			Port:     spec.PostgreSQL.Port,
-			Username: spec.PostgreSQL.Username,
+			Kind:            "Postgres",
+			Host:            spec.PostgreSQL.Host,
+			Port:            spec.PostgreSQL.Port,
+			Username:        spec.PostgreSQL.Username,
+			ProtocolVersion: spec.PostgreSQL.ProtocolVersion,
 		}
 		if spec.PostgreSQL.PasswordSecretRef != nil {
 			password, err := r.readSecretValue(ctx, target.Namespace, spec.PostgreSQL.PasswordSecretRef)

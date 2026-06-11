@@ -171,6 +171,11 @@ spec:
                   port:
                     description: port is the PostgreSQL port.
                     type: integer
+                  protocolVersion:
+                    description: protocolVersion is the PostgreSQL protocol version
+                      used for the target connection.
+                    pattern: ^3\.(0|2)$
+                    type: string
                   tls:
                     description: tls configures TLS settings for the PostgreSQL connection.
                     properties:

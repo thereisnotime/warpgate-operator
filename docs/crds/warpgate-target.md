@@ -52,6 +52,7 @@ Four target types are supported: SSH, HTTP, MySQL, and PostgreSQL. Exactly one t
 | `postgresql.host` | `string` | Yes | - | Hostname or IP of the PostgreSQL server |
 | `postgresql.port` | `int` | Yes | - | PostgreSQL port |
 | `postgresql.username` | `string` | Yes | - | PostgreSQL username |
+| `postgresql.protocolVersion` | `string` | No | - | PostgreSQL protocol version for the target connection (`3.0` or `3.2`) |
 | `postgresql.passwordSecretRef` | `object` | No | - | Secret reference for the PostgreSQL password |
 | `postgresql.tls` | `object` | No | - | TLS configuration |
 
@@ -184,6 +185,7 @@ spec:
     host: pg.internal
     port: 5432
     username: app_user
+    protocolVersion: "3.0"
     passwordSecretRef:
       name: pg-password
       key: password
@@ -202,7 +204,7 @@ The following rules are enforced by the admission webhook on create and update:
 - **SSH targets:** `ssh.host` and `ssh.username` are required; `ssh.port` must be between 1 and 65535; `ssh.authKind` must be `Password` or `PublicKey`
 - **HTTP targets:** `http.url` is required
 - **MySQL targets:** `mysql.host` and `mysql.username` are required; `mysql.port` must be between 1 and 65535
-- **PostgreSQL targets:** `postgresql.host` and `postgresql.username` are required; `postgresql.port` must be between 1 and 65535
+- **PostgreSQL targets:** `postgresql.host` and `postgresql.username` are required; `postgresql.port` must be between 1 and 65535; `postgresql.protocolVersion` must be `3.0` or `3.2` when set
 - **TLS config** (HTTP, MySQL, PostgreSQL): `tls.mode` must be one of `Disabled`, `Preferred`, or `Required`
 
 ## Defaults

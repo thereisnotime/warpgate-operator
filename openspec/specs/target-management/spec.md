@@ -58,10 +58,11 @@ MySQL targets support `host`, `port`, `username`, optional `passwordSecretRef`, 
 ### REQ-TARGET-005: PostgreSQL Target
 **Status:** ADDED
 
-PostgreSQL targets support `host`, `port`, `username`, optional `passwordSecretRef`, and optional `tls` configuration.
+PostgreSQL targets support `host`, `port`, `username`, optional `passwordSecretRef`, optional `protocolVersion`, and optional `tls` configuration.
 
 **Scenarios:**
 - **Given** a PostgreSQL target with TLS disabled and no password **When** the controller reconciles **Then** it creates the target without password or TLS settings.
+- **Given** a PostgreSQL target with `protocolVersion` set **When** the controller reconciles **Then** it passes the value to Warpgate as `protocol_version`.
 
 ### REQ-TARGET-006: Drift Detection and Correction
 **Status:** ADDED

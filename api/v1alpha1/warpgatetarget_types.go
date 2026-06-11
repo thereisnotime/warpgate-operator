@@ -90,6 +90,10 @@ type PostgreSQLTargetSpec struct {
 	Port int `json:"port"`
 	// username is the PostgreSQL username.
 	Username string `json:"username"`
+	// protocolVersion is the PostgreSQL protocol version used for the target connection.
+	// +kubebuilder:validation:Pattern=`^3\.(0|2)$`
+	// +optional
+	ProtocolVersion string `json:"protocolVersion,omitempty"`
 	// passwordSecretRef references a Secret containing the PostgreSQL password.
 	// +optional
 	PasswordSecretRef *SecretKeyRef `json:"passwordSecretRef,omitempty"`

@@ -753,9 +753,10 @@ var _ = Describe("WarpgateTarget Controller", func() {
 					ConnectionRef: connName,
 					Name:          "my-pg-target",
 					PostgreSQL: &warpgatev1alpha1.PostgreSQLTargetSpec{
-						Host:     "pgdb.example.com",
-						Port:     5432,
-						Username: "postgres",
+						Host:            "pgdb.example.com",
+						Port:            5432,
+						Username:        "postgres",
+						ProtocolVersion: "3.0",
 						PasswordSecretRef: &warpgatev1alpha1.SecretKeyRef{
 							Name: pwSecretName,
 							Key:  "password",
@@ -796,6 +797,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			Expect(opts["host"]).To(Equal("pgdb.example.com"))
 			Expect(opts["port"]).To(BeNumerically("==", 5432))
 			Expect(opts["username"]).To(Equal("postgres"))
+			Expect(opts["protocol_version"]).To(Equal("3.0"))
 			Expect(opts["password"]).To(Equal("pg-secret-pw"))
 
 			tlsCfg, ok := opts["tls"].(map[string]any)

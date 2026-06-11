@@ -48,12 +48,13 @@ type MySQLOptions struct {
 
 // PostgreSQL target options.
 type PostgresOptions struct {
-	Kind     string     `json:"kind"` // always "Postgres"
-	Host     string     `json:"host"`
-	Port     int        `json:"port"`
-	Username string     `json:"username"`
-	Password string     `json:"password,omitempty"`
-	TLS      *TLSConfig `json:"tls,omitempty"`
+	Kind            string     `json:"kind"` // always "Postgres"
+	Host            string     `json:"host"`
+	Port            int        `json:"port"`
+	Username        string     `json:"username"`
+	ProtocolVersion string     `json:"protocol_version,omitempty"`
+	Password        string     `json:"password,omitempty"`
+	TLS             *TLSConfig `json:"tls,omitempty"`
 }
 
 // Kubernetes target options.

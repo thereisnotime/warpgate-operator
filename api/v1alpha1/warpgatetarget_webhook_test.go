@@ -231,6 +231,16 @@ func TestValidate_ValidPostgreSQL(t *testing.T) {
 	}
 }
 
+func TestValidate_ValidPostgreSQLProtocolVersion(t *testing.T) {
+	target := validPostgreSQLTarget()
+	target.Spec.PostgreSQL.ProtocolVersion = "3.0"
+
+	v := &WarpgateTargetCustomValidator{}
+	if _, err := v.ValidateCreate(context.Background(), target); err != nil {
+		t.Errorf("expected valid PostgreSQL protocol version to pass, got: %v", err)
+	}
+}
+
 func TestValidate_EmptyConnectionRef(t *testing.T) {
 	target := validSSHTarget()
 	target.Spec.ConnectionRef = ""
@@ -456,6 +466,20 @@ func TestValidate_PostgreSQLEmptyUsername(t *testing.T) {
 	_, err := v.ValidateCreate(context.Background(), target)
 	if err == nil {
 		t.Fatal("expected error for empty PostgreSQL username")
+	}
+}
+
+func TestValidate_PostgreSQLInvalidProtocolVersion(t *testing.T) {
+	target := validPostgreSQLTarget()
+	target.Spec.PostgreSQL.ProtocolVersion = "2.0"
+
+	v := &WarpgateTargetCustomValidator{}
+	_, err := v.ValidateCreate(context.Background(), target)
+	if err == nil {
+		t.Fatal("expected error for invalid PostgreSQL protocol version")
+	}
+	if !strings.Contains(err.Error(), "protocolVersion") {
+		t.Errorf("error should mention protocolVersion: %v", err)
 	}
 }
 

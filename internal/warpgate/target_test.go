@@ -115,11 +115,12 @@ func TestCreatePostgresTarget(t *testing.T) {
 	defer srv.Close()
 
 	opts, _ := MarshalOptions(PostgresOptions{
-		Kind:     "Postgres",
-		Host:     "pg.example.com",
-		Port:     5432,
-		Username: "admin",
-		TLS:      &TLSConfig{Mode: "Preferred", Verify: false},
+		Kind:            "Postgres",
+		Host:            "pg.example.com",
+		Port:            5432,
+		Username:        "admin",
+		ProtocolVersion: "3.0",
+		TLS:             &TLSConfig{Mode: "Preferred", Verify: false},
 	})
 
 	c := NewTestClient(srv.URL)
