@@ -213,6 +213,11 @@ spec:
                   host:
                     description: host is the hostname or IP of the SSH target.
                     type: string
+                  jumpHostRef:
+                    description: |-
+                      jumpHostRef is the name of another WarpgateTarget (in the same namespace) to use as an SSH jump host.
+                      The referenced target must be an SSH target and must already be synced (have an ExternalID).
+                    type: string
                   passwordSecretRef:
                     description: passwordSecretRef references a Secret containing
                       the SSH password (for Password auth).

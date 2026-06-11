@@ -45,6 +45,10 @@ type SSHTargetSpec struct {
 	PasswordSecretRef *SecretKeyRef `json:"passwordSecretRef,omitempty"`
 	// allowInsecureAlgos permits the use of insecure SSH algorithms.
 	AllowInsecureAlgos bool `json:"allowInsecureAlgos,omitempty"`
+	// jumpHostRef is the name of another WarpgateTarget (in the same namespace) to use as an SSH jump host.
+	// The referenced target must be an SSH target and must already be synced (have an ExternalID).
+	// +optional
+	JumpHostRef string `json:"jumpHostRef,omitempty"`
 }
 
 // HTTPTargetSpec defines the configuration for an HTTP target.
