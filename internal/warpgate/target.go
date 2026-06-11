@@ -73,20 +73,30 @@ type KubernetesAuth struct {
 
 // Target represents a Warpgate target.
 type Target struct {
-	ID          string          `json:"id,omitempty"`
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
-	GroupID     string          `json:"group_id,omitempty"`
-	AllowRoles  []string        `json:"allow_roles,omitempty"`
-	Options     json.RawMessage `json:"options"`
+	ID                       string          `json:"id,omitempty"`
+	Name                     string          `json:"name"`
+	Description              string          `json:"description,omitempty"`
+	GroupID                  string          `json:"group_id,omitempty"`
+	AllowRoles               []string        `json:"allow_roles,omitempty"`
+	Options                  json.RawMessage `json:"options"`
+	RateLimitBytesPerSecond  *int64          `json:"rate_limit_bytes_per_second,omitempty"`
+	TicketMaxDurationSeconds *int64          `json:"ticket_max_duration_seconds,omitempty"`
+	TicketRequestsDisabled   *bool           `json:"ticket_requests_disabled,omitempty"`
+	TicketRequireApproval    *bool           `json:"ticket_require_approval,omitempty"`
+	TicketMaxUses            *int64          `json:"ticket_max_uses,omitempty"`
 }
 
 // TargetRequest is used for create/update operations.
 type TargetRequest struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
-	GroupID     string          `json:"group_id,omitempty"`
-	Options     json.RawMessage `json:"options"`
+	Name                     string          `json:"name"`
+	Description              string          `json:"description,omitempty"`
+	GroupID                  string          `json:"group_id,omitempty"`
+	Options                  json.RawMessage `json:"options"`
+	RateLimitBytesPerSecond  *int64          `json:"rate_limit_bytes_per_second,omitempty"`
+	TicketMaxDurationSeconds *int64          `json:"ticket_max_duration_seconds,omitempty"`
+	TicketRequestsDisabled   *bool           `json:"ticket_requests_disabled,omitempty"`
+	TicketRequireApproval    *bool           `json:"ticket_require_approval,omitempty"`
+	TicketMaxUses            *int64          `json:"ticket_max_uses,omitempty"`
 }
 
 // MarshalOptions marshals a typed options struct into json.RawMessage for use in TargetRequest.

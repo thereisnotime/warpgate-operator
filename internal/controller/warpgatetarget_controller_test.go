@@ -1998,7 +1998,6 @@ var _ = Describe("WarpgateTarget Controller", func() {
 		})
 
 		It("should pass jump_host UUID when the referenced target is synced", func() {
-			// Create the jump host target with an ExternalID already set in status.
 			jumpHost := &warpgatev1alpha1.WarpgateTarget{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      jumpHostName,
@@ -2058,7 +2057,6 @@ var _ = Describe("WarpgateTarget Controller", func() {
 		})
 
 		It("should return an error when the jump host target is not yet synced", func() {
-			// Create the jump host target without an ExternalID.
 			jumpHost := &warpgatev1alpha1.WarpgateTarget{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      jumpHostName,
@@ -2076,7 +2074,6 @@ var _ = Describe("WarpgateTarget Controller", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, jumpHost)).To(Succeed())
-			// Intentionally do NOT set ExternalID on jumpHost.
 
 			target := &warpgatev1alpha1.WarpgateTarget{
 				ObjectMeta: metav1.ObjectMeta{
@@ -2108,6 +2105,136 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(readyCond.Reason).To(Equal("BuildError"))
+		})
+	})
+
+	Context("SSH target with rate limit and ticket fields", func() {
+		var (
+			mockServer   *httptest.Server
+			namespace    = testNamespace
+			secretName   = "wg-token-target-ticketrate"
+			connName     = "wg-conn-target-ticketrate"
+			targetName   = "target-ticketrate-test"
+			capturedBody []byte
+			mu           sync.Mutex
+		)
+
+		BeforeEach(func() {
+			capturedBody = nil
+
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					mu.Lock()
+					capturedBody, _ = io.ReadAll(r.Body)
+					mu.Unlock()
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":      "target-tr-111",
+						"name":    "my-tr-target",
+						"options": json.RawMessage(`{"kind":"Ssh"}`),
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+		})
+
+		It("should send rate limit and ticket fields in the API request", func() {
+			rateLimitVal := int64(1048576)
+			ticketMaxDuration := int64(3600)
+			ticketRequestsDisabled := false
+			ticketRequireApproval := true
+			ticketMaxUses := int64(10)
+
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      targetName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef:            connName,
+					Name:                     "my-tr-target",
+					RateLimitBytesPerSecond:  &rateLimitVal,
+					TicketMaxDurationSeconds: &ticketMaxDuration,
+					TicketRequestsDisabled:   &ticketRequestsDisabled,
+					TicketRequireApproval:    &ticketRequireApproval,
+					TicketMaxUses:            &ticketMaxUses,
+					SSH: &warpgatev1alpha1.SSHTargetSpec{
+						Host:     "10.0.0.1",
+						Port:     22,
+						Username: "admin",
+						AuthKind: "PublicKey",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(Equal("target-tr-111"))
+
+			mu.Lock()
+			body := capturedBody
+			mu.Unlock()
+			Expect(body).NotTo(BeNil())
+			var req map[string]any
+			Expect(json.Unmarshal(body, &req)).To(Succeed())
+			Expect(req["rate_limit_bytes_per_second"]).To(BeEquivalentTo(1048576))
+			Expect(req["ticket_max_duration_seconds"]).To(BeEquivalentTo(3600))
+			Expect(req["ticket_requests_disabled"]).To(BeFalse())
+			Expect(req["ticket_require_approval"]).To(BeTrue())
+			Expect(req["ticket_max_uses"]).To(BeEquivalentTo(10))
+		})
+
+		It("should omit rate limit and ticket fields from the request when not set", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      targetName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-tr-target",
+					SSH: &warpgatev1alpha1.SSHTargetSpec{
+						Host:     "10.0.0.1",
+						Port:     22,
+						Username: "admin",
+						AuthKind: "PublicKey",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			mu.Lock()
+			body := capturedBody
+			mu.Unlock()
+			Expect(body).NotTo(BeNil())
+			var req map[string]any
+			Expect(json.Unmarshal(body, &req)).To(Succeed())
+			Expect(req).NotTo(HaveKey("rate_limit_bytes_per_second"))
+			Expect(req).NotTo(HaveKey("ticket_max_duration_seconds"))
+			Expect(req).NotTo(HaveKey("ticket_requests_disabled"))
+			Expect(req).NotTo(HaveKey("ticket_require_approval"))
+			Expect(req).NotTo(HaveKey("ticket_max_uses"))
 		})
 	})
 })

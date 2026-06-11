@@ -269,9 +269,14 @@ func (r *WarpgateTargetReconciler) buildTargetRequest(ctx context.Context, targe
 	}
 
 	return &warpgate.TargetRequest{
-		Name:        spec.Name,
-		Description: spec.Description,
-		Options:     rawOpts,
+		Name:                     spec.Name,
+		Description:              spec.Description,
+		Options:                  rawOpts,
+		RateLimitBytesPerSecond:  spec.RateLimitBytesPerSecond,
+		TicketMaxDurationSeconds: spec.TicketMaxDurationSeconds,
+		TicketRequestsDisabled:   spec.TicketRequestsDisabled,
+		TicketRequireApproval:    spec.TicketRequireApproval,
+		TicketMaxUses:            spec.TicketMaxUses,
 	}, targetType, nil
 }
 
