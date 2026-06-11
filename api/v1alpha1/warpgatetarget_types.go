@@ -109,6 +109,21 @@ type WarpgateTargetSpec struct {
 	// description is a human-readable description of the target.
 	// +optional
 	Description string `json:"description,omitempty"`
+	// rateLimitBytesPerSecond limits transfer speed in bytes per second. Zero means unlimited.
+	// +optional
+	RateLimitBytesPerSecond *int64 `json:"rateLimitBytesPerSecond,omitempty"`
+	// ticketMaxDurationSeconds limits how long a ticket session can last. Zero means unlimited.
+	// +optional
+	TicketMaxDurationSeconds *int64 `json:"ticketMaxDurationSeconds,omitempty"`
+	// ticketRequestsDisabled disables ticket requests for this target.
+	// +optional
+	TicketRequestsDisabled *bool `json:"ticketRequestsDisabled,omitempty"`
+	// ticketRequireApproval requires approval before a ticket session starts.
+	// +optional
+	TicketRequireApproval *bool `json:"ticketRequireApproval,omitempty"`
+	// ticketMaxUses limits how many times a ticket can be used. Zero means unlimited.
+	// +optional
+	TicketMaxUses *int64 `json:"ticketMaxUses,omitempty"`
 	// ssh configures an SSH target. Exactly one target type must be set.
 	// +optional
 	SSH *SSHTargetSpec `json:"ssh,omitempty"`

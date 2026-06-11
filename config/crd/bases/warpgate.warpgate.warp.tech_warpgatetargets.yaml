@@ -195,6 +195,11 @@ spec:
                 - port
                 - username
                 type: object
+              rateLimitBytesPerSecond:
+                description: rateLimitBytesPerSecond limits transfer speed in bytes
+                  per second. Zero means unlimited.
+                format: int64
+                type: integer
               ssh:
                 description: ssh configures an SSH target. Exactly one target type
                   must be set.
@@ -244,6 +249,24 @@ spec:
                 - port
                 - username
                 type: object
+              ticketMaxDurationSeconds:
+                description: ticketMaxDurationSeconds limits how long a ticket session
+                  can last. Zero means unlimited.
+                format: int64
+                type: integer
+              ticketMaxUses:
+                description: ticketMaxUses limits how many times a ticket can be used.
+                  Zero means unlimited.
+                format: int64
+                type: integer
+              ticketRequestsDisabled:
+                description: ticketRequestsDisabled disables ticket requests for this
+                  target.
+                type: boolean
+              ticketRequireApproval:
+                description: ticketRequireApproval requires approval before a ticket
+                  session starts.
+                type: boolean
             required:
             - connectionRef
             - name
