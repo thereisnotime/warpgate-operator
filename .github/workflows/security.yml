@@ -62,7 +62,8 @@ jobs:
 
       - name: Run govulncheck
         run: |
-          govulncheck ./... 2>&1 > /tmp/govuln.txt; VULN_EXIT=$?
+          govulncheck ./... > /tmp/govuln.txt 2>&1 || VULN_EXIT=$?
+          VULN_EXIT="${VULN_EXIT:-0}"
           cat /tmp/govuln.txt
 
           [ "${VULN_EXIT}" -eq 0 ] && exit 0
