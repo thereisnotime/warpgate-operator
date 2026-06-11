@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.4.9](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.8...v0.4.9) (2026-06-11)
+
+
+### Bug Fixes
+
+* **api:** replace deprecated scheme.Builder with local implementation ([a9bb493](https://github.com/thereisnotime/warpgate-operator/commit/a9bb493bb99294dc50b7645e9eace682da159387))
+* **deps:** upgrade golang.org/x/net to v0.55.0 ([66d9e1a](https://github.com/thereisnotime/warpgate-operator/commit/66d9e1abb58d1c12cbbef2dcc50cd3dd261f1dcb))
+
+
+### Dependencies
+
+* **deps:** bump aquasecurity/trivy-action from 0.35.0 to 0.36.0 ([d3d2aeb](https://github.com/thereisnotime/warpgate-operator/commit/d3d2aebca45ea17bfddc3c4f323cbb48019c33c5))
+* **deps:** bump DavidAnson/markdownlint-cli2-action from 23.0.0 to 23.2.0 ([1f7bb45](https://github.com/thereisnotime/warpgate-operator/commit/1f7bb45462d1b4966d81bdbb7b1862823924f554))
+* **deps:** bump github.com/onsi/ginkgo/v2 from 2.28.1 to 2.28.3 ([798905b](https://github.com/thereisnotime/warpgate-operator/commit/798905b8ef68f85819839d3ea8e7fdd3e7e2fc43))
+* **deps:** bump github.com/onsi/gomega from 1.39.1 to 1.40.0 ([#45](https://github.com/thereisnotime/warpgate-operator/issues/45)) ([4518485](https://github.com/thereisnotime/warpgate-operator/commit/45184852a7bc874d8b139cb7248ee255a8405d3f))
+* **deps:** bump github/codeql-action from 4.35.2 to 4.35.4 ([12b949d](https://github.com/thereisnotime/warpgate-operator/commit/12b949db37049af84173c278439911dfb2f1a4d9))
+* **deps:** bump Go modules and GitHub Actions to latest ([2717f42](https://github.com/thereisnotime/warpgate-operator/commit/2717f42ffea4fd98421162ebb50f73e2f33d9b4c))
+* **deps:** bump golang.org/x/net to v0.54.0 and related deps ([0f7ff49](https://github.com/thereisnotime/warpgate-operator/commit/0f7ff49703365fda7d83f06dd3a4ea2f0ddeafb1))
+* **deps:** bump golang.org/x/net to v0.54.0 and related deps ([864b631](https://github.com/thereisnotime/warpgate-operator/commit/864b6315c330ed22d3d28a9ba0548f302aa96f8d))
+* **deps:** bump googleapis/release-please-action from 4.4.1 to 5.0.0 ([b7b3609](https://github.com/thereisnotime/warpgate-operator/commit/b7b36096ea09a32e9ddb2d72ba2271f1f62b52fe))
+* **deps:** bump k8s.io packages to 0.36.0 and controller-runtime to 0.24.0 ([3a71f5f](https://github.com/thereisnotime/warpgate-operator/commit/3a71f5f95baa6db96aeb493aed61e9b40585448d))
+* **deps:** bump k8s.io/{api,apimachinery,client-go} to 0.36.0 and controller-runtime to 0.24.0 ([cf42a9a](https://github.com/thereisnotime/warpgate-operator/commit/cf42a9a309d2f1f4ce08e04b936734ba876f6d6c))
+* **deps:** bump sigs.k8s.io/controller-runtime from 0.23.3 to 0.24.0 ([#47](https://github.com/thereisnotime/warpgate-operator/issues/47)) ([817acc9](https://github.com/thereisnotime/warpgate-operator/commit/817acc9ba06f1e8c163aef2ee4e91b486fdf3e8c))
+* **deps:** bump sigstore/cosign-installer from 4.1.1 to 4.1.2 ([c0342b0](https://github.com/thereisnotime/warpgate-operator/commit/c0342b0e6759cd0ba6addfa8efc3fb888e278843))
+* **deps:** tidy go.sum after dependency updates ([116abf6](https://github.com/thereisnotime/warpgate-operator/commit/116abf6cb3d5daf8aac7b7fb3e36078d12b196c9))
+* **deps:** tidy go.sum after dependency updates ([380bc34](https://github.com/thereisnotime/warpgate-operator/commit/380bc34ee0db6d20347f3ede0c81593e8d280522))
+
 ## [0.4.8](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.7...v0.4.8) (2026-04-22)
 
 
