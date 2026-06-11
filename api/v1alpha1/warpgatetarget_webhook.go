@@ -220,6 +220,9 @@ func validatePostgreSQLTarget(pg *PostgreSQLTargetSpec, fldPath *field.Path) fie
 	if pg.Username == "" {
 		errs = append(errs, field.Required(fldPath.Child("username"), "username must not be empty"))
 	}
+	if pg.ProtocolVersion != "" && pg.ProtocolVersion != "3.0" && pg.ProtocolVersion != "3.2" {
+		errs = append(errs, field.NotSupported(fldPath.Child("protocolVersion"), pg.ProtocolVersion, []string{"3.0", "3.2"}))
+	}
 	if pg.TLS != nil {
 		errs = append(errs, validateTLS(pg.TLS, fldPath.Child("tls"))...)
 	}
