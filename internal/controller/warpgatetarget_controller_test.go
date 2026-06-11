@@ -1952,4 +1952,162 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			Expect(readyCond.Reason).To(Equal("ClientError"))
 		})
 	})
+
+	Context("SSH target with jump host", func() {
+		var (
+			mockServer   *httptest.Server
+			namespace    = testNamespace
+			secretName   = "wg-token-target-jump"
+			connName     = "wg-conn-target-jump"
+			jumpHostName = "jump-host-target"
+			targetName   = "target-with-jump-host"
+			capturedBody []byte
+			mu           sync.Mutex
+		)
+
+		BeforeEach(func() {
+			capturedBody = nil
+
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					mu.Lock()
+					capturedBody, _ = io.ReadAll(r.Body)
+					mu.Unlock()
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":      "target-jump-111",
+						"name":    "my-jump-target",
+						"options": json.RawMessage(`{"kind":"Ssh"}`),
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupTarget(namespace, jumpHostName)
+			cleanupConnection(namespace, secretName, connName)
+		})
+
+		It("should pass jump_host UUID when the referenced target is synced", func() {
+			// Create the jump host target with an ExternalID already set in status.
+			jumpHost := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      jumpHostName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "jump-host",
+					SSH: &warpgatev1alpha1.SSHTargetSpec{
+						Host:     "10.0.0.2",
+						Port:     22,
+						Username: "jump",
+						AuthKind: "PublicKey",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, jumpHost)).To(Succeed())
+			jumpHost.Status.ExternalID = "jump-host-uuid-abc"
+			Expect(k8sClient.Status().Update(ctx, jumpHost)).To(Succeed())
+
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      targetName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-jump-target",
+					SSH: &warpgatev1alpha1.SSHTargetSpec{
+						Host:        "10.0.0.3",
+						Port:        22,
+						Username:    "admin",
+						AuthKind:    "PublicKey",
+						JumpHostRef: jumpHostName,
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(Equal("target-jump-111"))
+
+			mu.Lock()
+			body := capturedBody
+			mu.Unlock()
+			Expect(body).NotTo(BeNil())
+			var req map[string]json.RawMessage
+			Expect(json.Unmarshal(body, &req)).To(Succeed())
+			var opts map[string]any
+			Expect(json.Unmarshal(req["options"], &opts)).To(Succeed())
+			Expect(opts["jump_host"]).To(Equal("jump-host-uuid-abc"))
+		})
+
+		It("should return an error when the jump host target is not yet synced", func() {
+			// Create the jump host target without an ExternalID.
+			jumpHost := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      jumpHostName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "jump-host-unsynced",
+					SSH: &warpgatev1alpha1.SSHTargetSpec{
+						Host:     "10.0.0.2",
+						Port:     22,
+						Username: "jump",
+						AuthKind: "PublicKey",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, jumpHost)).To(Succeed())
+			// Intentionally do NOT set ExternalID on jumpHost.
+
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      targetName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-jump-target-unsynced",
+					SSH: &warpgatev1alpha1.SSHTargetSpec{
+						Host:        "10.0.0.3",
+						Port:        22,
+						Username:    "admin",
+						AuthKind:    "PublicKey",
+						JumpHostRef: jumpHostName,
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).NotTo(BeZero())
+
+			var fetched warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &fetched)).To(Succeed())
+			readyCond := findReadyCondition(fetched.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("BuildError"))
+		})
+	})
 })

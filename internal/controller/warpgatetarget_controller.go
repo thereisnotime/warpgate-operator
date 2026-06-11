@@ -182,6 +182,19 @@ func (r *WarpgateTargetReconciler) buildTargetRequest(ctx context.Context, targe
 			}
 			sshOpts.Auth.Password = password
 		}
+		if spec.SSH.JumpHostRef != "" {
+			var jumpHostTarget warpgatev1alpha1.WarpgateTarget
+			if err := r.Get(ctx, types.NamespacedName{
+				Namespace: target.Namespace,
+				Name:      spec.SSH.JumpHostRef,
+			}, &jumpHostTarget); err != nil {
+				return nil, "", fmt.Errorf("getting jump host target %q: %w", spec.SSH.JumpHostRef, err)
+			}
+			if jumpHostTarget.Status.ExternalID == "" {
+				return nil, "", fmt.Errorf("jump host target %q not yet synced", spec.SSH.JumpHostRef)
+			}
+			sshOpts.JumpHost = jumpHostTarget.Status.ExternalID
+		}
 		opts = sshOpts
 
 	case spec.HTTP != nil:

@@ -19,6 +19,7 @@ type SSHOptions struct {
 	Username           string  `json:"username"`
 	AllowInsecureAlgos bool    `json:"allow_insecure_algos,omitempty"`
 	Auth               SSHAuth `json:"auth"`
+	JumpHost           string  `json:"jump_host,omitempty"` // Warpgate target UUID
 }
 
 type SSHAuth struct {
