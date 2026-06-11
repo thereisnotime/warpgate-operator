@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.11](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.10...v0.4.11) (2026-06-11)
+
+
+### Features
+
+* **target:** add postgres protocol version ([2a898be](https://github.com/thereisnotime/warpgate-operator/commit/2a898be2d7172f77d418946eff92004577189e24))
+* **target:** add postgres protocol version ([aab4ea3](https://github.com/thereisnotime/warpgate-operator/commit/aab4ea35c20a9df9f779494513dd7c754374f16c))
+
 ## [0.4.10](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.9...v0.4.10) (2026-06-11)
 
 
