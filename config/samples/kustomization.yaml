@@ -4,6 +4,7 @@ resources:
 - warpgate_v1alpha1_warpgaterole.yaml
 - warpgate_v1alpha1_warpgateuser.yaml
 - warpgate_v1alpha1_warpgatetarget.yaml
+- warpgate_v1alpha1_warpgatetargetgroup.yaml
 - warpgate_v1alpha1_warpgateuserrole.yaml
 - warpgate_v1alpha1_warpgatetargetrole.yaml
 - warpgate_v1alpha1_warpgatepasswordcredential.yaml

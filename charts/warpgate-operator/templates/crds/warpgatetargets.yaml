@@ -57,6 +57,11 @@ spec:
               description:
                 description: description is a human-readable description of the target.
                 type: string
+              groupRef:
+                description: |-
+                  groupRef is the name of a WarpgateTargetGroup CR in the same namespace.
+                  The referenced group must already be synced (have an ExternalID).
+                type: string
               http:
                 description: http configures an HTTP target. Exactly one target type
                   must be set.

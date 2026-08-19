@@ -52,6 +52,7 @@ rules:
   - warpgatepasswordcredentials
   - warpgatepublickeycredentials
   - warpgateroles
+  - warpgatetargetgroups
   - warpgatetargetroles
   - warpgatetargets
   - warpgatetickets
@@ -73,6 +74,7 @@ rules:
   - warpgatepasswordcredentials/finalizers
   - warpgatepublickeycredentials/finalizers
   - warpgateroles/finalizers
+  - warpgatetargetgroups/finalizers
   - warpgatetargetroles/finalizers
   - warpgatetargets/finalizers
   - warpgatetickets/finalizers
@@ -89,6 +91,7 @@ rules:
   - warpgatepasswordcredentials/status
   - warpgatepublickeycredentials/status
   - warpgateroles/status
+  - warpgatetargetgroups/status
   - warpgatetargetroles/status
   - warpgatetargets/status
   - warpgatetickets/status

@@ -6,6 +6,7 @@ resources:
 - bases/warpgate.warpgate.warp.tech_warpgateroles.yaml
 - bases/warpgate.warpgate.warp.tech_warpgateusers.yaml
 - bases/warpgate.warpgate.warp.tech_warpgatetargets.yaml
+- bases/warpgate.warpgate.warp.tech_warpgatetargetgroups.yaml
 - bases/warpgate.warpgate.warp.tech_warpgateuserroles.yaml
 - bases/warpgate.warpgate.warp.tech_warpgatetargetroles.yaml
 - bases/warpgate.warpgate.warp.tech_warpgatepasswordcredentials.yaml

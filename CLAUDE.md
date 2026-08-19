@@ -21,11 +21,11 @@ A Kubernetes operator written in Go that manages [Warpgate](https://github.com/w
 
 ## CRDs
 
-10 CRDs:
+11 CRDs:
 
 - WarpgateInstance (deploy and manage Warpgate servers on Kubernetes)
 - WarpgateConnection (connect to external or self-hosted instances)
-- Role, User, Target (SSH, HTTP, MySQL, PostgreSQL)
+- Role, User, Target (SSH, HTTP, MySQL, PostgreSQL), TargetGroup
 - UserRole, TargetRole (bindings)
 - PasswordCredential, PublicKeyCredential
 - Ticket

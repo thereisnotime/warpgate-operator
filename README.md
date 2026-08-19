@@ -33,7 +33,7 @@ lifecycle management.
 ## Features
 
 - **Deploy and manage Warpgate instances** directly on Kubernetes with the `WarpgateInstance` CRD
-- **10 CRDs** covering all Warpgate resource types -- instances, connections, roles, users, targets, bindings, credentials, and tickets
+- **11 CRDs** covering all Warpgate resource types -- instances, connections, roles, users, targets, target groups, bindings, credentials, and tickets
 - **Multi-instance support** via `WarpgateConnection` CRDs pointing to different Warpgate instances
 - **Continuous drift reconciliation** that enforces desired state every 5 minutes
 - **Secret references** for sensitive fields -- no inline tokens or passwords in CRD specs
@@ -118,6 +118,7 @@ All resources belong to the API group `warpgate.warpgate.warp.tech/v1alpha1`.
 | `WarpgateRole` | Role definition | [docs/crds/warpgate-role.md](docs/crds/warpgate-role.md) |
 | `WarpgateUser` | User account with credential policy and auto-generated password | [docs/crds/warpgate-user.md](docs/crds/warpgate-user.md) |
 | `WarpgateTarget` | Target host (SSH, HTTP, MySQL, PostgreSQL) | [docs/crds/warpgate-target.md](docs/crds/warpgate-target.md) |
+| `WarpgateTargetGroup` | Target group for visual organization | [docs/crds/warpgate-target-group.md](docs/crds/warpgate-target-group.md) |
 | `WarpgateUserRole` | User-to-role binding | [docs/crds/warpgate-user-role.md](docs/crds/warpgate-user-role.md) |
 | `WarpgateTargetRole` | Target-to-role binding | [docs/crds/warpgate-target-role.md](docs/crds/warpgate-target-role.md) |
 | `WarpgatePasswordCredential` | Password credential for a user | [docs/crds/warpgate-password-credential.md](docs/crds/warpgate-password-credential.md) |
@@ -150,6 +151,7 @@ erDiagram
     WarpgateConnection ||--o{ WarpgateRole : "referenced by"
     WarpgateConnection ||--o{ WarpgateUser : "referenced by"
     WarpgateConnection ||--o{ WarpgateTarget : "referenced by"
+    WarpgateConnection ||--o{ WarpgateTargetGroup : "referenced by"
     WarpgateConnection ||--o{ WarpgateUserRole : "referenced by"
     WarpgateConnection ||--o{ WarpgateTargetRole : "referenced by"
     WarpgateConnection ||--o{ WarpgatePasswordCredential : "referenced by"
@@ -161,6 +163,7 @@ erDiagram
 
     WarpgateTarget ||--o{ WarpgateTargetRole : "bound via"
     WarpgateRole ||--o{ WarpgateTargetRole : "bound via"
+    WarpgateTargetGroup ||--o{ WarpgateTarget : "groups"
 
     WarpgateUser ||--o{ WarpgatePasswordCredential : "has"
     WarpgateUser ||--o{ WarpgatePublicKeyCredential : "has"

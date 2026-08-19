@@ -113,6 +113,10 @@ type WarpgateTargetSpec struct {
 	// description is a human-readable description of the target.
 	// +optional
 	Description string `json:"description,omitempty"`
+	// groupRef is the name of a WarpgateTargetGroup CR in the same namespace.
+	// The referenced group must already be synced (have an ExternalID).
+	// +optional
+	GroupRef string `json:"groupRef,omitempty"`
 	// rateLimitBytesPerSecond limits transfer speed in bytes per second. Zero means unlimited.
 	// +optional
 	RateLimitBytesPerSecond *int64 `json:"rateLimitBytesPerSecond,omitempty"`
