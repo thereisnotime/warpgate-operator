@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.12](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.11...v0.4.12) (2026-08-19)
+
+
+### Bug Fixes
+
+* **deps:** bump grpc to v1.82.1 and x/text to v0.39.0 ([#83](https://github.com/thereisnotime/warpgate-operator/issues/83)) ([4d3ef94](https://github.com/thereisnotime/warpgate-operator/commit/4d3ef94ed2e33730a7d1ead4347480fae6fc0260))
+
 ## [0.4.11](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.10...v0.4.11) (2026-06-11)
 
 
