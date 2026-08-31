@@ -78,5 +78,10 @@ var _ = Describe("SetupWithManager", func() {
 			Client: mgr.GetClient(),
 			Scheme: mgr.GetScheme(),
 		}).SetupWithManager(mgr)).To(Succeed())
+
+		Expect((&HTTPRouteWatcherReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr)).To(Succeed())
 	})
 })
