@@ -258,6 +258,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := (&controller.HTTPRouteWatcherReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "HTTPRouteWatcher")
+		os.Exit(1)
+	}
+
 	if err := (&warpgatev1alpha1.WarpgateConnection{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create webhook", "webhook", "WarpgateConnection")
 		os.Exit(1)
