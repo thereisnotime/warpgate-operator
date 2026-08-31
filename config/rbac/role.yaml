@@ -45,6 +45,14 @@ rules:
   - update
   - watch
 - apiGroups:
+  - gateway.networking.k8s.io
+  resources:
+  - httproutes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - warpgate.warpgate.warp.tech
   resources:
   - warpgateconnections
