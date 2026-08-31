@@ -40,10 +40,10 @@ func newFakeClient(objects ...client.Object) client.Client {
 }
 
 // newHTTPRoute builds an unstructured HTTPRoute for use in tests.
-func newHTTPRoute(namespace, name string, annotations map[string]string, hostnames []string) *unstructured.Unstructured {
+func newHTTPRoute(name string, annotations map[string]string, hostnames []string) *unstructured.Unstructured {
 	route := &unstructured.Unstructured{}
 	route.SetGroupVersionKind(httprouteGVK)
-	route.SetNamespace(namespace)
+	route.SetNamespace("default")
 	route.SetName(name)
 	route.SetAnnotations(annotations)
 	if len(hostnames) > 0 {
@@ -59,7 +59,7 @@ var _ = Describe("HTTPRouteWatcher Controller", func() {
 	Context("Annotations present — target is created", func() {
 		It("creates a WarpgateTarget when all three annotations are set", func() {
 			routeName := "app-route"
-			route := newHTTPRoute(ns, routeName, map[string]string{
+			route := newHTTPRoute(routeName, map[string]string{
 				AnnotationBindDomain:  "app.warpgate.example.com",
 				AnnotationTargetGroup: "web-targets",
 				AnnotationConnRef:     "my-connection",
@@ -116,7 +116,7 @@ var _ = Describe("HTTPRouteWatcher Controller", func() {
 			}
 
 			// HTTPRoute exists but annotations are now absent.
-			route := newHTTPRoute(ns, routeName, nil, []string{"app.example.com"})
+			route := newHTTPRoute(routeName, nil, []string{"app.example.com"})
 
 			fakeClient := newFakeClient(existingTarget)
 			Expect(fakeClient.Create(ctx, route)).To(Succeed())
@@ -134,7 +134,7 @@ var _ = Describe("HTTPRouteWatcher Controller", func() {
 			var target warpgatev1alpha1.WarpgateTarget
 			err = fakeClient.Get(ctx, types.NamespacedName{Name: targetName, Namespace: ns}, &target)
 			Expect(err).To(HaveOccurred())
-			Expect(client.IgnoreNotFound(err)).To(BeNil())
+			Expect(client.IgnoreNotFound(err)).To(Succeed())
 		})
 
 		It("deletes the managed WarpgateTarget when the connection-ref annotation is missing", func() {
@@ -157,7 +157,7 @@ var _ = Describe("HTTPRouteWatcher Controller", func() {
 			}
 
 			// bind-domain and group present, but connection-ref missing.
-			route := newHTTPRoute(ns, routeName, map[string]string{
+			route := newHTTPRoute(routeName, map[string]string{
 				AnnotationBindDomain:  "app.warpgate.example.com",
 				AnnotationTargetGroup: "web-targets",
 			}, []string{"app.example.com"})
@@ -177,14 +177,14 @@ var _ = Describe("HTTPRouteWatcher Controller", func() {
 			var target warpgatev1alpha1.WarpgateTarget
 			err = fakeClient.Get(ctx, types.NamespacedName{Name: targetName, Namespace: ns}, &target)
 			Expect(err).To(HaveOccurred())
-			Expect(client.IgnoreNotFound(err)).To(BeNil())
+			Expect(client.IgnoreNotFound(err)).To(Succeed())
 		})
 	})
 
 	Context("No annotations — no action", func() {
 		It("does not create a WarpgateTarget when none of the annotations are set", func() {
 			routeName := "app-route-empty"
-			route := newHTTPRoute(ns, routeName, nil, []string{"app.example.com"})
+			route := newHTTPRoute(routeName, nil, []string{"app.example.com"})
 
 			fakeClient := newFakeClient()
 			Expect(fakeClient.Create(ctx, route)).To(Succeed())
@@ -239,7 +239,7 @@ var _ = Describe("HTTPRouteWatcher Controller", func() {
 			var target warpgatev1alpha1.WarpgateTarget
 			err = fakeClient.Get(ctx, types.NamespacedName{Name: targetName, Namespace: ns}, &target)
 			Expect(err).To(HaveOccurred())
-			Expect(client.IgnoreNotFound(err)).To(BeNil())
+			Expect(client.IgnoreNotFound(err)).To(Succeed())
 		})
 	})
 
@@ -266,7 +266,7 @@ var _ = Describe("HTTPRouteWatcher Controller", func() {
 			}
 
 			// HTTPRoute now points to a new hostname.
-			route := newHTTPRoute(ns, routeName, map[string]string{
+			route := newHTTPRoute(routeName, map[string]string{
 				AnnotationBindDomain:  "app.warpgate.example.com",
 				AnnotationTargetGroup: "web-targets",
 				AnnotationConnRef:     "my-connection",
@@ -293,7 +293,7 @@ var _ = Describe("HTTPRouteWatcher Controller", func() {
 	Context("No hostnames in spec", func() {
 		It("returns an error when spec.hostnames is empty", func() {
 			routeName := "app-route-nohosts"
-			route := newHTTPRoute(ns, routeName, map[string]string{
+			route := newHTTPRoute(routeName, map[string]string{
 				AnnotationBindDomain:  "app.warpgate.example.com",
 				AnnotationTargetGroup: "web-targets",
 				AnnotationConnRef:     "my-connection",
