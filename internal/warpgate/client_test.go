@@ -232,6 +232,18 @@ func TestIsNotFound(t *testing.T) {
 	}
 }
 
+func TestIsConflict(t *testing.T) {
+	if IsConflict(nil) {
+		t.Error("nil should not be conflict")
+	}
+	if IsConflict(&APIError{StatusCode: 500}) {
+		t.Error("500 should not be conflict")
+	}
+	if !IsConflict(&APIError{StatusCode: 409}) {
+		t.Error("409 should be conflict")
+	}
+}
+
 func TestInsecureSkipVerify(t *testing.T) {
 	c := NewClient(Config{
 		Host:     "https://localhost",
