@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.4.11](https://github.com/thereisnotime/warpgate-operator/compare/warpgate-operator-v0.4.10...warpgate-operator-v0.4.11) (2026-09-01)
+
+
+### Features
+
+* add configurable reconcile interval ([62017e0](https://github.com/thereisnotime/warpgate-operator/commit/62017e02307f9b1ea073f662f7a49cd7adc80308))
+* configurable reconcile interval ([d7877e6](https://github.com/thereisnotime/warpgate-operator/commit/d7877e633489f9be9e4247417a18256ae78031ee))
+* **helm:** add optional NetworkPolicy for the operator pod ([6503a60](https://github.com/thereisnotime/warpgate-operator/commit/6503a60870c92e4a28b168fa2d78364d179c0120))
+* **helm:** add optional NetworkPolicy for the operator pod ([25e659b](https://github.com/thereisnotime/warpgate-operator/commit/25e659b7ebaea34aa84bf6691bc134e741751fd1))
+* **helm:** add ServiceMonitor template for Prometheus Operator ([de43551](https://github.com/thereisnotime/warpgate-operator/commit/de435519a2165e72f44d97cad590c581aab6c490))
+* **helm:** add ServiceMonitor template for Prometheus Operator ([006d9cb](https://github.com/thereisnotime/warpgate-operator/commit/006d9cb0cee415d0990912aa09a8f6bb35f6d9f8))
+
+
+### Bug Fixes
+
+* **ci:** add missing operator.reconcileInterval in values.yaml, gofmt ticket test ([09b8074](https://github.com/thereisnotime/warpgate-operator/commit/09b8074281c762e2a87d90d86f3003904b902d4f))
+* **helm:** make reconcile-interval arg conditional, skip in CI install test ([d85a004](https://github.com/thereisnotime/warpgate-operator/commit/d85a00404a1e733174d588e52528639256e85a0a))
+
 ## [0.4.10](https://github.com/thereisnotime/warpgate-operator/compare/warpgate-operator-v0.4.9...warpgate-operator-v0.4.10) (2026-09-01)
 
 
