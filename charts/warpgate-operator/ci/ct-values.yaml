@@ -2,3 +2,7 @@
 # Uses the latest published image so the test isn't tied to a specific release tag.
 image:
   tag: latest
+
+# Do not pass --reconcile-interval so the test is compatible with the published image.
+operator:
+  reconcileInterval: ""
