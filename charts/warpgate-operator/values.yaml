@@ -65,6 +65,15 @@ metrics:
   secure: true
   # -- Port the metrics endpoint listens on.
   port: 8443
+  serviceMonitor:
+    # -- Create a Prometheus Operator ServiceMonitor for the metrics endpoint.
+    enabled: false
+    # -- How frequently Prometheus should scrape the metrics endpoint.
+    interval: "30s"
+    # -- Timeout for each scrape request.
+    scrapeTimeout: "10s"
+    # -- Additional labels to add to the ServiceMonitor (e.g. to match a Prometheus instance selector).
+    labels: {}
 
 health:
   # -- Port the health probe endpoint listens on.
