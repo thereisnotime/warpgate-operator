@@ -43,7 +43,8 @@ const userFinalizer = "warpgate.warp.tech/finalizer"
 // WarpgateUserReconciler reconciles a WarpgateUser object.
 type WarpgateUserReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme            *runtime.Scheme
+	ReconcileInterval time.Duration
 }
 
 // +kubebuilder:rbac:groups=warpgate.warpgate.warp.tech,resources=warpgateusers,verbs=get;list;watch;create;update;patch;delete
@@ -196,7 +197,7 @@ func (r *WarpgateUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+	return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
 }
 
 // toWarpgateCredentialPolicy converts the CRD spec to the Warpgate client type.

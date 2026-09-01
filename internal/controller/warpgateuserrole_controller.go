@@ -37,7 +37,8 @@ const warpgateUserRoleFinalizer = "warpgate.warp.tech/finalizer"
 // WarpgateUserRoleReconciler reconciles a WarpgateUserRole object
 type WarpgateUserRoleReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme            *runtime.Scheme
+	ReconcileInterval time.Duration
 }
 
 // +kubebuilder:rbac:groups=warpgate.warpgate.warp.tech,resources=warpgateuserroles,verbs=get;list;watch;create;update;patch;delete
@@ -137,7 +138,7 @@ func (r *WarpgateUserRoleReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+	return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
 }
 
 func setUserRoleCondition(ur *warpgatev1alpha1.WarpgateUserRole, status metav1.ConditionStatus, reason, message string) {

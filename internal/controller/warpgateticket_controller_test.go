@@ -18,6 +18,7 @@ package controller
 
 import (
 	"encoding/json"
+	"time"
 	"net/http"
 	"net/http/httptest"
 
@@ -40,8 +41,9 @@ var _ = Describe("WarpgateTicket Controller", func() {
 
 	BeforeEach(func() {
 		reconciler = &WarpgateTicketReconciler{
-			Client: k8sClient,
-			Scheme: k8sClient.Scheme(),
+			Client:            k8sClient,
+			Scheme:            k8sClient.Scheme(),
+			ReconcileInterval: 5 * time.Minute,
 		}
 	})
 

@@ -44,6 +44,7 @@ spec:
             - --metrics-bind-address=:{{ .Values.metrics.port }}
             - --metrics-secure={{ .Values.metrics.secure }}
             - --leader-elect={{ .Values.leaderElection.enabled }}
+            - --reconcile-interval={{ .Values.operator.reconcileInterval }}
             {{- if .Values.webhooks.enabled }}
             - --webhook-cert-path=/tmp/k8s-webhook-server/serving-certs
             {{- end }}

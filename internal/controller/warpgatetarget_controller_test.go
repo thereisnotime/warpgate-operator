@@ -23,6 +23,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -41,10 +42,13 @@ var _ = Describe("WarpgateTarget Controller", func() {
 		reconciler *WarpgateTargetReconciler
 	)
 
+	const targetRequeueAfter = 5 * time.Minute
+
 	BeforeEach(func() {
 		reconciler = &WarpgateTargetReconciler{
-			Client: k8sClient,
-			Scheme: k8sClient.Scheme(),
+			Client:            k8sClient,
+			Scheme:            k8sClient.Scheme(),
+			ReconcileInterval: targetRequeueAfter,
 		}
 	})
 

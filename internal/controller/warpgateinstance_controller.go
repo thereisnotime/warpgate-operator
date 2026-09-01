@@ -48,7 +48,8 @@ const instanceFinalizer = "warpgate.warp.tech/instance-finalizer"
 // WarpgateInstanceReconciler reconciles a WarpgateInstance object.
 type WarpgateInstanceReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme            *runtime.Scheme
+	ReconcileInterval time.Duration
 }
 
 // +kubebuilder:rbac:groups=warpgate.warpgate.warp.tech,resources=warpgateinstances,verbs=get;list;watch;create;update;patch;delete

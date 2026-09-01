@@ -40,7 +40,8 @@ const passwordCredentialFinalizer = "warpgate.warp.tech/finalizer" // #nosec G10
 // WarpgatePasswordCredentialReconciler reconciles a WarpgatePasswordCredential object.
 type WarpgatePasswordCredentialReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme            *runtime.Scheme
+	ReconcileInterval time.Duration
 }
 
 // +kubebuilder:rbac:groups=warpgate.warpgate.warp.tech,resources=warpgatepasswordcredentials,verbs=get;list;watch;create;update;patch;delete
@@ -183,7 +184,7 @@ func (r *WarpgatePasswordCredentialReconciler) Reconcile(ctx context.Context, re
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+	return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

@@ -35,15 +35,13 @@ import (
 	"github.com/thereisnotime/warpgate-operator/internal/warpgate"
 )
 
-const (
-	targetFinalizerName = "warpgate.warp.tech/finalizer"
-	targetRequeueAfter  = 5 * time.Minute
-)
+const targetFinalizerName = "warpgate.warp.tech/finalizer"
 
 // WarpgateTargetReconciler reconciles a WarpgateTarget object.
 type WarpgateTargetReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme            *runtime.Scheme
+	ReconcileInterval time.Duration
 }
 
 // +kubebuilder:rbac:groups=warpgate.warpgate.warp.tech,resources=warpgatetargets,verbs=get;list;watch;create;update;patch;delete
@@ -71,7 +69,7 @@ func (r *WarpgateTargetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if updateErr := r.Status().Update(ctx, &target); updateErr != nil {
 			log.Error(updateErr, "unable to update status")
 		}
-		return ctrl.Result{RequeueAfter: targetRequeueAfter}, nil
+		return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
 	}
 
 	// Handle deletion via finalizer.
@@ -80,7 +78,7 @@ func (r *WarpgateTargetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if target.Status.ExternalID != "" {
 				if err := wgClient.DeleteTarget(target.Status.ExternalID); err != nil && !warpgate.IsNotFound(err) {
 					log.Error(err, "unable to delete target in warpgate")
-					return ctrl.Result{RequeueAfter: targetRequeueAfter}, nil
+					return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
 				}
 			}
 			controllerutil.RemoveFinalizer(&target, targetFinalizerName)
@@ -107,7 +105,7 @@ func (r *WarpgateTargetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if updateErr := r.Status().Update(ctx, &target); updateErr != nil {
 			log.Error(updateErr, "unable to update status")
 		}
-		return ctrl.Result{RequeueAfter: targetRequeueAfter}, nil
+		return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
 	}
 
 	// Create or update the target in Warpgate.
@@ -120,7 +118,7 @@ func (r *WarpgateTargetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if updateErr := r.Status().Update(ctx, &target); updateErr != nil {
 				log.Error(updateErr, "unable to update status")
 			}
-			return ctrl.Result{RequeueAfter: targetRequeueAfter}, nil
+			return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
 		}
 		target.Status.ExternalID = created.ID
 	} else {
@@ -142,7 +140,7 @@ func (r *WarpgateTargetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if updateErr := r.Status().Update(ctx, &target); updateErr != nil {
 				log.Error(updateErr, "unable to update status")
 			}
-			return ctrl.Result{RequeueAfter: targetRequeueAfter}, nil
+			return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
 		}
 	}
 
@@ -153,7 +151,7 @@ func (r *WarpgateTargetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: targetRequeueAfter}, nil
+	return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
 }
 
 // buildTargetRequest converts the CRD spec into a Warpgate API TargetRequest.
