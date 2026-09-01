@@ -20,6 +20,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"os"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -62,6 +63,7 @@ func main() {
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
+	var reconcileInterval time.Duration
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -80,6 +82,8 @@ func main() {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	flag.DurationVar(&reconcileInterval, "reconcile-interval", 5*time.Minute,
+		"How often controllers re-sync resources with the Warpgate API.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -180,87 +184,98 @@ func main() {
 	}
 
 	if err := (&controller.WarpgateConnectionReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		ReconcileInterval: reconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "WarpgateConnection")
 		os.Exit(1)
 	}
 
 	if err := (&controller.WarpgateRoleReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		ReconcileInterval: reconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "WarpgateRole")
 		os.Exit(1)
 	}
 
 	if err := (&controller.WarpgateUserReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		ReconcileInterval: reconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "WarpgateUser")
 		os.Exit(1)
 	}
 
 	if err := (&controller.WarpgateTargetReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		ReconcileInterval: reconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "WarpgateTarget")
 		os.Exit(1)
 	}
 
 	if err := (&controller.WarpgateTargetGroupReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		ReconcileInterval: reconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "WarpgateTargetGroup")
 		os.Exit(1)
 	}
 
 	if err := (&controller.WarpgateUserRoleReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		ReconcileInterval: reconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "WarpgateUserRole")
 		os.Exit(1)
 	}
 
 	if err := (&controller.WarpgateTargetRoleReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		ReconcileInterval: reconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "WarpgateTargetRole")
 		os.Exit(1)
 	}
 
 	if err := (&controller.WarpgatePasswordCredentialReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		ReconcileInterval: reconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "WarpgatePasswordCredential")
 		os.Exit(1)
 	}
 
 	if err := (&controller.WarpgatePublicKeyCredentialReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		ReconcileInterval: reconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "WarpgatePublicKeyCredential")
 		os.Exit(1)
 	}
 
 	if err := (&controller.WarpgateTicketReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		ReconcileInterval: reconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "WarpgateTicket")
 		os.Exit(1)
 	}
 	if err := (&controller.WarpgateInstanceReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		ReconcileInterval: reconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "WarpgateInstance")
 		os.Exit(1)

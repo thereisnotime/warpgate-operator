@@ -41,7 +41,8 @@ const ticketFinalizer = "warpgate.warp.tech/finalizer"
 // WarpgateTicketReconciler reconciles a WarpgateTicket object.
 type WarpgateTicketReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme            *runtime.Scheme
+	ReconcileInterval time.Duration
 }
 
 // +kubebuilder:rbac:groups=warpgate.warpgate.warp.tech,resources=warpgatetickets,verbs=get;list;watch;create;update;patch;delete
@@ -182,7 +183,7 @@ func (r *WarpgateTicketReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+	return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

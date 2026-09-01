@@ -38,7 +38,8 @@ const targetGroupFinalizer = "warpgate.warp.tech/finalizer"
 // WarpgateTargetGroupReconciler reconciles a WarpgateTargetGroup object.
 type WarpgateTargetGroupReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme            *runtime.Scheme
+	ReconcileInterval time.Duration
 }
 
 // +kubebuilder:rbac:groups=warpgate.warpgate.warp.tech,resources=warpgatetargetgroups,verbs=get;list;watch;create;update;patch;delete
@@ -162,7 +163,7 @@ func (r *WarpgateTargetGroupReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+	return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -40,8 +41,9 @@ var _ = Describe("WarpgateTicket Controller", func() {
 
 	BeforeEach(func() {
 		reconciler = &WarpgateTicketReconciler{
-			Client: k8sClient,
-			Scheme: k8sClient.Scheme(),
+			Client:            k8sClient,
+			Scheme:            k8sClient.Scheme(),
+			ReconcileInterval: 5 * time.Minute,
 		}
 	})
 

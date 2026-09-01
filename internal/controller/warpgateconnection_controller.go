@@ -38,7 +38,8 @@ import (
 // WarpgateConnectionReconciler reconciles a WarpgateConnection object
 type WarpgateConnectionReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme            *runtime.Scheme
+	ReconcileInterval time.Duration
 }
 
 const warpgateFinalizer = "warpgate.warp.tech/finalizer"
@@ -87,7 +88,7 @@ func (r *WarpgateConnectionReconciler) Reconcile(ctx context.Context, req ctrl.R
 			log.Error(updateErr, "failed to update status")
 			return ctrl.Result{}, updateErr
 		}
-		return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+		return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
 	}
 
 	// Validate the connection by listing roles.
@@ -98,7 +99,7 @@ func (r *WarpgateConnectionReconciler) Reconcile(ctx context.Context, req ctrl.R
 			log.Error(updateErr, "failed to update status")
 			return ctrl.Result{}, updateErr
 		}
-		return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+		return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
 	}
 
 	// Connection is healthy.
@@ -109,7 +110,7 @@ func (r *WarpgateConnectionReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+	return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
 }
 
 // buildClient reads the auth Secret and creates a Warpgate API client.
