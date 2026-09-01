@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.4.13](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.12...v0.4.13) (2026-08-31)
+
+
+### Features
+
+* **controller:** HTTPRoute auto-discovery for WarpgateTarget ([#91](https://github.com/thereisnotime/warpgate-operator/issues/91)) ([f3817a3](https://github.com/thereisnotime/warpgate-operator/commit/f3817a3c6c677b2fff050852e19d8fdf104f9a6f))
+
+
+### Bug Fixes
+
+* treat 409 as success in CreateTargetRole and CreateUserRole ([#89](https://github.com/thereisnotime/warpgate-operator/issues/89)) ([ba5dfbd](https://github.com/thereisnotime/warpgate-operator/commit/ba5dfbda6a20f91ea83126dc4c7aebf1253a088a)), closes [#85](https://github.com/thereisnotime/warpgate-operator/issues/85)
+
+
+### Dependencies
+
+* **deps:** bump actions/checkout from 6.0.3 to 7.0.0 ([#72](https://github.com/thereisnotime/warpgate-operator/issues/72)) ([37579ea](https://github.com/thereisnotime/warpgate-operator/commit/37579ea7bb6f8410c321259b2d78c190d466c4fe))
+* **deps:** bump actions/setup-go from 6.4.0 to 6.5.0 ([#79](https://github.com/thereisnotime/warpgate-operator/issues/79)) ([cae0866](https://github.com/thereisnotime/warpgate-operator/commit/cae0866282787438ae06cdd55a5d2cfba079f879))
+* **deps:** bump azure/setup-helm from 5.0.0 to 5.0.1 ([#78](https://github.com/thereisnotime/warpgate-operator/issues/78)) ([4408a90](https://github.com/thereisnotime/warpgate-operator/commit/4408a90d11911c783ab7c8e655f2f3c3fd584148))
+* **deps:** bump github.com/onsi/ginkgo/v2 from 2.28.3 to 2.31.0 ([#74](https://github.com/thereisnotime/warpgate-operator/issues/74)) ([af7e554](https://github.com/thereisnotime/warpgate-operator/commit/af7e554adcf1dd264c588d360a336f684e0e4810))
+* **deps:** bump github.com/onsi/gomega from 1.41.0 to 1.42.0 ([#88](https://github.com/thereisnotime/warpgate-operator/issues/88)) ([e3d9553](https://github.com/thereisnotime/warpgate-operator/commit/e3d95539a10de8948ed040d008d2e82207d308c1))
+* **deps:** bump github/codeql-action/upload-sarif ([#80](https://github.com/thereisnotime/warpgate-operator/issues/80)) ([5c5e5a9](https://github.com/thereisnotime/warpgate-operator/commit/5c5e5a96808bcbf7deb4278c35b78ee0961fabc0))
+* **deps:** bump gitleaks/gitleaks-action from 2.3.9 to 3.0.0 ([#70](https://github.com/thereisnotime/warpgate-operator/issues/70)) ([bacc0b0](https://github.com/thereisnotime/warpgate-operator/commit/bacc0b015be8cc6dd8b446d2d18fc4ea9bd8cb95))
+* **deps:** bump k8s.io/client-go from 0.36.1 to 0.36.2 ([#73](https://github.com/thereisnotime/warpgate-operator/issues/73)) ([b10d4c9](https://github.com/thereisnotime/warpgate-operator/commit/b10d4c933c433bba8e2abcda70dd6a9c4cd97df2))
+* **deps:** bump library/golang from 1.26.6 to 1.27.0 ([#86](https://github.com/thereisnotime/warpgate-operator/issues/86)) ([da07686](https://github.com/thereisnotime/warpgate-operator/commit/da0768627375204f0018ef1e405606b52d77a4af))
+
 ## [0.4.12](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.11...v0.4.12) (2026-08-19)
 
 
