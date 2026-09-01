@@ -106,3 +106,7 @@ networkPolicy:
   extraIngress: []
   # -- Extra egress rules appended to the policy.
   extraEgress: []
+
+operator:
+  # -- How often controllers re-sync resources with the Warpgate API.
+  reconcileInterval: "5m"

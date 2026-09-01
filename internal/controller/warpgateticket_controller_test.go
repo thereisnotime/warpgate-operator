@@ -18,9 +18,9 @@ package controller
 
 import (
 	"encoding/json"
-	"time"
 	"net/http"
 	"net/http/httptest"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
