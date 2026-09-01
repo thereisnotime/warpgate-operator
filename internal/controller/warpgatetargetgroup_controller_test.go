@@ -287,4 +287,203 @@ var _ = Describe("WarpgateTargetGroup Controller", func() {
 			Expect(readyCond.Reason).To(Equal("NotFound"))
 		})
 	})
+
+	Context("Connection not found", func() {
+		It("should set ClientError condition when the connectionRef does not exist", func() {
+			group := &warpgatev1alpha1.WarpgateTargetGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-noconn-group",
+					Namespace: groupNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetGroupSpec{
+					ConnectionRef: "nonexistent-warpgate-conn",
+					Name:          "orphan-group",
+				},
+			}
+			Expect(k8sClient.Create(ctx, group)).To(Succeed())
+
+			nn := types.NamespacedName{Name: group.Name, Namespace: groupNamespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).To(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTargetGroup
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(BeEmpty())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("ClientError"))
+		})
+	})
+
+	Context("Warpgate API error on create", func() {
+		It("should set CreateFailed condition and return error when the API returns 500 on create", func() {
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/target-groups", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.WriteHeader(http.StatusInternalServerError)
+					_, _ = w.Write([]byte(`{"error":"internal server error"}`))
+				}
+			})
+			srv := setupMockAndConnection(mux, "-createfail")
+			defer srv.Close()
+
+			group := &warpgatev1alpha1.WarpgateTargetGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-createfail-group",
+					Namespace: groupNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetGroupSpec{
+					ConnectionRef: connName + "-createfail",
+					Name:          "failing-group",
+					Color:         "Danger",
+				},
+			}
+			Expect(k8sClient.Create(ctx, group)).To(Succeed())
+
+			nn := types.NamespacedName{Name: group.Name, Namespace: groupNamespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).To(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTargetGroup
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(BeEmpty())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("CreateFailed"))
+		})
+	})
+
+	Context("Empty connectionRef", func() {
+		It("should set ClientError condition when connectionRef is empty", func() {
+			// Webhooks would normally reject this, but the controller should handle it
+			// gracefully if the resource somehow gets through with an empty connectionRef.
+			group := &warpgatev1alpha1.WarpgateTargetGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-emptyconn-group",
+					Namespace: groupNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetGroupSpec{
+					ConnectionRef: "",
+					Name:          "empty-conn-group",
+				},
+			}
+			Expect(k8sClient.Create(ctx, group)).To(Succeed())
+
+			nn := types.NamespacedName{Name: group.Name, Namespace: groupNamespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).To(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTargetGroup
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(BeEmpty())
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("ClientError"))
+		})
+	})
+
+	Context("Invalid color rejected by CRD validation", func() {
+		It("should reject a WarpgateTargetGroup with an unsupported color value at the API level", func() {
+			// The CRD enforces a color enum; the k8s API server must reject invalid values
+			// before they reach the controller, so no reconcile is needed for this path.
+			group := &warpgatev1alpha1.WarpgateTargetGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-badcolor-group",
+					Namespace: groupNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetGroupSpec{
+					ConnectionRef: connName + "-badcolor",
+					Name:          "badcolor-group",
+					Color:         "Purple", // Not in the supported enum.
+				},
+			}
+			err := k8sClient.Create(ctx, group)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("Unsupported value"))
+			Expect(err.Error()).To(ContainSubstring("Purple"))
+		})
+	})
+
+	Context("Target group idempotency (already exists on Warpgate side)", func() {
+		It("should update not create when ExternalID is already set, and remain Ready across multiple reconciles", func() {
+			createCount := 0
+			updateCount := 0
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/target-groups", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					createCount++
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(warpgate.TargetGroup{
+						ID:    "tg-idem-001",
+						Name:  "idempotent-group",
+						Color: "Success",
+					})
+				}
+			})
+			mux.HandleFunc("/@warpgate/admin/api/target-groups/", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPut {
+					updateCount++
+					// Return the existing group unchanged — simulating an already-synced state.
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(warpgate.TargetGroup{
+						ID:    "tg-idem-001",
+						Name:  "idempotent-group",
+						Color: "Success",
+					})
+				}
+			})
+			srv := setupMockAndConnection(mux, "-idem")
+			defer srv.Close()
+
+			group := &warpgatev1alpha1.WarpgateTargetGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-idem-group",
+					Namespace: groupNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetGroupSpec{
+					ConnectionRef: connName + "-idem",
+					Name:          "idempotent-group",
+					Color:         "Success",
+				},
+			}
+			Expect(k8sClient.Create(ctx, group)).To(Succeed())
+
+			nn := types.NamespacedName{Name: group.Name, Namespace: groupNamespace}
+
+			// Reconcile 1: no ExternalID — should POST (create).
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var afterCreate warpgatev1alpha1.WarpgateTargetGroup
+			Expect(k8sClient.Get(ctx, nn, &afterCreate)).To(Succeed())
+			Expect(afterCreate.Status.ExternalID).To(Equal("tg-idem-001"))
+			Expect(createCount).To(Equal(1))
+
+			// Reconcile 2 and 3: ExternalID is set — should PUT (update), not POST again.
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(createCount).To(Equal(1)) // POST called exactly once.
+			Expect(updateCount).To(Equal(2)) // PUT called for the two subsequent reconciles.
+
+			var updated warpgatev1alpha1.WarpgateTargetGroup
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(Equal("tg-idem-001"))
+
+			readyCond := findReadyCondition(updated.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(readyCond.Reason).To(Equal("Reconciled"))
+		})
+	})
 })
