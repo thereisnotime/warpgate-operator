@@ -96,6 +96,30 @@ func TestListTargetRoles(t *testing.T) {
 	}
 }
 
+func TestCreateUserRole_Conflict(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+	}))
+	defer srv.Close()
+
+	c := NewTestClient(srv.URL)
+	if err := c.CreateUserRole("u1", "r1"); err != nil {
+		t.Fatalf("409 should be treated as success, got: %v", err)
+	}
+}
+
+func TestCreateTargetRole_Conflict(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+	}))
+	defer srv.Close()
+
+	c := NewTestClient(srv.URL)
+	if err := c.CreateTargetRole("t1", "r1"); err != nil {
+		t.Fatalf("409 should be treated as success, got: %v", err)
+	}
+}
+
 func TestCreateUserRole_Error(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
