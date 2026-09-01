@@ -96,3 +96,13 @@ webhooks:
       name: ""
       # -- Kind of the issuer (Issuer or ClusterIssuer).
       kind: Issuer
+
+networkPolicy:
+  # -- Create a NetworkPolicy for the operator pod.
+  enabled: false
+  # -- Namespaces allowed to scrape the metrics endpoint. Label selector, e.g. {metrics: enabled}.
+  metricsNamespaceSelector: {}
+  # -- Extra ingress rules appended to the policy.
+  extraIngress: []
+  # -- Extra egress rules appended to the policy.
+  extraEgress: []
