@@ -2239,4 +2239,148 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			Expect(req).NotTo(HaveKey("ticket_max_uses"))
 		})
 	})
+
+	Context("SSH target with groupRef", func() {
+		var (
+			mockServer   *httptest.Server
+			namespace    = testNamespace
+			secretName   = "wg-token-target-groupref"
+			connName     = "wg-conn-target-groupref"
+			groupName    = "production-group"
+			targetName   = "target-with-group"
+			capturedBody []byte
+			mu           sync.Mutex
+		)
+
+		BeforeEach(func() {
+			capturedBody = nil
+
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					mu.Lock()
+					capturedBody, _ = io.ReadAll(r.Body)
+					mu.Unlock()
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":      "target-groupref-111",
+						"name":    "my-grouped-target",
+						"options": json.RawMessage(`{"kind":"Ssh"}`),
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			_ = k8sClient.Delete(ctx, &warpgatev1alpha1.WarpgateTargetGroup{
+				ObjectMeta: metav1.ObjectMeta{Name: groupName, Namespace: namespace},
+			})
+			cleanupConnection(namespace, secretName, connName)
+		})
+
+		It("should pass group_id UUID when the referenced group is synced", func() {
+			group := &warpgatev1alpha1.WarpgateTargetGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      groupName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetGroupSpec{
+					ConnectionRef: connName,
+					Name:          "production",
+					Color:         "Danger",
+				},
+			}
+			Expect(k8sClient.Create(ctx, group)).To(Succeed())
+			group.Status.ExternalID = "tg-uuid-abc"
+			Expect(k8sClient.Status().Update(ctx, group)).To(Succeed())
+
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      targetName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-grouped-target",
+					GroupRef:      groupName,
+					SSH: &warpgatev1alpha1.SSHTargetSpec{
+						Host:     "10.0.0.4",
+						Port:     22,
+						Username: "admin",
+						AuthKind: "PublicKey",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(Equal("target-groupref-111"))
+
+			mu.Lock()
+			body := capturedBody
+			mu.Unlock()
+			Expect(body).NotTo(BeNil())
+			var req map[string]any
+			Expect(json.Unmarshal(body, &req)).To(Succeed())
+			Expect(req["group_id"]).To(Equal("tg-uuid-abc"))
+		})
+
+		It("should return an error when the target group is not yet synced", func() {
+			group := &warpgatev1alpha1.WarpgateTargetGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      groupName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetGroupSpec{
+					ConnectionRef: connName,
+					Name:          "production-unsynced",
+				},
+			}
+			Expect(k8sClient.Create(ctx, group)).To(Succeed())
+
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      targetName,
+					Namespace: namespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-grouped-target-unsynced",
+					GroupRef:      groupName,
+					SSH: &warpgatev1alpha1.SSHTargetSpec{
+						Host:     "10.0.0.4",
+						Port:     22,
+						Username: "admin",
+						AuthKind: "PublicKey",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).NotTo(BeZero())
+
+			var fetched warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &fetched)).To(Succeed())
+			readyCond := findReadyCondition(fetched.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("BuildError"))
+		})
+	})
 })

@@ -211,6 +211,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := (&controller.WarpgateTargetGroupReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "WarpgateTargetGroup")
+		os.Exit(1)
+	}
+
 	if err := (&controller.WarpgateUserRoleReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
@@ -280,6 +288,10 @@ func main() {
 	}
 	if err := (&warpgatev1alpha1.WarpgateTarget{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create webhook", "webhook", "WarpgateTarget")
+		os.Exit(1)
+	}
+	if err := (&warpgatev1alpha1.WarpgateTargetGroup{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create webhook", "webhook", "WarpgateTargetGroup")
 		os.Exit(1)
 	}
 	if err := (&warpgatev1alpha1.WarpgateUserRole{}).SetupWebhookWithManager(mgr); err != nil {

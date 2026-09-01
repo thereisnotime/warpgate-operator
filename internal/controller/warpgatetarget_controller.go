@@ -49,6 +49,7 @@ type WarpgateTargetReconciler struct {
 // +kubebuilder:rbac:groups=warpgate.warpgate.warp.tech,resources=warpgatetargets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=warpgate.warpgate.warp.tech,resources=warpgatetargets/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=warpgate.warpgate.warp.tech,resources=warpgatetargets/finalizers,verbs=update
+// +kubebuilder:rbac:groups=warpgate.warpgate.warp.tech,resources=warpgatetargetgroups,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
 // Reconcile moves the actual state of the world closer to the desired state
@@ -269,7 +270,7 @@ func (r *WarpgateTargetReconciler) buildTargetRequest(ctx context.Context, targe
 		return nil, "", fmt.Errorf("marshaling target options: %w", err)
 	}
 
-	return &warpgate.TargetRequest{
+	targetReq := &warpgate.TargetRequest{
 		Name:                     spec.Name,
 		Description:              spec.Description,
 		Options:                  rawOpts,
@@ -278,7 +279,23 @@ func (r *WarpgateTargetReconciler) buildTargetRequest(ctx context.Context, targe
 		TicketRequestsDisabled:   spec.TicketRequestsDisabled,
 		TicketRequireApproval:    spec.TicketRequireApproval,
 		TicketMaxUses:            spec.TicketMaxUses,
-	}, targetType, nil
+	}
+
+	if spec.GroupRef != "" {
+		var group warpgatev1alpha1.WarpgateTargetGroup
+		if err := r.Get(ctx, types.NamespacedName{
+			Namespace: target.Namespace,
+			Name:      spec.GroupRef,
+		}, &group); err != nil {
+			return nil, "", fmt.Errorf("getting target group %q: %w", spec.GroupRef, err)
+		}
+		if group.Status.ExternalID == "" {
+			return nil, "", fmt.Errorf("target group %q not yet synced", spec.GroupRef)
+		}
+		targetReq.GroupID = group.Status.ExternalID
+	}
+
+	return targetReq, targetType, nil
 }
 
 // readSecretValue reads a value from a Kubernetes Secret using the given SecretKeyRef.

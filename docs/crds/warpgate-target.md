@@ -10,6 +10,7 @@ Four target types are supported: SSH, HTTP, MySQL, and PostgreSQL. Exactly one t
 | `connectionRef` | `string` | Yes | - | Name of the `WarpgateConnection` CR in the same namespace |
 | `name` | `string` | Yes | - | Target name in Warpgate |
 | `description` | `string` | No | `""` | Human-readable description |
+| `groupRef` | `string` | No | - | Name of a `WarpgateTargetGroup` CR in the same namespace |
 | `ssh` | `object` | No | - | SSH target configuration (mutually exclusive with other types) |
 | `http` | `object` | No | - | HTTP target configuration |
 | `mysql` | `object` | No | - | MySQL target configuration |
