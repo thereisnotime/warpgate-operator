@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.10](https://github.com/thereisnotime/warpgate-operator/compare/warpgate-operator-v0.4.9...warpgate-operator-v0.4.10) (2026-09-01)
+
+
+### Features
+
+* add CRD TargetGroup ([#82](https://github.com/thereisnotime/warpgate-operator/issues/82)) ([7b34e53](https://github.com/thereisnotime/warpgate-operator/commit/7b34e53b00b287500817e036be1756f3f0926400))
+
 ## [0.4.9](https://github.com/thereisnotime/warpgate-operator/compare/warpgate-operator-v0.4.8...warpgate-operator-v0.4.9) (2026-06-11)
 
 
