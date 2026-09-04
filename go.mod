@@ -3,7 +3,7 @@ module github.com/thereisnotime/warpgate-operator
 go 1.26.6
 
 require (
-	github.com/onsi/ginkgo/v2 v2.31.0
+	github.com/onsi/ginkgo/v2 v2.32.1
 	github.com/onsi/gomega v1.42.0
 	k8s.io/api v0.36.2
 	k8s.io/apimachinery v0.36.2
