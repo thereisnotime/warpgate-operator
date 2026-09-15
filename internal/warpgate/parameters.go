@@ -1,12 +1,14 @@
 package warpgate
 
+// Parameters is the subset of Warpgate's global parameters the operator knows about.
+// GET returns many more fields; PUT accepts any subset.
 type Parameters struct {
-	AllowOwnCredentialManagement     bool `json:"allow_own_credential_management"`
-	RateLimitBytesPerSecond          int  `json:"rate_limit_bytes_per_second,omitempty"`
-	SSHClientAuthPublicKey           bool `json:"ssh_client_auth_publickey"`
-	SSHClientAuthPassword            bool `json:"ssh_client_auth_password"`
-	SSHClientAuthKeyboardInteractive bool `json:"ssh_client_auth_keyboard_interactive"`
-	MinimizePasswordLogin            bool `json:"minimize_password_login"`
+	AllowOwnCredentialManagement     bool   `json:"allow_own_credential_management"`
+	RateLimitBytesPerSecond          int    `json:"rate_limit_bytes_per_second,omitempty"`
+	SSHClientAuthPublicKey           bool   `json:"ssh_client_auth_publickey"`
+	SSHClientAuthPassword            bool   `json:"ssh_client_auth_password"`
+	SSHClientAuthKeyboardInteractive bool   `json:"ssh_client_auth_keyboard_interactive"`
+	PasswordLoginMode                string `json:"password_login_mode,omitempty"` // Enabled, Minimized, Disabled
 }
 
 func (c *Client) GetParameters() (*Parameters, error) {

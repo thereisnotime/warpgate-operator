@@ -37,8 +37,8 @@ func TestUpdateParameters(t *testing.T) {
 		}
 		var params Parameters
 		_ = json.NewDecoder(r.Body).Decode(&params)
-		if !params.MinimizePasswordLogin {
-			t.Error("expected MinimizePasswordLogin=true")
+		if params.PasswordLoginMode != "Minimized" {
+			t.Error("expected PasswordLoginMode=Minimized")
 		}
 		w.WriteHeader(http.StatusCreated) // API returns 201 with no body
 	}))
@@ -47,7 +47,7 @@ func TestUpdateParameters(t *testing.T) {
 	c := NewTestClient(srv.URL)
 	err := c.UpdateParameters(Parameters{
 		AllowOwnCredentialManagement: true,
-		MinimizePasswordLogin:        true,
+		PasswordLoginMode:            "Minimized",
 	})
 	if err != nil {
 		t.Fatal(err)

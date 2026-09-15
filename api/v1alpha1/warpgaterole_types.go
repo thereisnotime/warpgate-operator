@@ -31,6 +31,9 @@ type WarpgateRoleSpec struct {
 	// description is an optional description for the role.
 	// +optional
 	Description string `json:"description,omitempty"`
+	// isDefault grants this role to every new user automatically.
+	// +optional
+	IsDefault bool `json:"isDefault,omitempty"`
 }
 
 // WarpgateRoleStatus defines the observed state of WarpgateRole.

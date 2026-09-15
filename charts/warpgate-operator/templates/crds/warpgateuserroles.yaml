@@ -54,6 +54,11 @@ spec:
                 description: connectionRef is the name of the WarpgateConnection resource
                   to use.
                 type: string
+              expiresAt:
+                description: expiresAt revokes the binding at this time (RFC 3339).
+                  Unset means permanent.
+                format: date-time
+                type: string
               roleName:
                 description: roleName is the Warpgate role name to bind.
                 type: string

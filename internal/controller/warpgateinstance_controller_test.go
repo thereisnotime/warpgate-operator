@@ -119,7 +119,7 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName + "-config", Namespace: testNamespace}, &cm)).To(Succeed())
 			Expect(cm.Data).To(HaveKey("warpgate.yaml"))
 			Expect(cm.Data["warpgate.yaml"]).To(ContainSubstring("http:"))
-			Expect(cm.Data["warpgate.yaml"]).To(ContainSubstring("enable: true"))
+			Expect(cm.Data["warpgate.yaml"]).To(ContainSubstring("certificate: /data/tls.certificate.pem"))
 			Expect(cm.Data["warpgate.yaml"]).To(ContainSubstring("8888"))
 
 			// Verify Deployment is created with the right image and ports.
@@ -2273,8 +2273,7 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			}, &cm)).To(Succeed())
 
 			yaml := cm.Data["warpgate.yaml"]
-			Expect(yaml).To(ContainSubstring("postgres:"))
-			Expect(yaml).To(ContainSubstring("postgres://host/db"))
+			Expect(yaml).To(ContainSubstring("database_url: \"postgres://host/db\""))
 			Expect(yaml).NotTo(ContainSubstring("sqlite:"))
 		})
 	})
@@ -3174,7 +3173,7 @@ var _ = Describe("WarpgateInstance Controller", func() {
 				},
 			}
 			yaml := reconciler.buildWarpgateConfig(inst)
-			Expect(yaml).To(ContainSubstring("postgres: \"postgres://user:pass@host:5432/warpgate\""))
+			Expect(yaml).To(ContainSubstring("database_url: \"postgres://user:pass@host:5432/warpgate\""))
 			Expect(yaml).NotTo(ContainSubstring("sqlite"))
 		})
 
@@ -3193,8 +3192,7 @@ var _ = Describe("WarpgateInstance Controller", func() {
 				},
 			}
 			yaml := reconciler.buildWarpgateConfig(inst)
-			Expect(yaml).To(ContainSubstring("sqlite:"))
-			Expect(yaml).To(ContainSubstring("path: /data/db"))
+			Expect(yaml).To(ContainSubstring("database_url: sqlite:/data/db"))
 		})
 
 		It("should include kubernetes section when enabled", func() {
@@ -3239,10 +3237,8 @@ var _ = Describe("WarpgateInstance Controller", func() {
 					},
 				},
 			}
-			yaml := reconciler.buildWarpgateConfig(inst)
-			Expect(yaml).To(ContainSubstring("recordings:"))
-			Expect(yaml).To(ContainSubstring("enable: true"))
-			Expect(yaml).To(ContainSubstring("path: /data/recordings"))
+			Expect(reconciler.buildWarpgateConfig(inst)).NotTo(ContainSubstring("recordings:"))
+			Expect(reconciler.buildDeployment(inst).Spec.Template.Spec.InitContainers[0].Command[2]).To(ContainSubstring("--record-sessions"))
 		})
 
 		It("should set HTTP enable: false when HTTP is disabled", func() {
@@ -3853,10 +3849,7 @@ var _ = Describe("WarpgateInstance Controller", func() {
 				Name: instName + "-config", Namespace: testNamespace,
 			}, &cm)).To(Succeed())
 
-			yaml := cm.Data["warpgate.yaml"]
-			Expect(yaml).To(ContainSubstring("recordings:"))
-			Expect(yaml).To(ContainSubstring("enable: true"))
-			Expect(yaml).To(ContainSubstring("path: /data/recordings"))
+			Expect(cm.Data["warpgate.yaml"]).NotTo(ContainSubstring("recordings:"))
 		})
 	})
 
@@ -4053,7 +4046,6 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			// Verify ConfigMap exists with recordings and mysql sections.
 			var cm corev1.ConfigMap
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName + "-config", Namespace: testNamespace}, &cm)).To(Succeed())
-			Expect(cm.Data["warpgate.yaml"]).To(ContainSubstring("recordings:"))
 			Expect(cm.Data["warpgate.yaml"]).To(ContainSubstring("mysql:"))
 
 			// Verify PVC exists.

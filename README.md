@@ -117,7 +117,7 @@ All resources belong to the API group `warpgate.warpgate.warp.tech/v1alpha1`.
 | `WarpgateConnection` | Connection to a Warpgate instance | [docs/crds/warpgate-connection.md](docs/crds/warpgate-connection.md) |
 | `WarpgateRole` | Role definition | [docs/crds/warpgate-role.md](docs/crds/warpgate-role.md) |
 | `WarpgateUser` | User account with credential policy and auto-generated password | [docs/crds/warpgate-user.md](docs/crds/warpgate-user.md) |
-| `WarpgateTarget` | Target host (SSH, HTTP, MySQL, PostgreSQL) | [docs/crds/warpgate-target.md](docs/crds/warpgate-target.md) |
+| `WarpgateTarget` | Target host (SSH, HTTP, MySQL, PostgreSQL, Kubernetes, RDP, VNC) | [docs/crds/warpgate-target.md](docs/crds/warpgate-target.md) |
 | `WarpgateTargetGroup` | Target group for visual organization | [docs/crds/warpgate-target-group.md](docs/crds/warpgate-target-group.md) |
 | `WarpgateUserRole` | User-to-role binding | [docs/crds/warpgate-user-role.md](docs/crds/warpgate-user-role.md) |
 | `WarpgateTargetRole` | Target-to-role binding | [docs/crds/warpgate-target-role.md](docs/crds/warpgate-target-role.md) |

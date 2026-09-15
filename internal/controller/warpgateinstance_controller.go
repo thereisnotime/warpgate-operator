@@ -353,68 +353,47 @@ func configHash(inst *warpgatev1alpha1.WarpgateInstance) string {
 func (r *WarpgateInstanceReconciler) buildWarpgateConfig(inst *warpgatev1alpha1.WarpgateInstance) string {
 	var b strings.Builder
 
-	b.WriteString("store:\n")
 	if inst.Spec.DatabaseURL != "" {
-		fmt.Fprintf(&b, "  database_url:\n")
-		fmt.Fprintf(&b, "    postgres: \"%s\"\n", inst.Spec.DatabaseURL)
+		fmt.Fprintf(&b, "database_url: \"%s\"\n", inst.Spec.DatabaseURL)
 	} else {
-		b.WriteString("  database_url:\n")
-		b.WriteString("    sqlite:\n")
-		b.WriteString("      path: /data/db\n")
+		b.WriteString("database_url: sqlite:/data/db\n")
 	}
 
-	// HTTP
-	b.WriteString("http:\n")
-	if httpEnabled(inst) {
-		b.WriteString("  enable: true\n")
-	} else {
-		b.WriteString("  enable: false\n")
+	// listener writes one protocol block. Every TLS-terminating listener reads
+	// its certificate from the same pair the init container puts in /data.
+	listener := func(name string, enabled bool, port int32, withTLS bool) {
+		fmt.Fprintf(&b, "%s:\n", name)
+		fmt.Fprintf(&b, "  enable: %t\n", enabled)
+		fmt.Fprintf(&b, "  listen: \"0.0.0.0:%d\"\n", port)
+		if withTLS {
+			b.WriteString("  certificate: /data/tls.certificate.pem\n")
+			b.WriteString("  key: /data/tls.key.pem\n")
+		}
 	}
+
+	// HTTP has no enable switch in Warpgate; the admin UI always listens.
+	b.WriteString("http:\n")
 	fmt.Fprintf(&b, "  listen: \"0.0.0.0:%d\"\n", instanceHTTPPort(inst))
 	b.WriteString("  certificate: /data/tls.certificate.pem\n")
 	b.WriteString("  key: /data/tls.key.pem\n")
 
-	// SSH
-	b.WriteString("ssh:\n")
-	if sshEnabled(inst) {
-		b.WriteString("  enable: true\n")
-	} else {
-		b.WriteString("  enable: false\n")
-	}
-	fmt.Fprintf(&b, "  listen: \"0.0.0.0:%d\"\n", instanceSSHPort(inst))
-
-	// MySQL
+	listener("ssh", sshEnabled(inst), instanceSSHPort(inst), false)
 	if mysqlEnabled(inst) {
-		b.WriteString("mysql:\n")
-		b.WriteString("  enable: true\n")
-		fmt.Fprintf(&b, "  listen: \"0.0.0.0:%d\"\n", instanceMySQLPort(inst))
+		listener("mysql", true, instanceMySQLPort(inst), true)
 	}
-
-	// PostgreSQL
 	if pgEnabled(inst) {
-		b.WriteString("postgres:\n")
-		b.WriteString("  enable: true\n")
-		fmt.Fprintf(&b, "  listen: \"0.0.0.0:%d\"\n", instancePGPort(inst))
+		listener("postgres", true, instancePGPort(inst), true)
 	}
-
-	// Kubernetes
 	if kubernetesEnabled(inst) {
-		b.WriteString("kubernetes:\n")
-		b.WriteString("  enable: true\n")
-		fmt.Fprintf(&b, "  listen: \"0.0.0.0:%d\"\n", instanceKubernetesPort(inst))
+		listener("kubernetes", true, instanceKubernetesPort(inst), true)
 	}
 
-	// External host
 	if inst.Spec.ExternalHost != "" {
 		fmt.Fprintf(&b, "external_host: %s\n", inst.Spec.ExternalHost)
 	}
 
-	// Session recording
-	if inst.Spec.RecordSessions != nil && *inst.Spec.RecordSessions {
-		b.WriteString("recordings:\n")
-		b.WriteString("  enable: true\n")
-		b.WriteString("  path: /data/recordings\n")
-	}
+	// Session recording lives in Warpgate's database parameters, not the config
+	// file; it is seeded through unattended-setup (see the init script).
 
 	return b.String()
 }
@@ -576,7 +555,9 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 		)
 	}
 
-	// 3. Run unattended-setup if warpgate.yaml doesn't exist
+	// 3. Run unattended-setup if warpgate.yaml doesn't exist. Setup owns the
+	// one-time state that lives outside the config file: the admin user, SSH
+	// keys, and the recording parameter.
 	setupCmd := fmt.Sprintf(
 		`warpgate --skip-securing-files unattended-setup --data-path /data --http-port %d --admin-password "${ADMIN_PASSWORD}"`,
 		instanceHTTPPort(inst),
@@ -586,6 +567,13 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 	}
 	if inst.Spec.DatabaseURL != "" {
 		setupCmd += fmt.Sprintf(` --database-url "%s"`, inst.Spec.DatabaseURL)
+	}
+	if inst.Spec.RecordSessions != nil && *inst.Spec.RecordSessions {
+		// ponytail: seeded at first setup only; later toggles need the admin UI or parameters API
+		setupCmd += ` --record-sessions`
+	}
+	if inst.Spec.SSHKeysSecretName != "" {
+		setupCmd += ` --import-ssh-host-keys /data/ssh-keys --import-ssh-client-keys /data/ssh-keys`
 	}
 
 	scriptParts = append(scriptParts,

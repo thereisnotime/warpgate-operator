@@ -33,6 +33,11 @@ type WarpgateUserRoleSpec struct {
 	// roleName is the Warpgate role name to bind.
 	// +required
 	RoleName string `json:"roleName"`
+
+	// expiresAt revokes the binding at this time (RFC 3339). Unset means permanent.
+	// +kubebuilder:validation:Format=date-time
+	// +optional
+	ExpiresAt string `json:"expiresAt,omitempty"`
 }
 
 // WarpgateUserRoleStatus defines the observed state of WarpgateUserRole.

@@ -57,6 +57,9 @@ spec:
               description:
                 description: description is an optional description for the role.
                 type: string
+              isDefault:
+                description: isDefault grants this role to every new user automatically.
+                type: boolean
               name:
                 description: name is the role name in Warpgate.
                 type: string

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `WarpgateTarget` CRD manages targets (SSH, HTTP, MySQL, PostgreSQL) in a Warpgate instance. Each CR defines exactly one target type via mutually exclusive spec sections. Passwords for target connections are read from Kubernetes Secrets, never stored inline.
+The `WarpgateTarget` CRD manages targets (SSH, HTTP, MySQL, PostgreSQL, Kubernetes, RDP, VNC) in a Warpgate instance. Each CR defines exactly one target type via mutually exclusive spec sections. Passwords for target connections are read from Kubernetes Secrets, never stored inline.
 
 ## Requirements
 

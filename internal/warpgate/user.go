@@ -3,17 +3,23 @@ package warpgate
 import "fmt"
 
 type CredentialPolicy struct {
-	HTTP     []string `json:"http,omitempty"`
-	SSH      []string `json:"ssh,omitempty"`
-	MySQL    []string `json:"mysql,omitempty"`
-	Postgres []string `json:"postgres,omitempty"`
+	HTTP       []string `json:"http,omitempty"`
+	SSH        []string `json:"ssh,omitempty"`
+	MySQL      []string `json:"mysql,omitempty"`
+	Postgres   []string `json:"postgres,omitempty"`
+	Kubernetes []string `json:"kubernetes,omitempty"`
+	VNC        []string `json:"vnc,omitempty"`
+	RDP        []string `json:"rdp,omitempty"`
 }
 
 type User struct {
-	ID               string            `json:"id,omitempty"`
-	Username         string            `json:"username"`
-	Description      string            `json:"description,omitempty"`
-	CredentialPolicy *CredentialPolicy `json:"credential_policy,omitempty"`
+	ID                      string            `json:"id,omitempty"`
+	Username                string            `json:"username"`
+	Description             string            `json:"description,omitempty"`
+	CredentialPolicy        *CredentialPolicy `json:"credential_policy,omitempty"`
+	RateLimitBytesPerSecond *int64            `json:"rate_limit_bytes_per_second,omitempty"`
+	AllowedIPRanges         []string          `json:"allowed_ip_ranges,omitempty"`
+	LdapServerID            string            `json:"ldap_server_id,omitempty"`
 }
 
 type UserCreateRequest struct {
@@ -22,9 +28,11 @@ type UserCreateRequest struct {
 }
 
 type UserUpdateRequest struct {
-	Username         string            `json:"username"`
-	Description      string            `json:"description,omitempty"`
-	CredentialPolicy *CredentialPolicy `json:"credential_policy,omitempty"`
+	Username                string            `json:"username"`
+	Description             string            `json:"description,omitempty"`
+	CredentialPolicy        *CredentialPolicy `json:"credential_policy,omitempty"`
+	RateLimitBytesPerSecond *int64            `json:"rate_limit_bytes_per_second,omitempty"`
+	AllowedIPRanges         []string          `json:"allowed_ip_ranges,omitempty"`
 }
 
 func (c *Client) CreateUser(req UserCreateRequest) (*User, error) {

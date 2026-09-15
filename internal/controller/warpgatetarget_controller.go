@@ -161,6 +161,18 @@ func (r *WarpgateTargetReconciler) buildTargetRequest(ctx context.Context, targe
 	var opts any
 	var targetType string
 
+	// secret reads a referenced Secret value, or "" when no ref is given.
+	secret := func(ref *warpgatev1alpha1.SecretKeyRef, defaultKey, what string) (string, error) {
+		if ref == nil {
+			return "", nil
+		}
+		v, err := r.readSecretValue(ctx, target.Namespace, ref, defaultKey)
+		if err != nil {
+			return "", fmt.Errorf("reading %s secret: %w", what, err)
+		}
+		return v, nil
+	}
+
 	switch {
 	case spec.SSH != nil:
 		targetType = "SSH"
@@ -171,13 +183,14 @@ func (r *WarpgateTargetReconciler) buildTargetRequest(ctx context.Context, targe
 			Username:           spec.SSH.Username,
 			AllowInsecureAlgos: spec.SSH.AllowInsecureAlgos,
 			Auth: warpgate.SSHAuth{
-				Kind: spec.SSH.AuthKind,
+				Kind:  spec.SSH.AuthKind,
+				KeyID: spec.SSH.KeyID,
 			},
 		}
-		if spec.SSH.AuthKind == "Password" && spec.SSH.PasswordSecretRef != nil {
-			password, err := r.readSecretValue(ctx, target.Namespace, spec.SSH.PasswordSecretRef)
+		if spec.SSH.AuthKind == "Password" {
+			password, err := secret(spec.SSH.PasswordSecretRef, "password", "SSH password")
 			if err != nil {
-				return nil, "", fmt.Errorf("reading SSH password secret: %w", err)
+				return nil, "", err
 			}
 			sshOpts.Auth.Password = password
 		}
@@ -198,69 +211,127 @@ func (r *WarpgateTargetReconciler) buildTargetRequest(ctx context.Context, targe
 
 	case spec.HTTP != nil:
 		targetType = "HTTP"
-		httpOpts := warpgate.HTTPOptions{
+		headers := spec.HTTP.Headers
+		if headers == nil {
+			headers = map[string]string{}
+		}
+		opts = warpgate.HTTPOptions{
 			Kind:         "Http",
 			URL:          spec.HTTP.URL,
-			Headers:      spec.HTTP.Headers,
+			TLS:          toWarpgateTLS(spec.HTTP.TLS),
+			Headers:      headers,
 			ExternalHost: spec.HTTP.ExternalHost,
 		}
-		if spec.HTTP.TLS != nil {
-			httpOpts.TLS = &warpgate.TLSConfig{
-				Mode:   spec.HTTP.TLS.Mode,
-				Verify: spec.HTTP.TLS.Verify,
-			}
-		}
-		opts = httpOpts
 
 	case spec.MySQL != nil:
 		targetType = "MySQL"
-		mysqlOpts := warpgate.MySQLOptions{
-			Kind:     "MySql",
-			Host:     spec.MySQL.Host,
-			Port:     spec.MySQL.Port,
-			Username: spec.MySQL.Username,
+		auth, err := r.databaseAuth(ctx, target.Namespace, spec.MySQL.AuthKind, spec.MySQL.PasswordSecretRef, "MySQL")
+		if err != nil {
+			return nil, "", err
 		}
-		if spec.MySQL.PasswordSecretRef != nil {
-			password, err := r.readSecretValue(ctx, target.Namespace, spec.MySQL.PasswordSecretRef)
-			if err != nil {
-				return nil, "", fmt.Errorf("reading MySQL password secret: %w", err)
-			}
-			mysqlOpts.Password = password
+		opts = warpgate.MySQLOptions{
+			Kind:                "MySql",
+			Host:                spec.MySQL.Host,
+			Port:                spec.MySQL.Port,
+			Username:            spec.MySQL.Username,
+			Auth:                auth,
+			TLS:                 toWarpgateTLS(spec.MySQL.TLS),
+			DefaultDatabaseName: spec.MySQL.DefaultDatabaseName,
 		}
-		if spec.MySQL.TLS != nil {
-			mysqlOpts.TLS = &warpgate.TLSConfig{
-				Mode:   spec.MySQL.TLS.Mode,
-				Verify: spec.MySQL.TLS.Verify,
-			}
-		}
-		opts = mysqlOpts
 
 	case spec.PostgreSQL != nil:
 		targetType = "PostgreSQL"
-		pgOpts := warpgate.PostgresOptions{
-			Kind:            "Postgres",
-			Host:            spec.PostgreSQL.Host,
-			Port:            spec.PostgreSQL.Port,
-			Username:        spec.PostgreSQL.Username,
-			ProtocolVersion: spec.PostgreSQL.ProtocolVersion,
+		auth, err := r.databaseAuth(ctx, target.Namespace, spec.PostgreSQL.AuthKind, spec.PostgreSQL.PasswordSecretRef, "PostgreSQL")
+		if err != nil {
+			return nil, "", err
 		}
-		if spec.PostgreSQL.PasswordSecretRef != nil {
-			password, err := r.readSecretValue(ctx, target.Namespace, spec.PostgreSQL.PasswordSecretRef)
+		protocolVersion := spec.PostgreSQL.ProtocolVersion
+		if protocolVersion == "" {
+			protocolVersion = "3.2"
+		}
+		opts = warpgate.PostgresOptions{
+			Kind:                "Postgres",
+			Host:                spec.PostgreSQL.Host,
+			Port:                spec.PostgreSQL.Port,
+			Username:            spec.PostgreSQL.Username,
+			Auth:                auth,
+			TLS:                 toWarpgateTLS(spec.PostgreSQL.TLS),
+			ProtocolVersion:     protocolVersion,
+			IdleTimeout:         spec.PostgreSQL.IdleTimeout,
+			DefaultDatabaseName: spec.PostgreSQL.DefaultDatabaseName,
+		}
+
+	case spec.Kubernetes != nil:
+		targetType = "Kubernetes"
+		k8s := spec.Kubernetes
+		auth := warpgate.KubernetesAuth{Kind: k8s.AuthKind}
+		var err error
+		switch k8s.AuthKind {
+		case "Token":
+			if auth.Token, err = secret(k8s.TokenSecretRef, "token", "Kubernetes token"); err != nil {
+				return nil, "", err
+			}
+		case "Certificate":
+			if auth.Certificate, err = secret(k8s.CertificateSecretRef, "certificate", "Kubernetes certificate"); err != nil {
+				return nil, "", err
+			}
+			if auth.PrivateKey, err = secret(k8s.PrivateKeySecretRef, "privateKey", "Kubernetes private key"); err != nil {
+				return nil, "", err
+			}
+		}
+		opts = warpgate.KubernetesOptions{
+			Kind:       "Kubernetes",
+			ClusterURL: k8s.ClusterURL,
+			TLS:        toWarpgateTLS(k8s.TLS),
+			Auth:       auth,
+		}
+
+	case spec.RDP != nil:
+		targetType = "RDP"
+		password, err := secret(spec.RDP.PasswordSecretRef, "password", "RDP password")
+		if err != nil {
+			return nil, "", err
+		}
+		compression := spec.RDP.Compression
+		if compression == "" {
+			compression = "remotefx"
+		}
+		tlsSecurity := spec.RDP.TLSSecurity
+		if tlsSecurity == "" {
+			tlsSecurity = "Tls12"
+		}
+		opts = warpgate.RDPOptions{
+			Kind:             "Rdp",
+			Host:             spec.RDP.Host,
+			Port:             spec.RDP.Port,
+			Username:         spec.RDP.Username,
+			Domain:           spec.RDP.Domain,
+			Auth:             warpgate.PasswordAuth{Kind: "Password", Password: password},
+			VerifyTLS:        spec.RDP.VerifyTLS,
+			Compression:      compression,
+			InteractiveLogon: spec.RDP.InteractiveLogon,
+			TLSSecurity:      tlsSecurity,
+		}
+
+	case spec.VNC != nil:
+		targetType = "VNC"
+		auth := warpgate.PasswordAuth{Kind: "None"}
+		if spec.VNC.PasswordSecretRef != nil {
+			password, err := secret(spec.VNC.PasswordSecretRef, "password", "VNC password")
 			if err != nil {
-				return nil, "", fmt.Errorf("reading PostgreSQL password secret: %w", err)
+				return nil, "", err
 			}
-			pgOpts.Password = password
+			auth = warpgate.PasswordAuth{Kind: "Password", Password: password}
 		}
-		if spec.PostgreSQL.TLS != nil {
-			pgOpts.TLS = &warpgate.TLSConfig{
-				Mode:   spec.PostgreSQL.TLS.Mode,
-				Verify: spec.PostgreSQL.TLS.Verify,
-			}
+		opts = warpgate.VNCOptions{
+			Kind: "Vnc",
+			Host: spec.VNC.Host,
+			Port: spec.VNC.Port,
+			Auth: auth,
 		}
-		opts = pgOpts
 
 	default:
-		return nil, "", fmt.Errorf("exactly one target type (ssh, http, mysql, postgresql) must be specified")
+		return nil, "", fmt.Errorf("exactly one target type (ssh, http, mysql, postgresql, kubernetes, rdp, vnc) must be specified")
 	}
 
 	rawOpts, err := warpgate.MarshalOptions(opts)
@@ -274,8 +345,9 @@ func (r *WarpgateTargetReconciler) buildTargetRequest(ctx context.Context, targe
 		Options:                  rawOpts,
 		RateLimitBytesPerSecond:  spec.RateLimitBytesPerSecond,
 		TicketMaxDurationSeconds: spec.TicketMaxDurationSeconds,
-		TicketRequestsDisabled:   spec.TicketRequestsDisabled,
-		TicketRequireApproval:    spec.TicketRequireApproval,
+		TicketRequestsDisabled:   boolValue(spec.TicketRequestsDisabled),
+		TicketRequireApproval:    boolValue(spec.TicketRequireApproval),
+		RequireApproval:          boolValue(spec.RequireApproval),
 		TicketMaxUses:            spec.TicketMaxUses,
 	}
 
@@ -296,9 +368,37 @@ func (r *WarpgateTargetReconciler) buildTargetRequest(ctx context.Context, targe
 	return targetReq, targetType, nil
 }
 
+// databaseAuth builds the MySQL/PostgreSQL auth block. An empty authKind means Password.
+func (r *WarpgateTargetReconciler) databaseAuth(ctx context.Context, namespace, authKind string, passwordRef *warpgatev1alpha1.SecretKeyRef, what string) (warpgate.DatabaseAuth, error) {
+	if authKind == "IamRole" {
+		return warpgate.DatabaseAuth{Kind: "IamRole"}, nil
+	}
+	auth := warpgate.DatabaseAuth{Kind: "Password"}
+	if passwordRef != nil {
+		password, err := r.readSecretValue(ctx, namespace, passwordRef, "password")
+		if err != nil {
+			return auth, fmt.Errorf("reading %s password secret: %w", what, err)
+		}
+		auth.Password = password
+	}
+	return auth, nil
+}
+
+// toWarpgateTLS converts an optional CRD TLS block; absent means Warpgate's default (Preferred, verify).
+func toWarpgateTLS(spec *warpgatev1alpha1.TLSConfigSpec) warpgate.TLSConfig {
+	if spec == nil {
+		return warpgate.TLSConfig{Mode: "Preferred", Verify: true}
+	}
+	return warpgate.TLSConfig{Mode: spec.Mode, Verify: spec.Verify}
+}
+
+func boolValue(b *bool) bool {
+	return b != nil && *b
+}
+
 // readSecretValue reads a value from a Kubernetes Secret using the given SecretKeyRef.
-// If no key is specified, it defaults to "password".
-func (r *WarpgateTargetReconciler) readSecretValue(ctx context.Context, namespace string, ref *warpgatev1alpha1.SecretKeyRef) (string, error) {
+// If no key is specified, defaultKey is used.
+func (r *WarpgateTargetReconciler) readSecretValue(ctx context.Context, namespace string, ref *warpgatev1alpha1.SecretKeyRef, defaultKey string) (string, error) {
 	var secret corev1.Secret
 	if err := r.Get(ctx, types.NamespacedName{
 		Namespace: namespace,
@@ -309,7 +409,7 @@ func (r *WarpgateTargetReconciler) readSecretValue(ctx context.Context, namespac
 
 	key := ref.Key
 	if key == "" {
-		key = "password"
+		key = defaultKey
 	}
 
 	val, ok := secret.Data[key]

@@ -38,11 +38,15 @@ type SSHTargetSpec struct {
 	// username is the SSH username.
 	Username string `json:"username"`
 	// authKind is the SSH authentication method.
-	// +kubebuilder:validation:Enum=Password;PublicKey
+	// +kubebuilder:validation:Enum=Password;PublicKey;IamRole
 	AuthKind string `json:"authKind"`
 	// passwordSecretRef references a Secret containing the SSH password (for Password auth).
 	// +optional
 	PasswordSecretRef *SecretKeyRef `json:"passwordSecretRef,omitempty"`
+	// keyID is the UUID of a stored Warpgate SSH client key to authenticate with (for PublicKey auth).
+	// Empty uses the keys marked default in Warpgate.
+	// +optional
+	KeyID string `json:"keyID,omitempty"`
 	// allowInsecureAlgos permits the use of insecure SSH algorithms.
 	AllowInsecureAlgos bool `json:"allowInsecureAlgos,omitempty"`
 	// jumpHostRef is the name of another WarpgateTarget (in the same namespace) to use as an SSH jump host.
@@ -74,12 +78,19 @@ type MySQLTargetSpec struct {
 	Port int `json:"port"`
 	// username is the MySQL username.
 	Username string `json:"username"`
+	// authKind is the database authentication method. Defaults to Password.
+	// +kubebuilder:validation:Enum=Password;IamRole
+	// +optional
+	AuthKind string `json:"authKind,omitempty"`
 	// passwordSecretRef references a Secret containing the MySQL password.
 	// +optional
 	PasswordSecretRef *SecretKeyRef `json:"passwordSecretRef,omitempty"`
 	// tls configures TLS settings for the MySQL connection.
 	// +optional
 	TLS *TLSConfigSpec `json:"tls,omitempty"`
+	// defaultDatabaseName is the database shown in connection instructions.
+	// +optional
+	DefaultDatabaseName string `json:"defaultDatabaseName,omitempty"`
 }
 
 // PostgreSQLTargetSpec defines the configuration for a PostgreSQL target.
@@ -90,16 +101,88 @@ type PostgreSQLTargetSpec struct {
 	Port int `json:"port"`
 	// username is the PostgreSQL username.
 	Username string `json:"username"`
-	// protocolVersion is the PostgreSQL protocol version used for the target connection.
+	// protocolVersion is the PostgreSQL protocol version used for the target connection. Defaults to 3.2.
 	// +kubebuilder:validation:Pattern=`^3\.(0|2)$`
 	// +optional
 	ProtocolVersion string `json:"protocolVersion,omitempty"`
+	// authKind is the database authentication method. Defaults to Password.
+	// +kubebuilder:validation:Enum=Password;IamRole
+	// +optional
+	AuthKind string `json:"authKind,omitempty"`
 	// passwordSecretRef references a Secret containing the PostgreSQL password.
 	// +optional
 	PasswordSecretRef *SecretKeyRef `json:"passwordSecretRef,omitempty"`
 	// tls configures TLS settings for the PostgreSQL connection.
 	// +optional
 	TLS *TLSConfigSpec `json:"tls,omitempty"`
+	// idleTimeout closes idle target connections after this duration (e.g. "5m").
+	// +optional
+	IdleTimeout string `json:"idleTimeout,omitempty"`
+	// defaultDatabaseName is the database shown in connection instructions.
+	// +optional
+	DefaultDatabaseName string `json:"defaultDatabaseName,omitempty"`
+}
+
+// KubernetesTargetSpec defines the configuration for a Kubernetes target.
+type KubernetesTargetSpec struct {
+	// clusterURL is the Kubernetes API server URL.
+	ClusterURL string `json:"clusterURL"`
+	// authKind is the cluster authentication method.
+	// +kubebuilder:validation:Enum=Token;Certificate;IamRole
+	AuthKind string `json:"authKind"`
+	// tokenSecretRef references a Secret containing the bearer token (for Token auth).
+	// +optional
+	TokenSecretRef *SecretKeyRef `json:"tokenSecretRef,omitempty"`
+	// certificateSecretRef references a Secret containing the PEM client certificate (for Certificate auth).
+	// +optional
+	CertificateSecretRef *SecretKeyRef `json:"certificateSecretRef,omitempty"`
+	// privateKeySecretRef references a Secret containing the PEM client private key (for Certificate auth).
+	// +optional
+	PrivateKeySecretRef *SecretKeyRef `json:"privateKeySecretRef,omitempty"`
+	// tls configures TLS settings for the API server connection.
+	// +optional
+	TLS *TLSConfigSpec `json:"tls,omitempty"`
+}
+
+// RDPTargetSpec defines the configuration for an RDP target.
+type RDPTargetSpec struct {
+	// host is the hostname or IP of the RDP server.
+	Host string `json:"host"`
+	// port is the RDP port.
+	Port int `json:"port"`
+	// username is the RDP username.
+	Username string `json:"username"`
+	// domain is the Windows logon domain.
+	// +optional
+	Domain string `json:"domain,omitempty"`
+	// passwordSecretRef references a Secret containing the RDP password.
+	// +optional
+	PasswordSecretRef *SecretKeyRef `json:"passwordSecretRef,omitempty"`
+	// verifyTLS verifies the RDP server certificate against the system root store.
+	// +optional
+	VerifyTLS bool `json:"verifyTLS,omitempty"`
+	// compression is the codec: remotefx (default) or lossless.
+	// +kubebuilder:validation:Enum=remotefx;lossless
+	// +optional
+	Compression string `json:"compression,omitempty"`
+	// interactiveLogon shows the target's own sign-in screen instead of logging on automatically.
+	// +optional
+	InteractiveLogon bool `json:"interactiveLogon,omitempty"`
+	// tlsSecurity is the TLS profile for the target connection. Defaults to Tls12.
+	// +kubebuilder:validation:Enum=Tls12;Tls12WithLegacyCiphers;Tls10Unsafe
+	// +optional
+	TLSSecurity string `json:"tlsSecurity,omitempty"`
+}
+
+// VNCTargetSpec defines the configuration for a VNC target.
+type VNCTargetSpec struct {
+	// host is the hostname or IP of the VNC server.
+	Host string `json:"host"`
+	// port is the VNC port.
+	Port int `json:"port"`
+	// passwordSecretRef references a Secret containing the VNC password. Omit for no authentication.
+	// +optional
+	PasswordSecretRef *SecretKeyRef `json:"passwordSecretRef,omitempty"`
 }
 
 // WarpgateTargetSpec defines the desired state of WarpgateTarget.
@@ -126,9 +209,12 @@ type WarpgateTargetSpec struct {
 	// ticketRequestsDisabled disables ticket requests for this target.
 	// +optional
 	TicketRequestsDisabled *bool `json:"ticketRequestsDisabled,omitempty"`
-	// ticketRequireApproval requires approval before a ticket session starts.
+	// ticketRequireApproval requires admin approval of ticket requests for this target.
 	// +optional
 	TicketRequireApproval *bool `json:"ticketRequireApproval,omitempty"`
+	// requireApproval requires admin approval before any session to this target starts.
+	// +optional
+	RequireApproval *bool `json:"requireApproval,omitempty"`
 	// ticketMaxUses limits how many times a ticket can be used. Zero means unlimited.
 	// +optional
 	TicketMaxUses *int64 `json:"ticketMaxUses,omitempty"`
@@ -144,6 +230,15 @@ type WarpgateTargetSpec struct {
 	// postgresql configures a PostgreSQL target. Exactly one target type must be set.
 	// +optional
 	PostgreSQL *PostgreSQLTargetSpec `json:"postgresql,omitempty"`
+	// kubernetes configures a Kubernetes target. Exactly one target type must be set.
+	// +optional
+	Kubernetes *KubernetesTargetSpec `json:"kubernetes,omitempty"`
+	// rdp configures an RDP target. Exactly one target type must be set.
+	// +optional
+	RDP *RDPTargetSpec `json:"rdp,omitempty"`
+	// vnc configures a VNC target. Exactly one target type must be set.
+	// +optional
+	VNC *VNCTargetSpec `json:"vnc,omitempty"`
 }
 
 // WarpgateTargetStatus defines the observed state of WarpgateTarget.

@@ -1,8 +1,12 @@
 package warpgate
 
+// SSHKey is a stored SSH client key that Warpgate uses to authenticate to targets.
 type SSHKey struct {
-	Kind            string `json:"kind"`
-	PublicKeyBase64 string `json:"public_key_base64"`
+	ID        string `json:"id"`
+	Label     string `json:"label"`
+	Kind      string `json:"kind"` // Ed25519 or Rsa
+	PublicKey string `json:"public_key"`
+	IsDefault bool   `json:"is_default"`
 }
 
 func (c *Client) GetSSHOwnKeys() ([]SSHKey, error) {

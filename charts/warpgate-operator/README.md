@@ -28,7 +28,7 @@ The chart installs 10 CRDs under the `warpgate.warpgate.warp.tech/v1alpha1` API 
 | `WarpgateConnection` | Connect to external or self-hosted Warpgate instances |
 | `Role` | Warpgate role |
 | `User` | Warpgate user |
-| `Target` | SSH, HTTP, MySQL, or PostgreSQL target |
+| `Target` | SSH, HTTP, MySQL, PostgreSQL, Kubernetes, RDP, or VNC target |
 | `UserRole` | Bind a user to a role |
 | `TargetRole` | Bind a target to a role |
 | `PasswordCredential` | Password credential for a user |

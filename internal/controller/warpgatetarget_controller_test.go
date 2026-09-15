@@ -679,7 +679,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			Expect(opts["host"]).To(Equal("db.example.com"))
 			Expect(opts["port"]).To(BeNumerically("==", 3306))
 			Expect(opts["username"]).To(Equal("root"))
-			Expect(opts["password"]).To(Equal("mysql-root-pw"))
+			Expect(opts["auth"]).To(Equal(map[string]any{"kind": "Password", "password": "mysql-root-pw"}))
 
 			tlsCfg, ok := opts["tls"].(map[string]any)
 			Expect(ok).To(BeTrue())
@@ -802,7 +802,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			Expect(opts["port"]).To(BeNumerically("==", 5432))
 			Expect(opts["username"]).To(Equal("postgres"))
 			Expect(opts["protocol_version"]).To(Equal("3.0"))
-			Expect(opts["password"]).To(Equal("pg-secret-pw"))
+			Expect(opts["auth"]).To(Equal(map[string]any{"kind": "Password", "password": "pg-secret-pw"}))
 
 			tlsCfg, ok := opts["tls"].(map[string]any)
 			Expect(ok).To(BeTrue())
@@ -2238,9 +2238,11 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			Expect(json.Unmarshal(body, &req)).To(Succeed())
 			Expect(req).NotTo(HaveKey("rate_limit_bytes_per_second"))
 			Expect(req).NotTo(HaveKey("ticket_max_duration_seconds"))
-			Expect(req).NotTo(HaveKey("ticket_requests_disabled"))
-			Expect(req).NotTo(HaveKey("ticket_require_approval"))
 			Expect(req).NotTo(HaveKey("ticket_max_uses"))
+			// The access gates are required by the API on every write.
+			Expect(req).To(HaveKeyWithValue("ticket_requests_disabled", false))
+			Expect(req).To(HaveKeyWithValue("ticket_require_approval", false))
+			Expect(req).To(HaveKeyWithValue("require_approval", false))
 		})
 	})
 
