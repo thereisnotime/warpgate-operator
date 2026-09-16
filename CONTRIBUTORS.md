@@ -146,3 +146,4 @@ Thanks to everyone who has contributed code, bug reports, or ideas.
 | GitHub | Contribution |
 |--------|-------------|
 | [@Eugeny](https://github.com/Eugeny) | Warpgate v0.29 API compatibility (Kubernetes, RDP, VNC target types) |
+| [@Tchoupinax](https://github.com/Tchoupinax) | WarpgateTargetGroup CRD and Helm RBAC rules |
