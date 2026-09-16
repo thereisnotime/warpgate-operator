@@ -12,6 +12,8 @@ A `WarpgateUser` represents a user account in Warpgate. It supports automatic pa
 | `generatePassword` | `*bool` | No | `true` | Auto-generate a random password and store it in a Kubernetes Secret |
 | `passwordLength` | `*int` | No | `32` | Length of the auto-generated password (min 16, max 128) |
 | `credentialPolicy` | `object` | No | - | Allowed credential types per protocol (see below) |
+| `rateLimitBytesPerSecond` | `int` | No | - | Per-user transfer speed limit; unset uses the global parameter |
+| `allowedIPRanges` | `[]string` | No | - | CIDR ranges the user may log in from; empty allows any |
 
 ### Credential Policy
 
@@ -23,6 +25,11 @@ The `credentialPolicy` field controls which authentication methods are allowed f
 | `credentialPolicy.ssh` | `[]string` | Allowed credential types for SSH (e.g. `PublicKey`, `Password`) |
 | `credentialPolicy.mysql` | `[]string` | Allowed credential types for MySQL |
 | `credentialPolicy.postgres` | `[]string` | Allowed credential types for PostgreSQL |
+| `credentialPolicy.kubernetes` | `[]string` | Allowed credential types for Kubernetes |
+| `credentialPolicy.rdp` | `[]string` | Allowed credential types for RDP |
+| `credentialPolicy.vnc` | `[]string` | Allowed credential types for VNC |
+
+Valid credential types: `Password`, `PublicKey`, `Certificate`, `Totp`, `Sso`, `WebUserApproval`.
 
 ## Status Fields
 

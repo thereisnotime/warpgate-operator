@@ -34,8 +34,8 @@ func TestGetSSHOwnKeys(t *testing.T) {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		_ = json.NewEncoder(w).Encode([]SSHKey{
-			{Kind: "Ed25519", PublicKeyBase64: "AAAAC3NzaC1l..."},
-			{Kind: "RSA", PublicKeyBase64: "AAAAB3NzaC1y..."},
+			{ID: "k1", Label: "default", Kind: "Ed25519", PublicKey: "ssh-ed25519 AAAAC3NzaC1l...", IsDefault: true},
+			{ID: "k2", Label: "legacy", Kind: "Rsa", PublicKey: "ssh-rsa AAAAB3NzaC1y..."},
 		})
 	}))
 	defer srv.Close()

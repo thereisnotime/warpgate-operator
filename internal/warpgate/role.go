@@ -6,11 +6,13 @@ type Role struct {
 	ID          string `json:"id,omitempty"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+	IsDefault   bool   `json:"is_default"`
 }
 
 type RoleCreateRequest struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+	IsDefault   bool   `json:"is_default"`
 }
 
 func (c *Client) CreateRole(req RoleCreateRequest) (*Role, error) {

@@ -9,6 +9,7 @@ A `WarpgateRole` represents a role in Warpgate. Roles are used to group access p
 | `connectionRef` | `string` | Yes | - | Name of the `WarpgateConnection` CR in the same namespace |
 | `name` | `string` | Yes | - | Role name in Warpgate |
 | `description` | `string` | No | `""` | Human-readable description |
+| `isDefault` | `bool` | No | `false` | Grant this role to every newly created user |
 
 ## Status Fields
 

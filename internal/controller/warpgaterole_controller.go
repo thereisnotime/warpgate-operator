@@ -101,6 +101,7 @@ func (r *WarpgateRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	roleReq := warpgate.RoleCreateRequest{
 		Name:        role.Spec.Name,
 		Description: role.Spec.Description,
+		IsDefault:   role.Spec.IsDefault,
 	}
 
 	if role.Status.ExternalID == "" {

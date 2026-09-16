@@ -56,7 +56,7 @@ func TestCreateHTTPTarget(t *testing.T) {
 	opts, _ := MarshalOptions(HTTPOptions{
 		Kind:    "Http",
 		URL:     "https://internal.example.com",
-		TLS:     &TLSConfig{Mode: "Required", Verify: true},
+		TLS:     TLSConfig{Mode: "Required", Verify: true},
 		Headers: map[string]string{"X-Custom": "value"},
 	})
 
@@ -88,7 +88,7 @@ func TestCreateMySQLTarget(t *testing.T) {
 		Host:     "db.example.com",
 		Port:     3306,
 		Username: "app",
-		Password: "dbpass",
+		Auth:     DatabaseAuth{Kind: "Password", Password: "dbpass"},
 	})
 
 	c := NewTestClient(srv.URL)
@@ -120,7 +120,7 @@ func TestCreatePostgresTarget(t *testing.T) {
 		Port:            5432,
 		Username:        "admin",
 		ProtocolVersion: "3.0",
-		TLS:             &TLSConfig{Mode: "Preferred", Verify: false},
+		TLS:             TLSConfig{Mode: "Preferred", Verify: false},
 	})
 
 	c := NewTestClient(srv.URL)

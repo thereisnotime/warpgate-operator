@@ -4,10 +4,13 @@ import "fmt"
 
 type Ticket struct {
 	ID          string `json:"id"`
+	UserID      string `json:"user_id,omitempty"`
 	Username    string `json:"username,omitempty"`
 	Description string `json:"description,omitempty"`
+	TargetID    string `json:"target_id,omitempty"`
 	Target      string `json:"target,omitempty"`
-	UsesLeft    string `json:"uses_left,omitempty"`
+	UsesLeft    *int   `json:"uses_left,omitempty"`
+	SelfService bool   `json:"self_service,omitempty"`
 	Expiry      string `json:"expiry,omitempty"`
 	Created     string `json:"created,omitempty"`
 }
@@ -19,7 +22,9 @@ type TicketAndSecret struct {
 
 type TicketCreateRequest struct {
 	Username     string `json:"username,omitempty"`
+	UserID       string `json:"user_id,omitempty"`
 	TargetName   string `json:"target_name,omitempty"`
+	TargetID     string `json:"target_id,omitempty"`
 	Expiry       string `json:"expiry,omitempty"`
 	NumberOfUses *int   `json:"number_of_uses,omitempty"`
 	Description  string `json:"description,omitempty"`

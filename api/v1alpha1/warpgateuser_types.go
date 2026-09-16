@@ -21,11 +21,15 @@ import (
 )
 
 // CredentialPolicySpec defines allowed credential types per protocol.
+// Valid entries: Password, PublicKey, Certificate, Totp, Sso, WebUserApproval.
 type CredentialPolicySpec struct {
-	HTTP     []string `json:"http,omitempty"`
-	SSH      []string `json:"ssh,omitempty"`
-	MySQL    []string `json:"mysql,omitempty"`
-	Postgres []string `json:"postgres,omitempty"`
+	HTTP       []string `json:"http,omitempty"`
+	SSH        []string `json:"ssh,omitempty"`
+	MySQL      []string `json:"mysql,omitempty"`
+	Postgres   []string `json:"postgres,omitempty"`
+	Kubernetes []string `json:"kubernetes,omitempty"`
+	VNC        []string `json:"vnc,omitempty"`
+	RDP        []string `json:"rdp,omitempty"`
 }
 
 // WarpgateUserSpec defines the desired state of WarpgateUser.
@@ -42,6 +46,13 @@ type WarpgateUserSpec struct {
 	// credentialPolicy defines allowed credential types per protocol.
 	// +optional
 	CredentialPolicy *CredentialPolicySpec `json:"credentialPolicy,omitempty"`
+	// rateLimitBytesPerSecond limits this user's transfer speed. Unset means the global default.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	RateLimitBytesPerSecond *int64 `json:"rateLimitBytesPerSecond,omitempty"`
+	// allowedIPRanges restricts logins to these CIDR ranges. Empty allows any source.
+	// +optional
+	AllowedIPRanges []string `json:"allowedIPRanges,omitempty"`
 	// generatePassword when true (the default) auto-generates a random password
 	// credential for this user and stores it in a Kubernetes Secret named
 	// <cr-name>-password in the same namespace. Set to false to skip.

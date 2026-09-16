@@ -144,9 +144,11 @@ func (r *WarpgateUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	} else {
 		// Update the existing user in Warpgate.
 		updateReq := warpgate.UserUpdateRequest{
-			Username:         user.Spec.Username,
-			Description:      user.Spec.Description,
-			CredentialPolicy: toWarpgateCredentialPolicy(user.Spec.CredentialPolicy),
+			Username:                user.Spec.Username,
+			Description:             user.Spec.Description,
+			CredentialPolicy:        toWarpgateCredentialPolicy(user.Spec.CredentialPolicy),
+			RateLimitBytesPerSecond: user.Spec.RateLimitBytesPerSecond,
+			AllowedIPRanges:         user.Spec.AllowedIPRanges,
 		}
 		if _, err := wgClient.UpdateUser(user.Status.ExternalID, updateReq); err != nil {
 			if warpgate.IsNotFound(err) {
@@ -206,10 +208,13 @@ func toWarpgateCredentialPolicy(spec *warpgatev1alpha1.CredentialPolicySpec) *wa
 		return nil
 	}
 	return &warpgate.CredentialPolicy{
-		HTTP:     spec.HTTP,
-		SSH:      spec.SSH,
-		MySQL:    spec.MySQL,
-		Postgres: spec.Postgres,
+		HTTP:       spec.HTTP,
+		SSH:        spec.SSH,
+		MySQL:      spec.MySQL,
+		Postgres:   spec.Postgres,
+		Kubernetes: spec.Kubernetes,
+		VNC:        spec.VNC,
+		RDP:        spec.RDP,
 	}
 }
 

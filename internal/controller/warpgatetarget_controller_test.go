@@ -679,7 +679,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			Expect(opts["host"]).To(Equal("db.example.com"))
 			Expect(opts["port"]).To(BeNumerically("==", 3306))
 			Expect(opts["username"]).To(Equal("root"))
-			Expect(opts["password"]).To(Equal("mysql-root-pw"))
+			Expect(opts["auth"]).To(Equal(map[string]any{"kind": "Password", "password": "mysql-root-pw"}))
 
 			tlsCfg, ok := opts["tls"].(map[string]any)
 			Expect(ok).To(BeTrue())
@@ -802,7 +802,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			Expect(opts["port"]).To(BeNumerically("==", 5432))
 			Expect(opts["username"]).To(Equal("postgres"))
 			Expect(opts["protocol_version"]).To(Equal("3.0"))
-			Expect(opts["password"]).To(Equal("pg-secret-pw"))
+			Expect(opts["auth"]).To(Equal(map[string]any{"kind": "Password", "password": "pg-secret-pw"}))
 
 			tlsCfg, ok := opts["tls"].(map[string]any)
 			Expect(ok).To(BeTrue())
@@ -2238,9 +2238,11 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			Expect(json.Unmarshal(body, &req)).To(Succeed())
 			Expect(req).NotTo(HaveKey("rate_limit_bytes_per_second"))
 			Expect(req).NotTo(HaveKey("ticket_max_duration_seconds"))
-			Expect(req).NotTo(HaveKey("ticket_requests_disabled"))
-			Expect(req).NotTo(HaveKey("ticket_require_approval"))
 			Expect(req).NotTo(HaveKey("ticket_max_uses"))
+			// The access gates are required by the API on every write.
+			Expect(req).To(HaveKeyWithValue("ticket_requests_disabled", false))
+			Expect(req).To(HaveKeyWithValue("ticket_require_approval", false))
+			Expect(req).To(HaveKeyWithValue("require_approval", false))
 		})
 	})
 
@@ -2385,6 +2387,606 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(readyCond.Reason).To(Equal("BuildError"))
+		})
+	})
+
+	Context("Kubernetes target with Token auth", func() {
+		var (
+			mockServer   *httptest.Server
+			namespace    = testNamespace
+			secretName   = "wg-token-target-k8stoken"
+			connName     = "wg-conn-target-k8stoken"
+			tokenSecret  = "k8s-token-secret"
+			targetName   = "target-k8stoken-test"
+			capturedBody []byte
+			mu           sync.Mutex
+		)
+
+		BeforeEach(func() {
+			capturedBody = nil
+
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					mu.Lock()
+					capturedBody, _ = io.ReadAll(r.Body)
+					mu.Unlock()
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":      "target-k8stoken-001",
+						"name":    "my-k8s-target",
+						"options": json.RawMessage(`{"kind":"Kubernetes"}`),
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+
+			sec := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: tokenSecret, Namespace: namespace},
+				Data:       map[string][]byte{"token": []byte("sa-token-abc123")},
+			}
+			Expect(k8sClient.Create(ctx, sec)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+			sec := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: tokenSecret, Namespace: namespace}, sec); err == nil {
+				_ = k8sClient.Delete(ctx, sec)
+			}
+		})
+
+		It("should send Kubernetes options with Token auth to the API", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-k8s-target",
+					Kubernetes: &warpgatev1alpha1.KubernetesTargetSpec{
+						ClusterURL: "https://k8s.example.com:6443",
+						AuthKind:   "Token",
+						TokenSecretRef: &warpgatev1alpha1.SecretKeyRef{
+							Name: tokenSecret,
+							Key:  "token",
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(Equal("target-k8stoken-001"))
+
+			mu.Lock()
+			body := capturedBody
+			mu.Unlock()
+			Expect(body).NotTo(BeNil())
+
+			var req map[string]json.RawMessage
+			Expect(json.Unmarshal(body, &req)).To(Succeed())
+			var opts map[string]any
+			Expect(json.Unmarshal(req["options"], &opts)).To(Succeed())
+			Expect(opts["kind"]).To(Equal("Kubernetes"))
+			Expect(opts["cluster_url"]).To(Equal("https://k8s.example.com:6443"))
+			auth, ok := opts["auth"].(map[string]any)
+			Expect(ok).To(BeTrue())
+			Expect(auth["kind"]).To(Equal("Token"))
+			Expect(auth["token"]).To(Equal("sa-token-abc123"))
+		})
+
+		It("should set Ready=False with BuildError when the token secret is missing", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-k8s-target-nosec",
+					Kubernetes: &warpgatev1alpha1.KubernetesTargetSpec{
+						ClusterURL: "https://k8s.example.com:6443",
+						AuthKind:   "Token",
+						TokenSecretRef: &warpgatev1alpha1.SecretKeyRef{
+							Name: "nonexistent-token-secret",
+							Key:  "token",
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var fetched warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &fetched)).To(Succeed())
+			readyCond := findReadyCondition(fetched.Status.Conditions)
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("BuildError"))
+		})
+	})
+
+	Context("Kubernetes target with Certificate auth", func() {
+		var (
+			mockServer   *httptest.Server
+			namespace    = testNamespace
+			secretName   = "wg-token-target-k8scert"
+			connName     = "wg-conn-target-k8scert"
+			certSecret   = "k8s-cert-secret"
+			keySecret    = "k8s-key-secret"
+			targetName   = "target-k8scert-test"
+			capturedBody []byte
+			mu           sync.Mutex
+		)
+
+		BeforeEach(func() {
+			capturedBody = nil
+
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					mu.Lock()
+					capturedBody, _ = io.ReadAll(r.Body)
+					mu.Unlock()
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":      "target-k8scert-001",
+						"name":    "my-k8s-cert-target",
+						"options": json.RawMessage(`{"kind":"Kubernetes"}`),
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+
+			cs := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: certSecret, Namespace: namespace},
+				Data:       map[string][]byte{"certificate": []byte("-----BEGIN CERTIFICATE-----\ncert-data\n-----END CERTIFICATE-----")},
+			}
+			Expect(k8sClient.Create(ctx, cs)).To(Succeed())
+			ks := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: keySecret, Namespace: namespace},
+				Data:       map[string][]byte{"private_key": []byte("-----BEGIN EC PRIVATE KEY-----\nkey-data\n-----END EC PRIVATE KEY-----")},
+			}
+			Expect(k8sClient.Create(ctx, ks)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+			for _, name := range []string{certSecret, keySecret} {
+				sec := &corev1.Secret{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, sec); err == nil {
+					_ = k8sClient.Delete(ctx, sec)
+				}
+			}
+		})
+
+		It("should send Certificate auth fields to the API", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-k8s-cert-target",
+					Kubernetes: &warpgatev1alpha1.KubernetesTargetSpec{
+						ClusterURL: "https://k8s.example.com:6443",
+						AuthKind:   "Certificate",
+						CertificateSecretRef: &warpgatev1alpha1.SecretKeyRef{
+							Name: certSecret,
+							Key:  "certificate",
+						},
+						PrivateKeySecretRef: &warpgatev1alpha1.SecretKeyRef{
+							Name: keySecret,
+							Key:  "private_key",
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(Equal("target-k8scert-001"))
+
+			mu.Lock()
+			body := capturedBody
+			mu.Unlock()
+			Expect(body).NotTo(BeNil())
+
+			var req map[string]json.RawMessage
+			Expect(json.Unmarshal(body, &req)).To(Succeed())
+			var opts map[string]any
+			Expect(json.Unmarshal(req["options"], &opts)).To(Succeed())
+			Expect(opts["kind"]).To(Equal("Kubernetes"))
+			auth, ok := opts["auth"].(map[string]any)
+			Expect(ok).To(BeTrue())
+			Expect(auth["kind"]).To(Equal("Certificate"))
+			Expect(auth["certificate"]).NotTo(BeEmpty())
+			Expect(auth["private_key"]).NotTo(BeEmpty())
+		})
+	})
+
+	Context("RDP target without password", func() {
+		var (
+			mockServer   *httptest.Server
+			namespace    = testNamespace
+			secretName   = "wg-token-target-rdpnopw"
+			connName     = "wg-conn-target-rdpnopw"
+			targetName   = "target-rdpnopw-test"
+			capturedBody []byte
+			mu           sync.Mutex
+		)
+
+		BeforeEach(func() {
+			capturedBody = nil
+
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					mu.Lock()
+					capturedBody, _ = io.ReadAll(r.Body)
+					mu.Unlock()
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":      "target-rdpnopw-001",
+						"name":    "my-rdp-target",
+						"options": json.RawMessage(`{"kind":"Rdp"}`),
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+		})
+
+		It("should send RDP options with defaults when no password secret is set", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-rdp-target",
+					RDP: &warpgatev1alpha1.RDPTargetSpec{
+						Host:     "10.0.0.50",
+						Port:     3389,
+						Username: "Administrator",
+						Domain:   "CORP",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(Equal("target-rdpnopw-001"))
+
+			mu.Lock()
+			body := capturedBody
+			mu.Unlock()
+			Expect(body).NotTo(BeNil())
+
+			var req map[string]json.RawMessage
+			Expect(json.Unmarshal(body, &req)).To(Succeed())
+			var opts map[string]any
+			Expect(json.Unmarshal(req["options"], &opts)).To(Succeed())
+			Expect(opts["kind"]).To(Equal("Rdp"))
+			Expect(opts["host"]).To(Equal("10.0.0.50"))
+			Expect(opts["port"]).To(BeEquivalentTo(3389))
+			Expect(opts["username"]).To(Equal("Administrator"))
+			Expect(opts["domain"]).To(Equal("CORP"))
+			Expect(opts["compression"]).To(Equal("remotefx"))
+			Expect(opts["tls_security"]).To(Equal("Tls12"))
+			auth, ok := opts["auth"].(map[string]any)
+			Expect(ok).To(BeTrue())
+			Expect(auth["kind"]).To(Equal("Password"))
+			Expect(auth["password"]).To(Or(BeNil(), Equal("")))
+		})
+	})
+
+	Context("RDP target with password secret", func() {
+		var (
+			mockServer   *httptest.Server
+			namespace    = testNamespace
+			secretName   = "wg-token-target-rdppw"
+			connName     = "wg-conn-target-rdppw"
+			pwSecretName = "rdp-pw-secret"
+			targetName   = "target-rdppw-test"
+			capturedBody []byte
+			mu           sync.Mutex
+		)
+
+		BeforeEach(func() {
+			capturedBody = nil
+
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					mu.Lock()
+					capturedBody, _ = io.ReadAll(r.Body)
+					mu.Unlock()
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":      "target-rdppw-001",
+						"name":    "my-rdppw-target",
+						"options": json.RawMessage(`{"kind":"Rdp"}`),
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+
+			sec := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: pwSecretName, Namespace: namespace},
+				Data:       map[string][]byte{"password": []byte("s3cr3t-rdp-pw")},
+			}
+			Expect(k8sClient.Create(ctx, sec)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+			sec := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: pwSecretName, Namespace: namespace}, sec); err == nil {
+				_ = k8sClient.Delete(ctx, sec)
+			}
+		})
+
+		It("should send the RDP password from the secret to the API", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-rdppw-target",
+					RDP: &warpgatev1alpha1.RDPTargetSpec{
+						Host:     "10.0.0.51",
+						Port:     3389,
+						Username: "Administrator",
+						PasswordSecretRef: &warpgatev1alpha1.SecretKeyRef{
+							Name: pwSecretName,
+							Key:  "password",
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(Equal("target-rdppw-001"))
+
+			mu.Lock()
+			body := capturedBody
+			mu.Unlock()
+			Expect(body).NotTo(BeNil())
+
+			var req map[string]json.RawMessage
+			Expect(json.Unmarshal(body, &req)).To(Succeed())
+			var opts map[string]any
+			Expect(json.Unmarshal(req["options"], &opts)).To(Succeed())
+			Expect(opts["kind"]).To(Equal("Rdp"))
+			auth, ok := opts["auth"].(map[string]any)
+			Expect(ok).To(BeTrue())
+			Expect(auth["kind"]).To(Equal("Password"))
+			Expect(auth["password"]).To(Equal("s3cr3t-rdp-pw"))
+		})
+	})
+
+	Context("VNC target without password", func() {
+		var (
+			mockServer   *httptest.Server
+			namespace    = testNamespace
+			secretName   = "wg-token-target-vncnopw"
+			connName     = "wg-conn-target-vncnopw"
+			targetName   = "target-vncnopw-test"
+			capturedBody []byte
+			mu           sync.Mutex
+		)
+
+		BeforeEach(func() {
+			capturedBody = nil
+
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					mu.Lock()
+					capturedBody, _ = io.ReadAll(r.Body)
+					mu.Unlock()
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":      "target-vncnopw-001",
+						"name":    "my-vnc-target",
+						"options": json.RawMessage(`{"kind":"Vnc"}`),
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+		})
+
+		It("should send VNC options with auth.kind None when no password secret is set", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-vnc-target",
+					VNC: &warpgatev1alpha1.VNCTargetSpec{
+						Host: "10.0.0.60",
+						Port: 5900,
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(Equal("target-vncnopw-001"))
+
+			mu.Lock()
+			body := capturedBody
+			mu.Unlock()
+			Expect(body).NotTo(BeNil())
+
+			var req map[string]json.RawMessage
+			Expect(json.Unmarshal(body, &req)).To(Succeed())
+			var opts map[string]any
+			Expect(json.Unmarshal(req["options"], &opts)).To(Succeed())
+			Expect(opts["kind"]).To(Equal("Vnc"))
+			Expect(opts["host"]).To(Equal("10.0.0.60"))
+			Expect(opts["port"]).To(BeEquivalentTo(5900))
+			auth, ok := opts["auth"].(map[string]any)
+			Expect(ok).To(BeTrue())
+			Expect(auth["kind"]).To(Equal("None"))
+		})
+	})
+
+	Context("VNC target with password secret", func() {
+		var (
+			mockServer   *httptest.Server
+			namespace    = testNamespace
+			secretName   = "wg-token-target-vncpw"
+			connName     = "wg-conn-target-vncpw"
+			pwSecretName = "vnc-pw-secret"
+			targetName   = "target-vncpw-test"
+			capturedBody []byte
+			mu           sync.Mutex
+		)
+
+		BeforeEach(func() {
+			capturedBody = nil
+
+			mux := http.NewServeMux()
+			mockLogin(mux)
+			mux.HandleFunc("/@warpgate/admin/api/targets", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					mu.Lock()
+					capturedBody, _ = io.ReadAll(r.Body)
+					mu.Unlock()
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"id":      "target-vncpw-001",
+						"name":    "my-vncpw-target",
+						"options": json.RawMessage(`{"kind":"Vnc"}`),
+					})
+					return
+				}
+				http.NotFound(w, r)
+			})
+			mockServer = httptest.NewServer(mux)
+			setupConnection(namespace, secretName, connName, mockServer.URL)
+
+			sec := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: pwSecretName, Namespace: namespace},
+				Data:       map[string][]byte{"password": []byte("vnc-pw-secret-val")},
+			}
+			Expect(k8sClient.Create(ctx, sec)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			mockServer.Close()
+			cleanupTarget(namespace, targetName)
+			cleanupConnection(namespace, secretName, connName)
+			sec := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: pwSecretName, Namespace: namespace}, sec); err == nil {
+				_ = k8sClient.Delete(ctx, sec)
+			}
+		})
+
+		It("should send VNC options with auth.kind Password and the secret value", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: connName,
+					Name:          "my-vncpw-target",
+					VNC: &warpgatev1alpha1.VNCTargetSpec{
+						Host: "10.0.0.61",
+						Port: 5900,
+						PasswordSecretRef: &warpgatev1alpha1.SecretKeyRef{
+							Name: pwSecretName,
+							Key:  "password",
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+
+			nn := types.NamespacedName{Name: targetName, Namespace: namespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+			Expect(updated.Status.ExternalID).To(Equal("target-vncpw-001"))
+
+			mu.Lock()
+			body := capturedBody
+			mu.Unlock()
+			Expect(body).NotTo(BeNil())
+
+			var req map[string]json.RawMessage
+			Expect(json.Unmarshal(body, &req)).To(Succeed())
+			var opts map[string]any
+			Expect(json.Unmarshal(req["options"], &opts)).To(Succeed())
+			Expect(opts["kind"]).To(Equal("Vnc"))
+			auth, ok := opts["auth"].(map[string]any)
+			Expect(ok).To(BeTrue())
+			Expect(auth["kind"]).To(Equal("Password"))
+			Expect(auth["password"]).To(Equal("vnc-pw-secret-val"))
 		})
 	})
 })

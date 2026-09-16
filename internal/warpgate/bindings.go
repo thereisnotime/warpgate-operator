@@ -4,6 +4,12 @@ import "fmt"
 
 // UserRole binding operations.
 
+// UserRoleExpiry is the body of the add/update user-role calls. A nil ExpiresAt
+// makes the assignment permanent.
+type UserRoleExpiry struct {
+	ExpiresAt *string `json:"expires_at"` // RFC 3339
+}
+
 func (c *Client) CreateUserRole(userID, roleID string) error {
 	resp, err := c.doRequest("POST", fmt.Sprintf("/users/%s/roles/%s", userID, roleID), nil)
 	if err != nil {
@@ -17,6 +23,11 @@ func (c *Client) CreateUserRole(userID, roleID string) error {
 		return &APIError{StatusCode: resp.StatusCode, Body: "failed to create user-role binding"}
 	}
 	return nil
+}
+
+// UpdateUserRole sets or clears the expiry of an existing user-role assignment.
+func (c *Client) UpdateUserRole(userID, roleID string, expiresAt *string) error {
+	return c.Put(fmt.Sprintf("/users/%s/roles/%s", userID, roleID), UserRoleExpiry{ExpiresAt: expiresAt}, nil)
 }
 
 func (c *Client) DeleteUserRole(userID, roleID string) error {
