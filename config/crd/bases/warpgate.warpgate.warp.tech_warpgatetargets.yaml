@@ -97,10 +97,101 @@ spec:
                 required:
                 - url
                 type: object
+              kubernetes:
+                description: kubernetes configures a Kubernetes target. Exactly one
+                  target type must be set.
+                properties:
+                  authKind:
+                    description: authKind is the cluster authentication method.
+                    enum:
+                    - Token
+                    - Certificate
+                    - IamRole
+                    type: string
+                  certificateSecretRef:
+                    description: certificateSecretRef references a Secret containing
+                      the PEM client certificate (for Certificate auth).
+                    properties:
+                      key:
+                        description: |-
+                          key is the key within the Secret. Defaults to "password" for password refs.
+                          Unused by tokenSecretRef (which always reads "username" and "password" keys).
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  clusterURL:
+                    description: clusterURL is the Kubernetes API server URL.
+                    type: string
+                  privateKeySecretRef:
+                    description: privateKeySecretRef references a Secret containing
+                      the PEM client private key (for Certificate auth).
+                    properties:
+                      key:
+                        description: |-
+                          key is the key within the Secret. Defaults to "password" for password refs.
+                          Unused by tokenSecretRef (which always reads "username" and "password" keys).
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  tls:
+                    description: tls configures TLS settings for the API server connection.
+                    properties:
+                      mode:
+                        description: 'mode is the TLS mode: Disabled, Preferred, or
+                          Required.'
+                        enum:
+                        - Disabled
+                        - Preferred
+                        - Required
+                        type: string
+                      verify:
+                        description: verify enables TLS certificate verification.
+                        type: boolean
+                    required:
+                    - mode
+                    type: object
+                  tokenSecretRef:
+                    description: tokenSecretRef references a Secret containing the
+                      bearer token (for Token auth).
+                    properties:
+                      key:
+                        description: |-
+                          key is the key within the Secret. Defaults to "password" for password refs.
+                          Unused by tokenSecretRef (which always reads "username" and "password" keys).
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - name
+                    type: object
+                required:
+                - authKind
+                - clusterURL
+                type: object
               mysql:
                 description: mysql configures a MySQL target. Exactly one target type
                   must be set.
                 properties:
+                  authKind:
+                    description: authKind is the database authentication method. Defaults
+                      to Password.
+                    enum:
+                    - Password
+                    - IamRole
+                    type: string
+                  defaultDatabaseName:
+                    description: defaultDatabaseName is the database shown in connection
+                      instructions.
+                    type: string
                   host:
                     description: host is the hostname or IP of the MySQL server.
                     type: string
@@ -154,8 +245,23 @@ spec:
                 description: postgresql configures a PostgreSQL target. Exactly one
                   target type must be set.
                 properties:
+                  authKind:
+                    description: authKind is the database authentication method. Defaults
+                      to Password.
+                    enum:
+                    - Password
+                    - IamRole
+                    type: string
+                  defaultDatabaseName:
+                    description: defaultDatabaseName is the database shown in connection
+                      instructions.
+                    type: string
                   host:
                     description: host is the hostname or IP of the PostgreSQL server.
+                    type: string
+                  idleTimeout:
+                    description: idleTimeout closes idle target connections after
+                      this duration (e.g. "5m").
                     type: string
                   passwordSecretRef:
                     description: passwordSecretRef references a Secret containing
@@ -177,7 +283,7 @@ spec:
                     type: integer
                   protocolVersion:
                     description: protocolVersion is the PostgreSQL protocol version
-                      used for the target connection.
+                      used for the target connection. Defaults to 3.2.
                     pattern: ^3\.(0|2)$
                     type: string
                   tls:
@@ -210,6 +316,69 @@ spec:
                   per second. Zero means unlimited.
                 format: int64
                 type: integer
+              rdp:
+                description: rdp configures an RDP target. Exactly one target type
+                  must be set.
+                properties:
+                  compression:
+                    description: 'compression is the codec: remotefx (default) or
+                      lossless.'
+                    enum:
+                    - remotefx
+                    - lossless
+                    type: string
+                  domain:
+                    description: domain is the Windows logon domain.
+                    type: string
+                  host:
+                    description: host is the hostname or IP of the RDP server.
+                    type: string
+                  interactiveLogon:
+                    description: interactiveLogon shows the target's own sign-in screen
+                      instead of logging on automatically.
+                    type: boolean
+                  passwordSecretRef:
+                    description: passwordSecretRef references a Secret containing
+                      the RDP password.
+                    properties:
+                      key:
+                        description: |-
+                          key is the key within the Secret. Defaults to "password" for password refs.
+                          Unused by tokenSecretRef (which always reads "username" and "password" keys).
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  port:
+                    description: port is the RDP port.
+                    type: integer
+                  tlsSecurity:
+                    description: tlsSecurity is the TLS profile for the target connection.
+                      Defaults to Tls12.
+                    enum:
+                    - Tls12
+                    - Tls12WithLegacyCiphers
+                    - Tls10Unsafe
+                    type: string
+                  username:
+                    description: username is the RDP username.
+                    type: string
+                  verifyTLS:
+                    description: verifyTLS verifies the RDP server certificate against
+                      the system root store.
+                    type: boolean
+                required:
+                - host
+                - port
+                - username
+                type: object
+              requireApproval:
+                description: requireApproval requires admin approval before any session
+                  to this target starts.
+                type: boolean
               ssh:
                 description: ssh configures an SSH target. Exactly one target type
                   must be set.
@@ -223,6 +392,7 @@ spec:
                     enum:
                     - Password
                     - PublicKey
+                    - IamRole
                     type: string
                   host:
                     description: host is the hostname or IP of the SSH target.
@@ -231,6 +401,11 @@ spec:
                     description: |-
                       jumpHostRef is the name of another WarpgateTarget (in the same namespace) to use as an SSH jump host.
                       The referenced target must be an SSH target and must already be synced (have an ExternalID).
+                    type: string
+                  keyID:
+                    description: |-
+                      keyID is the UUID of a stored Warpgate SSH client key to authenticate with (for PublicKey auth).
+                      Empty uses the keys marked default in Warpgate.
                     type: string
                   passwordSecretRef:
                     description: passwordSecretRef references a Secret containing
@@ -274,9 +449,38 @@ spec:
                   target.
                 type: boolean
               ticketRequireApproval:
-                description: ticketRequireApproval requires approval before a ticket
-                  session starts.
+                description: ticketRequireApproval requires admin approval of ticket
+                  requests for this target.
                 type: boolean
+              vnc:
+                description: vnc configures a VNC target. Exactly one target type
+                  must be set.
+                properties:
+                  host:
+                    description: host is the hostname or IP of the VNC server.
+                    type: string
+                  passwordSecretRef:
+                    description: passwordSecretRef references a Secret containing
+                      the VNC password. Omit for no authentication.
+                    properties:
+                      key:
+                        description: |-
+                          key is the key within the Secret. Defaults to "password" for password refs.
+                          Unused by tokenSecretRef (which always reads "username" and "password" keys).
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  port:
+                    description: port is the VNC port.
+                    type: integer
+                required:
+                - host
+                - port
+                type: object
             required:
             - connectionRef
             - name

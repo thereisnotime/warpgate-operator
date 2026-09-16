@@ -9,6 +9,7 @@ A `WarpgateUserRole` binds a Warpgate user to a Warpgate role. This is the mecha
 | `connectionRef` | `string` | Yes | - | Name of the `WarpgateConnection` CR in the same namespace |
 | `username` | `string` | Yes | - | Warpgate username to bind |
 | `roleName` | `string` | Yes | - | Warpgate role name to bind |
+| `expiresAt` | `string` | No | - | RFC 3339 time after which the binding is revoked; unset means permanent. Enforced on every reconcile |
 
 ## Status Fields
 

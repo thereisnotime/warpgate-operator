@@ -78,6 +78,14 @@ func (d *WarpgateTargetCustomDefaulter) Default(ctx context.Context, target *War
 		}
 	}
 
+	if target.Spec.RDP != nil && target.Spec.RDP.Port == 0 {
+		target.Spec.RDP.Port = 3389
+	}
+
+	if target.Spec.VNC != nil && target.Spec.VNC.Port == 0 {
+		target.Spec.VNC.Port = 5900
+	}
+
 	// Default TLS mode to defaultTLSMode for HTTP, MySQL, and PostgreSQL targets.
 	if target.Spec.HTTP != nil && target.Spec.HTTP.TLS != nil && target.Spec.HTTP.TLS.Mode == "" {
 		target.Spec.HTTP.TLS.Mode = defaultTLSMode
@@ -87,6 +95,9 @@ func (d *WarpgateTargetCustomDefaulter) Default(ctx context.Context, target *War
 	}
 	if target.Spec.PostgreSQL != nil && target.Spec.PostgreSQL.TLS != nil && target.Spec.PostgreSQL.TLS.Mode == "" {
 		target.Spec.PostgreSQL.TLS.Mode = defaultTLSMode
+	}
+	if target.Spec.Kubernetes != nil && target.Spec.Kubernetes.TLS != nil && target.Spec.Kubernetes.TLS.Mode == "" {
+		target.Spec.Kubernetes.TLS.Mode = defaultTLSMode
 	}
 
 	return nil
@@ -138,10 +149,19 @@ func validateWarpgateTarget(target *WarpgateTarget) error {
 	if target.Spec.PostgreSQL != nil {
 		count++
 	}
+	if target.Spec.Kubernetes != nil {
+		count++
+	}
+	if target.Spec.RDP != nil {
+		count++
+	}
+	if target.Spec.VNC != nil {
+		count++
+	}
 	if count == 0 {
-		allErrs = append(allErrs, field.Required(specPath, "exactly one of ssh, http, mysql, or postgresql must be set"))
+		allErrs = append(allErrs, field.Required(specPath, "exactly one of ssh, http, mysql, postgresql, kubernetes, rdp, or vnc must be set"))
 	} else if count > 1 {
-		allErrs = append(allErrs, field.Forbidden(specPath, "only one of ssh, http, mysql, or postgresql may be set"))
+		allErrs = append(allErrs, field.Forbidden(specPath, "only one of ssh, http, mysql, postgresql, kubernetes, rdp, or vnc may be set"))
 	}
 
 	// Type-specific validation.
@@ -156,6 +176,18 @@ func validateWarpgateTarget(target *WarpgateTarget) error {
 	}
 	if target.Spec.PostgreSQL != nil {
 		allErrs = append(allErrs, validatePostgreSQLTarget(target.Spec.PostgreSQL, specPath.Child("postgresql"))...)
+	}
+	if target.Spec.Kubernetes != nil {
+		allErrs = append(allErrs, validateKubernetesTarget(target.Spec.Kubernetes, specPath.Child("kubernetes"))...)
+	}
+	if target.Spec.RDP != nil {
+		allErrs = append(allErrs, validateHostPortUsername(target.Spec.RDP.Host, target.Spec.RDP.Port, target.Spec.RDP.Username, specPath.Child("rdp"))...)
+	}
+	if target.Spec.VNC != nil {
+		allErrs = append(allErrs, validateTargetPort(target.Spec.VNC.Port, specPath.Child("vnc"))...)
+		if target.Spec.VNC.Host == "" {
+			allErrs = append(allErrs, field.Required(specPath.Child("vnc", "host"), "host must not be empty"))
+		}
 	}
 
 	if len(allErrs) == 0 {
@@ -175,8 +207,41 @@ func validateSSHTarget(ssh *SSHTargetSpec, fldPath *field.Path) field.ErrorList 
 	if ssh.Username == "" {
 		errs = append(errs, field.Required(fldPath.Child("username"), "username must not be empty"))
 	}
-	if ssh.AuthKind != "Password" && ssh.AuthKind != defaultSSHAuthKind {
-		errs = append(errs, field.NotSupported(fldPath.Child("authKind"), ssh.AuthKind, []string{"Password", defaultSSHAuthKind}))
+	if ssh.AuthKind != "Password" && ssh.AuthKind != defaultSSHAuthKind && ssh.AuthKind != "IamRole" {
+		errs = append(errs, field.NotSupported(fldPath.Child("authKind"), ssh.AuthKind, []string{"Password", defaultSSHAuthKind, "IamRole"}))
+	}
+	return errs
+}
+
+func validateKubernetesTarget(k8s *KubernetesTargetSpec, fldPath *field.Path) field.ErrorList {
+	var errs field.ErrorList
+	if k8s.ClusterURL == "" {
+		errs = append(errs, field.Required(fldPath.Child("clusterURL"), "clusterURL must not be empty"))
+	}
+	if k8s.AuthKind != "Token" && k8s.AuthKind != "Certificate" && k8s.AuthKind != "IamRole" {
+		errs = append(errs, field.NotSupported(fldPath.Child("authKind"), k8s.AuthKind, []string{"Token", "Certificate", "IamRole"}))
+	}
+	if k8s.TLS != nil {
+		errs = append(errs, validateTLS(k8s.TLS, fldPath.Child("tls"))...)
+	}
+	return errs
+}
+
+func validateTargetPort(port int, fldPath *field.Path) field.ErrorList {
+	if port < 1 || port > 65535 {
+		return field.ErrorList{field.Invalid(fldPath.Child("port"), port, "port must be between 1 and 65535")}
+	}
+	return nil
+}
+
+func validateHostPortUsername(host string, port int, username string, fldPath *field.Path) field.ErrorList {
+	var errs field.ErrorList
+	if host == "" {
+		errs = append(errs, field.Required(fldPath.Child("host"), "host must not be empty"))
+	}
+	errs = append(errs, validateTargetPort(port, fldPath)...)
+	if username == "" {
+		errs = append(errs, field.Required(fldPath.Child("username"), "username must not be empty"))
 	}
 	return errs
 }

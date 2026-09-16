@@ -50,18 +50,14 @@ type WarpgateTargetReconciler struct {
 // +kubebuilder:rbac:groups=warpgate.warpgate.warp.tech,resources=warpgatetargetgroups,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
-// Reconcile moves the actual state of the world closer to the desired state
-// described in the WarpgateTarget CR.
 func (r *WarpgateTargetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
-	// Fetch the CR.
 	var target warpgatev1alpha1.WarpgateTarget
 	if err := r.Get(ctx, req.NamespacedName, &target); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Build the Warpgate API client from the referenced connection.
 	wgClient, err := getWarpgateClient(ctx, r.Client, target.Namespace, target.Spec.ConnectionRef)
 	if err != nil {
 		log.Error(err, "unable to build warpgate client")
@@ -72,7 +68,6 @@ func (r *WarpgateTargetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
 	}
 
-	// Handle deletion via finalizer.
 	if !target.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(&target, targetFinalizerName) {
 			if target.Status.ExternalID != "" {
@@ -89,7 +84,6 @@ func (r *WarpgateTargetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	// Add finalizer if it's not present.
 	if !controllerutil.ContainsFinalizer(&target, targetFinalizerName) {
 		controllerutil.AddFinalizer(&target, targetFinalizerName)
 		if err := r.Update(ctx, &target); err != nil {
@@ -97,7 +91,6 @@ func (r *WarpgateTargetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	// Build the TargetRequest from the CR spec.
 	targetReq, targetType, err := r.buildTargetRequest(ctx, &target)
 	if err != nil {
 		log.Error(err, "unable to build target request")
@@ -108,9 +101,7 @@ func (r *WarpgateTargetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
 	}
 
-	// Create or update the target in Warpgate.
 	if target.Status.ExternalID == "" {
-		// Create.
 		created, err := wgClient.CreateTarget(*targetReq)
 		if err != nil {
 			log.Error(err, "unable to create target in warpgate")
@@ -122,11 +113,10 @@ func (r *WarpgateTargetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 		target.Status.ExternalID = created.ID
 	} else {
-		// Update.
 		_, err := wgClient.UpdateTarget(target.Status.ExternalID, *targetReq)
 		if err != nil {
 			if warpgate.IsNotFound(err) {
-				// The target was deleted out-of-band; clear ID and requeue to recreate.
+				// deleted out-of-band; clear ID so next reconcile recreates it
 				log.Info("target not found in warpgate, will recreate", "externalID", target.Status.ExternalID)
 				target.Status.ExternalID = ""
 				r.setCondition(&target, metav1.ConditionFalse, "NotFound", "target was deleted externally, recreating")
@@ -144,7 +134,6 @@ func (r *WarpgateTargetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	// Success.
 	r.setCondition(&target, metav1.ConditionTrue, targetType, "target reconciled successfully")
 	if err := r.Status().Update(ctx, &target); err != nil {
 		log.Error(err, "unable to update status")
@@ -154,113 +143,41 @@ func (r *WarpgateTargetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
 }
 
-// buildTargetRequest converts the CRD spec into a Warpgate API TargetRequest.
-// It returns the request, a human-readable target type string, and any error.
 func (r *WarpgateTargetReconciler) buildTargetRequest(ctx context.Context, target *warpgatev1alpha1.WarpgateTarget) (*warpgate.TargetRequest, string, error) {
 	spec := &target.Spec
+	ns := target.Namespace
+
 	var opts any
 	var targetType string
+	var err error
 
 	switch {
 	case spec.SSH != nil:
 		targetType = "SSH"
-		sshOpts := warpgate.SSHOptions{
-			Kind:               "Ssh",
-			Host:               spec.SSH.Host,
-			Port:               spec.SSH.Port,
-			Username:           spec.SSH.Username,
-			AllowInsecureAlgos: spec.SSH.AllowInsecureAlgos,
-			Auth: warpgate.SSHAuth{
-				Kind: spec.SSH.AuthKind,
-			},
-		}
-		if spec.SSH.AuthKind == "Password" && spec.SSH.PasswordSecretRef != nil {
-			password, err := r.readSecretValue(ctx, target.Namespace, spec.SSH.PasswordSecretRef)
-			if err != nil {
-				return nil, "", fmt.Errorf("reading SSH password secret: %w", err)
-			}
-			sshOpts.Auth.Password = password
-		}
-		if spec.SSH.JumpHostRef != "" {
-			var jumpHostTarget warpgatev1alpha1.WarpgateTarget
-			if err := r.Get(ctx, types.NamespacedName{
-				Namespace: target.Namespace,
-				Name:      spec.SSH.JumpHostRef,
-			}, &jumpHostTarget); err != nil {
-				return nil, "", fmt.Errorf("getting jump host target %q: %w", spec.SSH.JumpHostRef, err)
-			}
-			if jumpHostTarget.Status.ExternalID == "" {
-				return nil, "", fmt.Errorf("jump host target %q not yet synced", spec.SSH.JumpHostRef)
-			}
-			sshOpts.JumpHost = jumpHostTarget.Status.ExternalID
-		}
-		opts = sshOpts
-
+		opts, err = r.buildSSHOptions(ctx, ns, spec.SSH, target)
 	case spec.HTTP != nil:
 		targetType = "HTTP"
-		httpOpts := warpgate.HTTPOptions{
-			Kind:         "Http",
-			URL:          spec.HTTP.URL,
-			Headers:      spec.HTTP.Headers,
-			ExternalHost: spec.HTTP.ExternalHost,
-		}
-		if spec.HTTP.TLS != nil {
-			httpOpts.TLS = &warpgate.TLSConfig{
-				Mode:   spec.HTTP.TLS.Mode,
-				Verify: spec.HTTP.TLS.Verify,
-			}
-		}
-		opts = httpOpts
-
+		opts = r.buildHTTPOptions(spec.HTTP)
 	case spec.MySQL != nil:
 		targetType = "MySQL"
-		mysqlOpts := warpgate.MySQLOptions{
-			Kind:     "MySql",
-			Host:     spec.MySQL.Host,
-			Port:     spec.MySQL.Port,
-			Username: spec.MySQL.Username,
-		}
-		if spec.MySQL.PasswordSecretRef != nil {
-			password, err := r.readSecretValue(ctx, target.Namespace, spec.MySQL.PasswordSecretRef)
-			if err != nil {
-				return nil, "", fmt.Errorf("reading MySQL password secret: %w", err)
-			}
-			mysqlOpts.Password = password
-		}
-		if spec.MySQL.TLS != nil {
-			mysqlOpts.TLS = &warpgate.TLSConfig{
-				Mode:   spec.MySQL.TLS.Mode,
-				Verify: spec.MySQL.TLS.Verify,
-			}
-		}
-		opts = mysqlOpts
-
+		opts, err = r.buildMySQLOptions(ctx, ns, spec.MySQL)
 	case spec.PostgreSQL != nil:
 		targetType = "PostgreSQL"
-		pgOpts := warpgate.PostgresOptions{
-			Kind:            "Postgres",
-			Host:            spec.PostgreSQL.Host,
-			Port:            spec.PostgreSQL.Port,
-			Username:        spec.PostgreSQL.Username,
-			ProtocolVersion: spec.PostgreSQL.ProtocolVersion,
-		}
-		if spec.PostgreSQL.PasswordSecretRef != nil {
-			password, err := r.readSecretValue(ctx, target.Namespace, spec.PostgreSQL.PasswordSecretRef)
-			if err != nil {
-				return nil, "", fmt.Errorf("reading PostgreSQL password secret: %w", err)
-			}
-			pgOpts.Password = password
-		}
-		if spec.PostgreSQL.TLS != nil {
-			pgOpts.TLS = &warpgate.TLSConfig{
-				Mode:   spec.PostgreSQL.TLS.Mode,
-				Verify: spec.PostgreSQL.TLS.Verify,
-			}
-		}
-		opts = pgOpts
-
+		opts, err = r.buildPostgreSQLOptions(ctx, ns, spec.PostgreSQL)
+	case spec.Kubernetes != nil:
+		targetType = "Kubernetes"
+		opts, err = r.buildKubernetesOptions(ctx, ns, spec.Kubernetes)
+	case spec.RDP != nil:
+		targetType = "RDP"
+		opts, err = r.buildRDPOptions(ctx, ns, spec.RDP)
+	case spec.VNC != nil:
+		targetType = "VNC"
+		opts, err = r.buildVNCOptions(ctx, ns, spec.VNC)
 	default:
-		return nil, "", fmt.Errorf("exactly one target type (ssh, http, mysql, postgresql) must be specified")
+		return nil, "", fmt.Errorf("exactly one target type (ssh, http, mysql, postgresql, kubernetes, rdp, vnc) must be specified")
+	}
+	if err != nil {
+		return nil, "", err
 	}
 
 	rawOpts, err := warpgate.MarshalOptions(opts)
@@ -268,59 +185,228 @@ func (r *WarpgateTargetReconciler) buildTargetRequest(ctx context.Context, targe
 		return nil, "", fmt.Errorf("marshaling target options: %w", err)
 	}
 
-	targetReq := &warpgate.TargetRequest{
+	req := &warpgate.TargetRequest{
 		Name:                     spec.Name,
 		Description:              spec.Description,
 		Options:                  rawOpts,
 		RateLimitBytesPerSecond:  spec.RateLimitBytesPerSecond,
 		TicketMaxDurationSeconds: spec.TicketMaxDurationSeconds,
-		TicketRequestsDisabled:   spec.TicketRequestsDisabled,
-		TicketRequireApproval:    spec.TicketRequireApproval,
+		TicketRequestsDisabled:   boolValue(spec.TicketRequestsDisabled),
+		TicketRequireApproval:    boolValue(spec.TicketRequireApproval),
+		RequireApproval:          boolValue(spec.RequireApproval),
 		TicketMaxUses:            spec.TicketMaxUses,
 	}
 
 	if spec.GroupRef != "" {
 		var group warpgatev1alpha1.WarpgateTargetGroup
-		if err := r.Get(ctx, types.NamespacedName{
-			Namespace: target.Namespace,
-			Name:      spec.GroupRef,
-		}, &group); err != nil {
+		if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: spec.GroupRef}, &group); err != nil {
 			return nil, "", fmt.Errorf("getting target group %q: %w", spec.GroupRef, err)
 		}
 		if group.Status.ExternalID == "" {
 			return nil, "", fmt.Errorf("target group %q not yet synced", spec.GroupRef)
 		}
-		targetReq.GroupID = group.Status.ExternalID
+		req.GroupID = group.Status.ExternalID
 	}
 
-	return targetReq, targetType, nil
+	return req, targetType, nil
 }
 
-// readSecretValue reads a value from a Kubernetes Secret using the given SecretKeyRef.
-// If no key is specified, it defaults to "password".
-func (r *WarpgateTargetReconciler) readSecretValue(ctx context.Context, namespace string, ref *warpgatev1alpha1.SecretKeyRef) (string, error) {
+func (r *WarpgateTargetReconciler) buildSSHOptions(ctx context.Context, ns string, spec *warpgatev1alpha1.SSHTargetSpec, target *warpgatev1alpha1.WarpgateTarget) (any, error) {
+	opts := warpgate.SSHOptions{
+		Kind:               "Ssh",
+		Host:               spec.Host,
+		Port:               spec.Port,
+		Username:           spec.Username,
+		AllowInsecureAlgos: spec.AllowInsecureAlgos,
+		Auth:               warpgate.SSHAuth{Kind: spec.AuthKind, KeyID: spec.KeyID},
+	}
+	if spec.AuthKind == "Password" {
+		password, err := r.readSecretValue(ctx, ns, spec.PasswordSecretRef, "password")
+		if err != nil {
+			return nil, fmt.Errorf("reading SSH password secret: %w", err)
+		}
+		opts.Auth.Password = password
+	}
+	if spec.JumpHostRef != "" {
+		var jh warpgatev1alpha1.WarpgateTarget
+		if err := r.Get(ctx, types.NamespacedName{Namespace: target.Namespace, Name: spec.JumpHostRef}, &jh); err != nil {
+			return nil, fmt.Errorf("getting jump host target %q: %w", spec.JumpHostRef, err)
+		}
+		if jh.Status.ExternalID == "" {
+			return nil, fmt.Errorf("jump host target %q not yet synced", spec.JumpHostRef)
+		}
+		opts.JumpHost = jh.Status.ExternalID
+	}
+	return opts, nil
+}
+
+func (r *WarpgateTargetReconciler) buildHTTPOptions(spec *warpgatev1alpha1.HTTPTargetSpec) any {
+	headers := spec.Headers
+	if headers == nil {
+		headers = map[string]string{}
+	}
+	return warpgate.HTTPOptions{
+		Kind:         "Http",
+		URL:          spec.URL,
+		TLS:          toWarpgateTLS(spec.TLS),
+		Headers:      headers,
+		ExternalHost: spec.ExternalHost,
+	}
+}
+
+func (r *WarpgateTargetReconciler) buildMySQLOptions(ctx context.Context, ns string, spec *warpgatev1alpha1.MySQLTargetSpec) (any, error) {
+	auth, err := r.databaseAuth(ctx, ns, spec.AuthKind, spec.PasswordSecretRef, "MySQL")
+	if err != nil {
+		return nil, err
+	}
+	return warpgate.MySQLOptions{
+		Kind:                "MySql",
+		Host:                spec.Host,
+		Port:                spec.Port,
+		Username:            spec.Username,
+		Auth:                auth,
+		TLS:                 toWarpgateTLS(spec.TLS),
+		DefaultDatabaseName: spec.DefaultDatabaseName,
+	}, nil
+}
+
+func (r *WarpgateTargetReconciler) buildPostgreSQLOptions(ctx context.Context, ns string, spec *warpgatev1alpha1.PostgreSQLTargetSpec) (any, error) {
+	auth, err := r.databaseAuth(ctx, ns, spec.AuthKind, spec.PasswordSecretRef, "PostgreSQL")
+	if err != nil {
+		return nil, err
+	}
+	protocolVersion := spec.ProtocolVersion
+	if protocolVersion == "" {
+		protocolVersion = "3.2"
+	}
+	return warpgate.PostgresOptions{
+		Kind:                "Postgres",
+		Host:                spec.Host,
+		Port:                spec.Port,
+		Username:            spec.Username,
+		Auth:                auth,
+		TLS:                 toWarpgateTLS(spec.TLS),
+		ProtocolVersion:     protocolVersion,
+		IdleTimeout:         spec.IdleTimeout,
+		DefaultDatabaseName: spec.DefaultDatabaseName,
+	}, nil
+}
+
+func (r *WarpgateTargetReconciler) buildKubernetesOptions(ctx context.Context, ns string, spec *warpgatev1alpha1.KubernetesTargetSpec) (any, error) {
+	auth := warpgate.KubernetesAuth{Kind: spec.AuthKind}
+	var err error
+	switch spec.AuthKind {
+	case "Token":
+		if auth.Token, err = r.readSecretValue(ctx, ns, spec.TokenSecretRef, "token"); err != nil {
+			return nil, fmt.Errorf("reading Kubernetes token secret: %w", err)
+		}
+	case "Certificate":
+		if auth.Certificate, err = r.readSecretValue(ctx, ns, spec.CertificateSecretRef, "certificate"); err != nil {
+			return nil, fmt.Errorf("reading Kubernetes certificate secret: %w", err)
+		}
+		if auth.PrivateKey, err = r.readSecretValue(ctx, ns, spec.PrivateKeySecretRef, "privateKey"); err != nil {
+			return nil, fmt.Errorf("reading Kubernetes private key secret: %w", err)
+		}
+	}
+	return warpgate.KubernetesOptions{
+		Kind:       "Kubernetes",
+		ClusterURL: spec.ClusterURL,
+		TLS:        toWarpgateTLS(spec.TLS),
+		Auth:       auth,
+	}, nil
+}
+
+func (r *WarpgateTargetReconciler) buildRDPOptions(ctx context.Context, ns string, spec *warpgatev1alpha1.RDPTargetSpec) (any, error) {
+	var password string
+	if spec.PasswordSecretRef != nil {
+		var err error
+		password, err = r.readSecretValue(ctx, ns, spec.PasswordSecretRef, "password")
+		if err != nil {
+			return nil, fmt.Errorf("reading RDP password secret: %w", err)
+		}
+	}
+	compression := spec.Compression
+	if compression == "" {
+		compression = "remotefx"
+	}
+	tlsSecurity := spec.TLSSecurity
+	if tlsSecurity == "" {
+		tlsSecurity = "Tls12"
+	}
+	return warpgate.RDPOptions{
+		Kind:             "Rdp",
+		Host:             spec.Host,
+		Port:             spec.Port,
+		Username:         spec.Username,
+		Domain:           spec.Domain,
+		Auth:             warpgate.PasswordAuth{Kind: "Password", Password: password},
+		VerifyTLS:        spec.VerifyTLS,
+		Compression:      compression,
+		InteractiveLogon: spec.InteractiveLogon,
+		TLSSecurity:      tlsSecurity,
+	}, nil
+}
+
+func (r *WarpgateTargetReconciler) buildVNCOptions(ctx context.Context, ns string, spec *warpgatev1alpha1.VNCTargetSpec) (any, error) {
+	auth := warpgate.PasswordAuth{Kind: "None"}
+	if spec.PasswordSecretRef != nil {
+		password, err := r.readSecretValue(ctx, ns, spec.PasswordSecretRef, "password")
+		if err != nil {
+			return nil, fmt.Errorf("reading VNC password secret: %w", err)
+		}
+		auth = warpgate.PasswordAuth{Kind: "Password", Password: password}
+	}
+	return warpgate.VNCOptions{
+		Kind: "Vnc",
+		Host: spec.Host,
+		Port: spec.Port,
+		Auth: auth,
+	}, nil
+}
+
+func (r *WarpgateTargetReconciler) databaseAuth(ctx context.Context, namespace, authKind string, passwordRef *warpgatev1alpha1.SecretKeyRef, what string) (warpgate.DatabaseAuth, error) {
+	if authKind == "IamRole" {
+		return warpgate.DatabaseAuth{Kind: "IamRole"}, nil
+	}
+	auth := warpgate.DatabaseAuth{Kind: "Password"}
+	if passwordRef != nil {
+		password, err := r.readSecretValue(ctx, namespace, passwordRef, "password")
+		if err != nil {
+			return auth, fmt.Errorf("reading %s password secret: %w", what, err)
+		}
+		auth.Password = password
+	}
+	return auth, nil
+}
+
+// toWarpgateTLS converts an optional CRD TLS block; absent means Warpgate's default (Preferred, verify).
+func toWarpgateTLS(spec *warpgatev1alpha1.TLSConfigSpec) warpgate.TLSConfig {
+	if spec == nil {
+		return warpgate.TLSConfig{Mode: "Preferred", Verify: true}
+	}
+	return warpgate.TLSConfig{Mode: spec.Mode, Verify: spec.Verify}
+}
+
+func boolValue(b *bool) bool {
+	return b != nil && *b
+}
+
+func (r *WarpgateTargetReconciler) readSecretValue(ctx context.Context, namespace string, ref *warpgatev1alpha1.SecretKeyRef, defaultKey string) (string, error) {
 	var secret corev1.Secret
-	if err := r.Get(ctx, types.NamespacedName{
-		Namespace: namespace,
-		Name:      ref.Name,
-	}, &secret); err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: ref.Name}, &secret); err != nil {
 		return "", fmt.Errorf("getting secret %q: %w", ref.Name, err)
 	}
-
 	key := ref.Key
 	if key == "" {
-		key = "password"
+		key = defaultKey
 	}
-
 	val, ok := secret.Data[key]
 	if !ok {
 		return "", fmt.Errorf("key %q not found in secret %q", key, ref.Name)
 	}
-
 	return string(val), nil
 }
 
-// setCondition sets the Ready condition on the target status.
 func (r *WarpgateTargetReconciler) setCondition(target *warpgatev1alpha1.WarpgateTarget, status metav1.ConditionStatus, reason, message string) {
 	meta.SetStatusCondition(&target.Status.Conditions, metav1.Condition{
 		Type:               "Ready",
@@ -331,7 +417,6 @@ func (r *WarpgateTargetReconciler) setCondition(target *warpgatev1alpha1.Warpgat
 	})
 }
 
-// SetupWithManager sets up the controller with the Manager.
 func (r *WarpgateTargetReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&warpgatev1alpha1.WarpgateTarget{}).

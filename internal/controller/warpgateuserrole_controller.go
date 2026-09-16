@@ -131,6 +131,21 @@ func (r *WarpgateUserRoleReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
+	// Enforce the desired expiry on every pass so out-of-band changes are reverted.
+	var expiresAt *string
+	if userRole.Spec.ExpiresAt != "" {
+		expiresAt = &userRole.Spec.ExpiresAt
+	}
+	if err := wgClient.UpdateUserRole(user.ID, role.ID, expiresAt); err != nil {
+		msg := fmt.Sprintf("unable to set user-role expiry: %v", err)
+		log.Error(err, "unable to set user-role expiry")
+		setUserRoleCondition(&userRole, metav1.ConditionFalse, "BindingFailed", msg)
+		if updateErr := r.Status().Update(ctx, &userRole); updateErr != nil {
+			log.Error(updateErr, "unable to update status")
+		}
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+
 	// All good — mark Ready.
 	setUserRoleCondition(&userRole, metav1.ConditionTrue, "Bound", "user-role binding is active")
 	if err := r.Status().Update(ctx, &userRole); err != nil {

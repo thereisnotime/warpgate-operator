@@ -50,6 +50,12 @@ spec:
           spec:
             description: spec defines the desired state of WarpgateUser.
             properties:
+              allowedIPRanges:
+                description: allowedIPRanges restricts logins to these CIDR ranges.
+                  Empty allows any source.
+                items:
+                  type: string
+                type: array
               connectionRef:
                 description: connectionRef is the name of the WarpgateConnection CR
                   in the same namespace.
@@ -62,6 +68,10 @@ spec:
                     items:
                       type: string
                     type: array
+                  kubernetes:
+                    items:
+                      type: string
+                    type: array
                   mysql:
                     items:
                       type: string
@@ -70,7 +80,15 @@ spec:
                     items:
                       type: string
                     type: array
+                  rdp:
+                    items:
+                      type: string
+                    type: array
                   ssh:
+                    items:
+                      type: string
+                    type: array
+                  vnc:
                     items:
                       type: string
                     type: array
@@ -91,6 +109,12 @@ spec:
                   Defaults to 32.
                 maximum: 128
                 minimum: 16
+                type: integer
+              rateLimitBytesPerSecond:
+                description: rateLimitBytesPerSecond limits this user's transfer speed.
+                  Unset means the global default.
+                format: int64
+                minimum: 1
                 type: integer
               username:
                 description: username is the Warpgate username.

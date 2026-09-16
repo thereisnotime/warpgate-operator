@@ -76,15 +76,16 @@ var _ = Describe("WarpgateUserRole Controller", func() {
 				})
 			})
 			mux.HandleFunc("/@warpgate/admin/api/users/user-uuid-1/roles/role-uuid-1", func(w http.ResponseWriter, r *http.Request) {
-				if r.Method == http.MethodPost {
+				switch r.Method {
+				case http.MethodPost:
 					w.WriteHeader(http.StatusCreated)
-					return
-				}
-				if r.Method == http.MethodDelete {
+				case http.MethodPut:
+					w.WriteHeader(http.StatusOK)
+				case http.MethodDelete:
 					w.WriteHeader(http.StatusNoContent)
-					return
+				default:
+					http.NotFound(w, r)
 				}
-				http.NotFound(w, r)
 			})
 			mockServer = httptest.NewServer(mux)
 
