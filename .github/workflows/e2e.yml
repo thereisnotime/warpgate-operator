@@ -29,6 +29,8 @@ jobs:
 
       - name: Install just
         uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab  # v2.87.13
+        with:
+          tool: just
 
       - name: Install kind
         run: |

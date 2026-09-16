@@ -28,6 +28,8 @@ jobs:
 
       - name: Install just
         uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab  # v2.87.13
+        with:
+          tool: just
 
       - name: Run linter
         run: just lint
@@ -46,6 +48,8 @@ jobs:
 
       - name: Install just
         uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab  # v2.87.13
+        with:
+          tool: just
 
       - name: Verify go.sum is tidy
         run: |
@@ -87,6 +91,8 @@ jobs:
 
       - name: Install just
         uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab  # v2.87.13
+        with:
+          tool: just
 
       - name: Verify compilation
         run: just build
@@ -148,6 +154,8 @@ jobs:
 
       - name: Install just
         uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab  # v2.87.13
+        with:
+          tool: just
 
       - name: Generate manifests
         run: just manifests
