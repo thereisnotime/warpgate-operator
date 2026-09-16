@@ -136,3 +136,13 @@ Both tracks use the same semver rules pre-1.0 (configured in `release-please-con
 
 Once the project hits 1.0 these flags should be removed so `feat:` bumps minor and breaking
 changes bump major.
+
+---
+
+## Contributors
+
+Thanks to everyone who has contributed code, bug reports, or ideas.
+
+| GitHub | Contribution |
+|--------|-------------|
+| [@Eugeny](https://github.com/Eugeny) | Warpgate v0.29 API compatibility (Kubernetes, RDP, VNC target types) |
