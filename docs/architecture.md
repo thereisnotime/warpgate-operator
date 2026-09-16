@@ -52,7 +52,8 @@ flowchart LR
 
 ## Data Model
 
-Every resource CR in the operator declares a `connectionRef` that points to a `WarpgateConnection`. The connection holds the URL and credentials needed to talk to that Warpgate instance. All other CRDs are siblings that reference the same connection; bindings link pairs of resources together.
+Every resource CR declares a `connectionRef` pointing to a `WarpgateConnection`. The connection holds the URL and credentials needed to reach that Warpgate instance.
+All other CRDs are siblings referencing the same connection; bindings link pairs of resources together.
 
 ```mermaid
 %%{init: {"theme": "base", "themeVariables": {"primaryColor": "#7c3aed", "primaryTextColor": "#fff", "primaryBorderColor": "#5b21b6", "lineColor": "#8b5cf6", "secondaryColor": "#10b981", "tertiaryColor": "#f5f3ff", "background": "#ffffff", "nodeBorder": "#5b21b6", "clusterBkg": "#f5f3ff"}}}%%

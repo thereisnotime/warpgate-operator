@@ -127,7 +127,8 @@ All resources belong to the API group `warpgate.warpgate.warp.tech/v1alpha1`.
 
 ## Architecture
 
-See [docs/architecture.md](docs/architecture.md) for the full architecture reference with detailed diagrams covering the data model, reconciliation flow, authentication chain, target type dispatch, and WarpgateInstance deployment.
+See [docs/architecture.md](docs/architecture.md) for the full architecture reference with detailed diagrams covering the data model, reconciliation flow,
+authentication chain, target type dispatch, and WarpgateInstance deployment.
 
 ### Reconciliation Flow
 
