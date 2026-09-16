@@ -1,6 +1,6 @@
 module github.com/thereisnotime/warpgate-operator
 
-go 1.26.6
+go 1.27.1
 
 require (
 	github.com/onsi/ginkgo/v2 v2.32.2
