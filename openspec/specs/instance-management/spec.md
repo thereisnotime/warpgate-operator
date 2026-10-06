@@ -27,6 +27,8 @@ The operator provides a `WarpgateInstance` custom resource with the following sp
 - `tolerations` (optional) -- scheduling tolerations.
 - `createConnection` (optional, default `true`) -- auto-create a `WarpgateConnection` CR.
 - `externalHost` (optional) -- external hostname for cookie domain and URL generation.
+- `databaseURLSecretRef` (optional) -- Secret key (`name`, `key` defaulting to `url`) holding an external database URL. Takes precedence over `databaseURL`.
+- `databaseURL` (optional, deprecated) -- inline external database URL, stored in plain text.
 
 Status fields:
 
@@ -113,3 +115,16 @@ The init container runs a generated `sh -c` script. User-controlled values (admi
 **Scenarios:**
 
 - **Given** a `WarpgateInstance` whose `databaseURL` contains shell metacharacters (`"`, `;`, `$(...)`, backticks) **When** the controller builds the Deployment **Then** the init script only references `${DATABASE_URL}` and the raw value appears solely in the init container's `DATABASE_URL` environment variable.
+
+### REQ-INST-008: Database Credentials Stay Out of the ConfigMap
+
+**Status:** ADDED
+
+When an external database is configured (`databaseURLSecretRef` or the deprecated `databaseURL`), the generated `warpgate.yaml` ConfigMap omits `database_url`. The init container gets the URL as `DATABASE_URL` (from the referenced Secret when set) and appends it to `/data/warpgate.yaml` as a single-quoted YAML scalar. Other interpolated values such as `externalHost` are emitted through a YAML marshaller. The validating webhook warns when `databaseURL` is used, and when it is ignored because `databaseURLSecretRef` is also set.
+
+**Scenarios:**
+
+- **Given** a `WarpgateInstance` with `databaseURLSecretRef` **When** the controller reconciles **Then** the ConfigMap contains no `database_url` and the init container's `DATABASE_URL` uses a `secretKeyRef`.
+- **Given** a `WarpgateInstance` with only `databaseURL` **When** it is admitted **Then** the webhook returns a deprecation warning and the instance keeps working.
+- **Given** an `externalHost` containing a newline and extra YAML keys **When** the config is generated **Then** it parses back to the exact `externalHost` string and no extra keys appear.
+- **Given** the operator changes the generated init script **When** it reconciles an existing instance **Then** the pod template hash changes and the Deployment rolls out.

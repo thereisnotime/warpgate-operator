@@ -39,6 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/yaml"
 
 	warpgatev1alpha1 "github.com/thereisnotime/warpgate-operator/api/v1alpha1"
 )
@@ -306,6 +307,44 @@ func adminPasswordKey(inst *warpgatev1alpha1.WarpgateInstance) string {
 	return "password"
 }
 
+// databaseURLFromSecret reports whether the database URL comes from a Secret.
+// databaseURLSecretRef wins over the deprecated inline databaseURL.
+func databaseURLFromSecret(inst *warpgatev1alpha1.WarpgateInstance) bool {
+	return inst.Spec.DatabaseURLSecretRef != nil && inst.Spec.DatabaseURLSecretRef.Name != ""
+}
+
+// externalDatabase reports whether Warpgate should use a database other than
+// the bundled SQLite file.
+func externalDatabase(inst *warpgatev1alpha1.WarpgateInstance) bool {
+	return databaseURLFromSecret(inst) || inst.Spec.DatabaseURL != ""
+}
+
+func databaseURLKey(inst *warpgatev1alpha1.WarpgateInstance) string {
+	if inst.Spec.DatabaseURLSecretRef != nil && inst.Spec.DatabaseURLSecretRef.Key != "" {
+		return inst.Spec.DatabaseURLSecretRef.Key
+	}
+	return "url"
+}
+
+// databaseURLEnv returns the DATABASE_URL variable for the init container,
+// sourced from the Secret when one is referenced.
+func databaseURLEnv(inst *warpgatev1alpha1.WarpgateInstance) corev1.EnvVar {
+	if databaseURLFromSecret(inst) {
+		return corev1.EnvVar{
+			Name: "DATABASE_URL",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: inst.Spec.DatabaseURLSecretRef.Name,
+					},
+					Key: databaseURLKey(inst),
+				},
+			},
+		}
+	}
+	return corev1.EnvVar{Name: "DATABASE_URL", Value: inst.Spec.DatabaseURL}
+}
+
 func instanceLabels(inst *warpgatev1alpha1.WarpgateInstance) map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/name":       "warpgate",
@@ -330,6 +369,9 @@ func configHash(inst *warpgatev1alpha1.WarpgateInstance) string {
 	h.Write([]byte(inst.Spec.ExternalHost))
 	h.Write([]byte(inst.Spec.ConfigOverride))
 	h.Write([]byte(inst.Spec.DatabaseURL))
+	if databaseURLFromSecret(inst) {
+		h.Write([]byte(inst.Spec.DatabaseURLSecretRef.Name + "/" + databaseURLKey(inst)))
+	}
 	h.Write([]byte(inst.Spec.SSHKeysSecretName))
 	return fmt.Sprintf("%x", h.Sum(nil))[:12]
 }
@@ -341,9 +383,9 @@ func configHash(inst *warpgatev1alpha1.WarpgateInstance) string {
 func (r *WarpgateInstanceReconciler) buildWarpgateConfig(inst *warpgatev1alpha1.WarpgateInstance) string {
 	var b strings.Builder
 
-	if inst.Spec.DatabaseURL != "" {
-		fmt.Fprintf(&b, "database_url: \"%s\"\n", inst.Spec.DatabaseURL)
-	} else {
+	// An external database URL usually carries credentials, so it never goes
+	// into this ConfigMap. The init container appends it from DATABASE_URL.
+	if !externalDatabase(inst) {
 		b.WriteString("database_url: sqlite:/data/db\n")
 	}
 
@@ -377,7 +419,11 @@ func (r *WarpgateInstanceReconciler) buildWarpgateConfig(inst *warpgatev1alpha1.
 	}
 
 	if inst.Spec.ExternalHost != "" {
-		fmt.Fprintf(&b, "external_host: %s\n", inst.Spec.ExternalHost)
+		// Marshal instead of printf so the value can't break out of its scalar.
+		out, err := yaml.Marshal(map[string]string{"external_host": inst.Spec.ExternalHost})
+		if err == nil {
+			b.Write(out)
+		}
 	}
 
 	// Session recording lives in Warpgate's database parameters, not the config
@@ -553,7 +599,7 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 	if kubernetesEnabled(inst) {
 		setupCmd += fmt.Sprintf(` --kubernetes-port %d`, instanceKubernetesPort(inst))
 	}
-	if inst.Spec.DatabaseURL != "" {
+	if externalDatabase(inst) {
 		// The URL reaches the script through the environment so the shell never
 		// parses it as code.
 		setupCmd += ` --database-url "${DATABASE_URL}"`
@@ -588,6 +634,14 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 			`echo "Applying operator config..."`,
 			`cp /config/warpgate.yaml /data/warpgate.yaml`,
 		)
+		if externalDatabase(inst) {
+			// Write database_url from the environment as a single-quoted YAML
+			// scalar ('' is the only escape needed inside one).
+			scriptParts = append(scriptParts,
+				`sed -i '/^database_url:/d' /data/warpgate.yaml`,
+				`printf "database_url: '%s'\n" "$(printf '%s' "${DATABASE_URL}" | sed "s/'/''/g")" >> /data/warpgate.yaml`,
+			)
+		}
 	}
 
 	// 5. Generate self-signed TLS if no certs exist yet (and no TLS secret / cert-manager)
@@ -625,8 +679,8 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 			},
 		},
 	}
-	if inst.Spec.DatabaseURL != "" {
-		initEnv = append(initEnv, corev1.EnvVar{Name: "DATABASE_URL", Value: inst.Spec.DatabaseURL})
+	if externalDatabase(inst) {
+		initEnv = append(initEnv, databaseURLEnv(inst))
 	}
 
 	// Init container volume mounts
@@ -681,7 +735,9 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 		}
 	}
 
-	hash := configHash(inst)
+	// Fold the init script into the rollout hash so pods pick up changes to
+	// the generated script (not just to the CR spec).
+	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(configHash(inst)+initScript)))[:12]
 
 	// Deployment strategy — default Recreate for RWO PVC compatibility.
 	strategy := appsv1.DeploymentStrategy{

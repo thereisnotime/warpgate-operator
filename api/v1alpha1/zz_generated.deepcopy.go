@@ -784,6 +784,11 @@ func (in *WarpgateInstanceSpec) DeepCopyInto(out *WarpgateInstanceSpec) {
 		*out = new(InstanceTLSSpec)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.DatabaseURLSecretRef != nil {
+		in, out := &in.DatabaseURLSecretRef, &out.DatabaseURLSecretRef
+		*out = new(SecretKeyRef)
+		**out = **in
+	}
 	if in.RecordSessions != nil {
 		in, out := &in.RecordSessions, &out.RecordSessions
 		*out = new(bool)

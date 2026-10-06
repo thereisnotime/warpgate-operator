@@ -34,6 +34,9 @@ CRDs like `WarpgateRole` and `WarpgateUser` can reference the deployed instance 
 | `tolerations` | `[]Toleration` | No | - | Scheduling tolerations |
 | `createConnection` | `bool` | No | `true` | Auto-create a `WarpgateConnection` CR pointing to this instance |
 | `externalHost` | `string` | No | - | External hostname for cookie domain and URL generation |
+| `databaseURLSecretRef.name` | `string` | No | - | Secret holding the external (PostgreSQL) database URL. Takes precedence over `databaseURL` |
+| `databaseURLSecretRef.key` | `string` | No | `url` | Key in that Secret |
+| `databaseURL` | `string` | No | - | **Deprecated.** Inline database URL, stored in plain text in the CR and Deployment. Use `databaseURLSecretRef` |
 
 ## Status Fields
 
@@ -172,4 +175,10 @@ spec:
   StatefulSet's `volumeClaimTemplates`. Scaling down to zero replicas does not delete the PVC -- data persists
   across restarts.
 - **Scale subresource:** The CRD exposes a scale subresource (`spec.replicas` / `status.readyReplicas`), so you can use `kubectl scale` or HPA with it.
+- **External database:** Put the connection string in a Secret and reference it with `databaseURLSecretRef`
+  (for example `kubectl create secret generic warpgate-db --from-literal=url='postgres://user:pass@host:5432/warpgate'`).
+  The URL never lands in the generated ConfigMap: the init container receives it as `DATABASE_URL` from the Secret
+  and writes it into `/data/warpgate.yaml` on the data volume. Rotating the Secret takes effect on the next pod
+  restart (`kubectl rollout restart deployment/<name>`). The older `databaseURL` field still works but is deprecated,
+  since its value is visible to anyone who can read the `WarpgateInstance` or its Deployment.
 - **Admin password Secret:** The Secret must exist in the same namespace as the `WarpgateInstance` CR. The operator reads it at reconciliation time and injects it into the Warpgate configuration.
