@@ -103,3 +103,13 @@ The controller requeues every 5 minutes. On each pass it compares the owned reso
 
 - **Given** a deployed `WarpgateInstance` whose StatefulSet was manually edited **When** the controller reconciles **Then** it overwrites the StatefulSet back to the desired state.
 - **Given** a deployed `WarpgateInstance` whose HTTP Service was deleted **When** the controller reconciles **Then** it recreates the Service.
+
+### REQ-INST-007: No Spec Values in the Init Script
+
+**Status:** ADDED
+
+The init container runs a generated `sh -c` script. User-controlled values (admin password, database URL) are passed to it as environment variables and referenced as quoted expansions (`"${ADMIN_PASSWORD}"`, `"${DATABASE_URL}"`), so the shell never parses them as code.
+
+**Scenarios:**
+
+- **Given** a `WarpgateInstance` whose `databaseURL` contains shell metacharacters (`"`, `;`, `$(...)`, backticks) **When** the controller builds the Deployment **Then** the init script only references `${DATABASE_URL}` and the raw value appears solely in the init container's `DATABASE_URL` environment variable.
