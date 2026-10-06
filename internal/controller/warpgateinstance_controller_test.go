@@ -28,6 +28,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	sigsyaml "sigs.k8s.io/yaml"
 
 	warpgatev1alpha1 "github.com/thereisnotime/warpgate-operator/api/v1alpha1"
 )
@@ -2261,7 +2262,7 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			}
 		})
 
-		It("should generate config with postgres database_url instead of sqlite", func() {
+		It("should keep the database URL out of the ConfigMap and render it in the init container", func() {
 			nn := types.NamespacedName{Name: instName, Namespace: testNamespace}
 
 			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
@@ -2273,8 +2274,15 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			}, &cm)).To(Succeed())
 
 			yaml := cm.Data["warpgate.yaml"]
-			Expect(yaml).To(ContainSubstring("database_url: \"postgres://host/db\""))
+			Expect(yaml).NotTo(ContainSubstring("database_url"))
+			Expect(yaml).NotTo(ContainSubstring("postgres://host/db"))
 			Expect(yaml).NotTo(ContainSubstring("sqlite:"))
+
+			var deploy appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &deploy)).To(Succeed())
+			script := deploy.Spec.Template.Spec.InitContainers[0].Command[2]
+			Expect(script).To(ContainSubstring(`printf "database_url: '%s'\n"`))
+			Expect(script).To(ContainSubstring(`"${DATABASE_URL}"`))
 		})
 	})
 
@@ -3126,6 +3134,18 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			Expect(resolveImage(inst)).To(Equal("ghcr.io/warp-tech/warpgate:v0.21.1"))
 		})
 
+		It("configHash changes when databaseURLSecretRef changes", func() {
+			base := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{Version: "0.21.1"},
+			}
+			withRef := base.DeepCopy()
+			withRef.Spec.DatabaseURLSecretRef = &warpgatev1alpha1.SecretKeyRef{Name: "db"}
+			otherKey := withRef.DeepCopy()
+			otherKey.Spec.DatabaseURLSecretRef.Key = "uri"
+			Expect(configHash(base)).NotTo(Equal(configHash(withRef)))
+			Expect(configHash(withRef)).NotTo(Equal(configHash(otherKey)))
+		})
+
 		It("configHash changes when DatabaseURL changes", func() {
 			base := &warpgatev1alpha1.WarpgateInstance{
 				Spec: warpgatev1alpha1.WarpgateInstanceSpec{Version: "0.21.1"},
@@ -3157,7 +3177,7 @@ var _ = Describe("WarpgateInstance Controller", func() {
 	// 22. buildWarpgateConfig edge cases
 	// -----------------------------------------------------------------------
 	Context("buildWarpgateConfig edge cases", func() {
-		It("should include database_url postgres section when DatabaseURL is set", func() {
+		It("should leave database_url out of the generated config when DatabaseURL is set", func() {
 			inst := &warpgatev1alpha1.WarpgateInstance{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "cfg-dburl",
@@ -3173,8 +3193,43 @@ var _ = Describe("WarpgateInstance Controller", func() {
 				},
 			}
 			yaml := reconciler.buildWarpgateConfig(inst)
-			Expect(yaml).To(ContainSubstring("database_url: \"postgres://user:pass@host:5432/warpgate\""))
+			Expect(yaml).NotTo(ContainSubstring("database_url"))
+			Expect(yaml).NotTo(ContainSubstring("user:pass"))
 			Expect(yaml).NotTo(ContainSubstring("sqlite"))
+		})
+
+		It("should leave database_url out of the generated config when databaseURLSecretRef is set", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cfg-dburl-ref",
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version:              "0.21.1",
+					DatabaseURLSecretRef: &warpgatev1alpha1.SecretKeyRef{Name: "db"},
+				},
+			}
+			yaml := reconciler.buildWarpgateConfig(inst)
+			Expect(yaml).NotTo(ContainSubstring("database_url"))
+		})
+
+		It("should YAML-escape externalHost instead of interpolating it raw", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cfg-exthost-escape",
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version:      "0.21.1",
+					ExternalHost: "evil.example.com\ndatabase_url: postgres://attacker/db",
+				},
+			}
+			out := reconciler.buildWarpgateConfig(inst)
+
+			var parsed map[string]any
+			Expect(sigsyaml.Unmarshal([]byte(out), &parsed)).To(Succeed())
+			Expect(parsed["external_host"]).To(Equal(inst.Spec.ExternalHost))
+			Expect(parsed["database_url"]).To(Equal("sqlite:/data/db"))
 		})
 
 		It("should use sqlite when DatabaseURL is empty", func() {
@@ -3522,6 +3577,50 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			}
 			Expect(script).To(ContainSubstring(`--database-url "${DATABASE_URL}"`))
 			Expect(initCtr.Env).To(ContainElement(corev1.EnvVar{Name: "DATABASE_URL", Value: hostile}))
+		})
+
+		It("should source DATABASE_URL from databaseURLSecretRef and prefer it over databaseURL", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "deploy-dburl-ref",
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: "dummy",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+					DatabaseURL:          "postgres://inline/ignored",
+					DatabaseURLSecretRef: &warpgatev1alpha1.SecretKeyRef{Name: "wg-db"},
+				},
+			}
+			deploy := reconciler.buildDeployment(inst)
+			initCtr := deploy.Spec.Template.Spec.InitContainers[0]
+			Expect(initCtr.Command[2]).To(ContainSubstring(`--database-url "${DATABASE_URL}"`))
+			Expect(initCtr.Command[2]).NotTo(ContainSubstring("inline"))
+
+			var dbEnv *corev1.EnvVar
+			for i := range initCtr.Env {
+				if initCtr.Env[i].Name == "DATABASE_URL" {
+					dbEnv = &initCtr.Env[i]
+				}
+			}
+			Expect(dbEnv).NotTo(BeNil())
+			Expect(dbEnv.Value).To(BeEmpty())
+			Expect(dbEnv.ValueFrom).NotTo(BeNil())
+			Expect(dbEnv.ValueFrom.SecretKeyRef.Name).To(Equal("wg-db"))
+			Expect(dbEnv.ValueFrom.SecretKeyRef.Key).To(Equal("url"))
+
+			inst.Spec.DatabaseURLSecretRef.Key = "uri"
+			deploy = reconciler.buildDeployment(inst)
+			for _, e := range deploy.Spec.Template.Spec.InitContainers[0].Env {
+				if e.Name == "DATABASE_URL" {
+					Expect(e.ValueFrom.SecretKeyRef.Key).To(Equal("uri"))
+				}
+			}
 		})
 
 		It("should not set DATABASE_URL when DatabaseURL is empty", func() {

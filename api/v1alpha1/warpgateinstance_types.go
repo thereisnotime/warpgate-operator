@@ -82,8 +82,15 @@ type WarpgateInstanceSpec struct {
 
 	// databaseURL overrides the default SQLite database with a PostgreSQL connection string.
 	// Example: "postgres://user:pass@host:5432/warpgate"
+	// This field is deprecated because the value (including any password) is stored in
+	// plain text in this resource and in the generated Deployment. Use databaseURLSecretRef.
 	// +optional
 	DatabaseURL string `json:"databaseURL,omitempty"`
+
+	// databaseURLSecretRef references a Secret key holding the database connection string.
+	// Takes precedence over databaseURL. The key defaults to "url".
+	// +optional
+	DatabaseURLSecretRef *SecretKeyRef `json:"databaseURLSecretRef,omitempty"`
 
 	// recordSessions enables session recording. Defaults to false.
 	// +optional
