@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"crypto/pbkdf2"
 	"crypto/sha256"
 	"fmt"
 	"strings"
@@ -368,12 +369,34 @@ func configHash(inst *warpgatev1alpha1.WarpgateInstance) string {
 		kubernetesEnabled(inst)))
 	h.Write([]byte(inst.Spec.ExternalHost))
 	h.Write([]byte(inst.Spec.ConfigOverride))
-	h.Write([]byte(inst.Spec.DatabaseURL))
+	h.Write(databaseURLFingerprint(inst))
 	if databaseURLFromSecret(inst) {
 		h.Write([]byte(inst.Spec.DatabaseURLSecretRef.Name + "/" + databaseURLKey(inst)))
 	}
 	h.Write([]byte(inst.Spec.SSHKeysSecretName))
 	return fmt.Sprintf("%x", h.Sum(nil))[:12]
+}
+
+// databaseURLFingerprintIterations makes guessing a database password from the
+// published rollout hash expensive; the URL usually embeds a credential.
+const databaseURLFingerprintIterations = 100_000
+
+// databaseURLFingerprint derives a change-detection value for spec.databaseURL
+// with PBKDF2 instead of feeding the raw URL into the fast rollout hash, which
+// ends up in a pod template annotation anyone with pod read access can see.
+func databaseURLFingerprint(inst *warpgatev1alpha1.WarpgateInstance) []byte {
+	if inst.Spec.DatabaseURL == "" {
+		return nil
+	}
+	key, err := pbkdf2.Key(sha256.New, inst.Spec.DatabaseURL,
+		[]byte("warpgate-operator/database-url/"+string(inst.UID)),
+		databaseURLFingerprintIterations, 32)
+	if err != nil {
+		// Only fails for invalid parameters; still change on URL changes
+		// without exposing the raw value.
+		return []byte("database-url-set")
+	}
+	return key
 }
 
 // ---------------------------------------------------------------------------
