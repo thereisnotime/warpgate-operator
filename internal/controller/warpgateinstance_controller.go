@@ -764,8 +764,8 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 	// key, not a security hash: the script only references secrets by env var
 	// name and configHash already derives the database URL with PBKDF2.
 	rollout := fnv.New64a()
-	rollout.Write([]byte(configHash(inst)))
-	rollout.Write([]byte(initScript))
+	_, _ = rollout.Write([]byte(configHash(inst))) // hash writes never fail
+	_, _ = rollout.Write([]byte(initScript))
 	hash := fmt.Sprintf("%016x", rollout.Sum64())[:12]
 
 	// Deployment strategy — default Recreate for RWO PVC compatibility.
