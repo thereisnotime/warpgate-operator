@@ -19,6 +19,7 @@ This is useful when you want explicit control over password credentials. For aut
 |-------|------|-------------|
 | `userID` | `string` | Resolved Warpgate user UUID |
 | `credentialID` | `string` | Warpgate-assigned credential UUID |
+| `appliedSecretVersion` | `string` | `<secret>/<key>@<resourceVersion>` of the password Secret last pushed to Warpgate |
 | `conditions` | `[]Condition` | Standard Kubernetes conditions |
 
 ## Print Columns
@@ -72,4 +73,8 @@ The following defaults are applied on create and update:
 - The referenced Secret must exist in the same namespace as the CR.
 - The user specified by `username` must already exist in Warpgate.
 - Deleting the CR removes the password credential from the Warpgate user via the finalizer.
+- The operator watches the referenced Secret. When it changes, the old Warpgate credential is deleted and a new one
+  is created with the new password, so the previous password stops working right away. Warpgate has no in-place
+  password update, which is why the credential ID changes on rotation. Credentials created by older operator versions
+  are re-applied once after upgrading, since there is no recorded Secret version for them yet.
 - If you just need a basic auto-generated password, use `WarpgateUser` with `generatePassword: true` instead of creating this resource manually.
