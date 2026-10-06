@@ -1155,6 +1155,11 @@ func (r *WarpgateInstanceReconciler) ensureWarpgateConnection(ctx context.Contex
 		return err
 	}
 
+	insecure, caRef, err := r.connectionTLS(ctx, inst)
+	if err != nil {
+		return err
+	}
+
 	// Create/update the WarpgateConnection CR.
 	host := fmt.Sprintf("https://%s-http.%s.svc:%d",
 		inst.Name, inst.Namespace, instanceHTTPPort(inst))
@@ -1172,7 +1177,8 @@ func (r *WarpgateInstanceReconciler) ensureWarpgateConnection(ctx context.Contex
 		conn.Spec = warpgatev1alpha1.WarpgateConnectionSpec{
 			Host:               host,
 			AuthSecretRef:      warpgatev1alpha1.AuthSecretRef{Name: authSecretName},
-			InsecureSkipVerify: true, // self-signed cert within cluster
+			InsecureSkipVerify: insecure,
+			CASecretRef:        caRef,
 		}
 		return nil
 	})
@@ -1182,6 +1188,43 @@ func (r *WarpgateInstanceReconciler) ensureWarpgateConnection(ctx context.Contex
 
 	inst.Status.ConnectionRef = connName
 	return nil
+}
+
+// connectionTLS decides how the auto-created WarpgateConnection verifies the
+// instance. With tls.secretName the operator knows the served certificate and
+// verifies against it (ca.crt, falling back to tls.crt). Otherwise the pod
+// serves a self-signed certificate generated at startup that the operator never
+// sees, so verification is skipped unless tls.verifyConnection demands it.
+func (r *WarpgateInstanceReconciler) connectionTLS(
+	ctx context.Context, inst *warpgatev1alpha1.WarpgateInstance,
+) (insecure bool, caRef *warpgatev1alpha1.SecretKeyRef, err error) {
+	var verify *bool
+	if inst.Spec.TLS != nil {
+		verify = inst.Spec.TLS.VerifyConnection
+	}
+	if verify != nil && !*verify {
+		return true, nil, nil
+	}
+
+	if tlsSecretProvided(inst) {
+		name := inst.Spec.TLS.SecretName
+		var secret corev1.Secret
+		if err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: inst.Namespace}, &secret); err != nil {
+			return false, nil, fmt.Errorf("getting TLS secret %q for connection verification: %w", name, err)
+		}
+		for _, key := range []string{"ca.crt", corev1.TLSCertKey} {
+			if len(secret.Data[key]) > 0 {
+				return false, &warpgatev1alpha1.SecretKeyRef{Name: name, Key: key}, nil
+			}
+		}
+		return false, nil, fmt.Errorf("TLS secret %q has neither ca.crt nor tls.crt to verify the connection against", name)
+	}
+
+	if verify != nil && *verify {
+		return false, nil, fmt.Errorf("tls.verifyConnection is true but there is no CA to verify against; set tls.secretName")
+	}
+	// Self-signed certificate generated inside the pod.
+	return true, nil, nil
 }
 
 // ---------------------------------------------------------------------------

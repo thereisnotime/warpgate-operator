@@ -123,6 +123,36 @@ func TestWarpgateConnectionValidator(t *testing.T) {
 		}
 	})
 
+	t.Run("caSecretRef accepted", func(t *testing.T) {
+		c := validConn()
+		c.Spec.CASecretRef = &SecretKeyRef{Name: "warpgate-ca"}
+		warnings, err := v.ValidateCreate(ctx, c)
+		if err != nil || len(warnings) != 0 {
+			t.Errorf("expected no error or warnings, got %v / %v", err, warnings)
+		}
+	})
+
+	t.Run("caSecretRef without name rejected", func(t *testing.T) {
+		c := validConn()
+		c.Spec.CASecretRef = &SecretKeyRef{Key: "ca.crt"}
+		if _, err := v.ValidateCreate(ctx, c); err == nil {
+			t.Error("expected error for empty caSecretRef.name")
+		}
+	})
+
+	t.Run("caSecretRef with insecureSkipVerify warns", func(t *testing.T) {
+		c := validConn()
+		c.Spec.CASecretRef = &SecretKeyRef{Name: "warpgate-ca"}
+		c.Spec.InsecureSkipVerify = true
+		warnings, err := v.ValidateCreate(ctx, c)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(warnings) == 0 {
+			t.Error("expected a warning that caSecretRef is ignored")
+		}
+	})
+
 	t.Run("update validation works", func(t *testing.T) {
 		old := validConn()
 		bad := validConn()

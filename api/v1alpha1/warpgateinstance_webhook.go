@@ -275,6 +275,9 @@ func validateWarpgateInstance(inst *WarpgateInstance) (admission.Warnings, error
 		}
 	}
 
+	if tls := inst.Spec.TLS; tls != nil && tls.VerifyConnection != nil && *tls.VerifyConnection && tls.SecretName == "" {
+		warnings = append(warnings, "tls.verifyConnection is true but tls.secretName is not set; the operator has no CA to verify the auto-created connection against")
+	}
 	dbErrs, dbWarnings := validateDatabase(inst, specPath)
 	allErrs = append(allErrs, dbErrs...)
 	warnings = append(warnings, dbWarnings...)

@@ -203,6 +203,15 @@ type InstanceTLSSpec struct {
 	// If set, cert-manager is not used and the secret is mounted directly.
 	// +optional
 	SecretName string `json:"secretName,omitempty"`
+
+	// verifyConnection controls TLS verification on the auto-created WarpgateConnection.
+	// Unset: verify against the CA in secretName (its ca.crt, or tls.crt when there is no
+	// ca.crt) when secretName is set, and skip verification for the self-signed certificate
+	// generated inside the pod, which the operator has no copy of.
+	// true: always verify; reconciliation fails if the operator has no CA to verify against.
+	// false: never verify.
+	// +optional
+	VerifyConnection *bool `json:"verifyConnection,omitempty"`
 }
 
 // CertIssuerRef references a cert-manager Issuer or ClusterIssuer.

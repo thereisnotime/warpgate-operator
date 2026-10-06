@@ -17,6 +17,7 @@ The operator provides a `WarpgateConnection` custom resource with the following 
   - `usernameKey` (optional, default `username`) -- key holding the username for session auth.
   - `passwordKey` (optional, default `password`) -- key holding the password for session auth.
 - `insecureSkipVerify` (optional, default `false`) -- disables TLS certificate verification.
+- `caSecretRef` (optional) -- Secret key (`name`, `key` defaulting to `ca.crt`) with a PEM CA bundle used as the trust roots for the Warpgate server certificate. Ignored when `insecureSkipVerify` is true.
 
 Auth mode is auto-detected: if the Secret contains the token key, bearer auth is used. Otherwise, the operator falls back to username/password session auth.
 
@@ -66,3 +67,15 @@ The controller reads the auth Secret from the same namespace as the `WarpgateCon
 
 **Scenarios:**
 - **Given** a `WarpgateConnection` in namespace `team-a` referencing Secret `wg-token` **When** the controller reads the Secret **Then** it looks up `team-a/wg-token`, not a cluster-wide search.
+
+### REQ-CONN-006: Custom CA Trust
+
+**Status:** ADDED
+
+When `caSecretRef` is set, the operator reads the PEM bundle from the Secret and uses it as the HTTP client's `RootCAs`, so private or self-signed CAs can be trusted without disabling verification. A missing Secret or a key without a PEM certificate sets `Ready=False` with reason `ConnectionFailed`.
+
+**Scenarios:**
+
+- **Given** a connection whose `caSecretRef` holds the CA that signed Warpgate's certificate **When** the controller reconciles **Then** it connects and sets `Ready=True`.
+- **Given** a connection whose `caSecretRef` points at a missing Secret or non-PEM data **When** the controller reconciles **Then** it sets `Ready=False` with reason `ConnectionFailed`.
+

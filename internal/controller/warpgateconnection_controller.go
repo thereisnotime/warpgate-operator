@@ -125,6 +125,11 @@ func (r *WarpgateConnectionReconciler) buildClient(ctx context.Context, conn *wa
 		return nil, fmt.Errorf("getting auth secret %q: %w", conn.Spec.AuthSecretRef.Name, err)
 	}
 
+	caCert, err := loadConnectionCA(ctx, r.Client, conn)
+	if err != nil {
+		return nil, err
+	}
+
 	tokenKey := conn.Spec.AuthSecretRef.TokenKey
 	if tokenKey == "" {
 		tokenKey = "token"
@@ -136,6 +141,7 @@ func (r *WarpgateConnectionReconciler) buildClient(ctx context.Context, conn *wa
 			Host:               conn.Spec.Host,
 			Token:              string(token),
 			InsecureSkipVerify: conn.Spec.InsecureSkipVerify,
+			CACert:             caCert,
 		}), nil
 	}
 
@@ -164,6 +170,7 @@ func (r *WarpgateConnectionReconciler) buildClient(ctx context.Context, conn *wa
 		Username:           string(username),
 		Password:           string(password),
 		InsecureSkipVerify: conn.Spec.InsecureSkipVerify,
+		CACert:             caCert,
 	}), nil
 }
 

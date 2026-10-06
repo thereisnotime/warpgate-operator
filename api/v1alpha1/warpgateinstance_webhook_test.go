@@ -693,3 +693,22 @@ func containsWarning(warnings []string, substr string) bool {
 	}
 	return false
 }
+
+func TestInstanceValidate_WarnVerifyConnectionWithoutSecret(t *testing.T) {
+	inst := validInstance()
+	inst.Spec.TLS = &InstanceTLSSpec{VerifyConnection: boolPtr(true)}
+
+	warnings, err := (&WarpgateInstanceCustomValidator{}).ValidateCreate(context.Background(), inst)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !containsWarning(warnings, "verifyConnection") {
+		t.Errorf("expected a verifyConnection warning, got: %v", warnings)
+	}
+
+	inst.Spec.TLS.SecretName = "warpgate-tls"
+	warnings, _ = (&WarpgateInstanceCustomValidator{}).ValidateCreate(context.Background(), inst)
+	if containsWarning(warnings, "verifyConnection") {
+		t.Errorf("did not expect a verifyConnection warning with secretName set, got: %v", warnings)
+	}
+}
