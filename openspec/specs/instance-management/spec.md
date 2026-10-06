@@ -21,7 +21,7 @@ The operator provides a `WarpgateInstance` custom resource with the following sp
 - `mysql` (optional) -- MySQL proxy listener: `enabled`, `port`.
 - `postgresql` (optional) -- PostgreSQL proxy listener: `enabled`, `port`.
 - `storage` (optional) -- PVC configuration: `size` (default `1Gi`), `storageClassName`.
-- `tls` (optional) -- TLS configuration: `certManager` (default `true`), `issuerRef` with `name` and `kind`.
+- `tls` (optional) -- TLS configuration: `certManager` (default `true`), `issuerRef` with `name` and `kind`, `secretName`, and `verifyConnection`.
 - `resources` (optional) -- CPU/memory requests and limits.
 - `nodeSelector` (optional) -- node scheduling constraints.
 - `tolerations` (optional) -- scheduling tolerations.
@@ -128,3 +128,16 @@ When an external database is configured (`databaseURLSecretRef` or the deprecate
 - **Given** a `WarpgateInstance` with only `databaseURL` **When** it is admitted **Then** the webhook returns a deprecation warning and the instance keeps working.
 - **Given** an `externalHost` containing a newline and extra YAML keys **When** the config is generated **Then** it parses back to the exact `externalHost` string and no extra keys appear.
 - **Given** the operator changes the generated init script **When** it reconciles an existing instance **Then** the pod template hash changes and the Deployment rolls out.
+
+### REQ-INST-009: Verified Auto-Created Connection
+
+**Status:** ADDED
+
+The auto-created `WarpgateConnection` verifies the instance's TLS certificate whenever the operator knows it. With `tls.secretName`, the connection gets `caSecretRef` pointing at that Secret's `ca.crt` (or `tls.crt` if there is no `ca.crt`) and `insecureSkipVerify: false`. Without it, the pod serves a self-signed certificate it generates at startup, so the connection skips verification. `tls.verifyConnection: true` makes the missing CA a reconcile error instead; `tls.verifyConnection: false` always skips verification.
+
+**Scenarios:**
+
+- **Given** a `WarpgateInstance` with `tls.secretName` whose Secret has `ca.crt` **When** the controller reconciles **Then** the connection has `caSecretRef: {name: <secretName>, key: ca.crt}` and verification on.
+- **Given** a `WarpgateInstance` without `tls.secretName` **When** the controller reconciles **Then** the connection has `insecureSkipVerify: true`.
+- **Given** `tls.verifyConnection: true` and no `tls.secretName` **When** the controller reconciles **Then** no connection is created and `Ready=False` with reason `ConnectionFailed`.
+

@@ -68,6 +68,12 @@ type WarpgateConnectionSpec struct {
 	// insecureSkipVerify disables TLS certificate verification. Not recommended for production.
 	// +optional
 	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
+
+	// caSecretRef references a Secret key holding a PEM CA bundle used to verify the
+	// Warpgate server certificate instead of the system trust store. The key defaults
+	// to "ca.crt". Ignored when insecureSkipVerify is true.
+	// +optional
+	CASecretRef *SecretKeyRef `json:"caSecretRef,omitempty"`
 }
 
 // WarpgateConnectionStatus defines the observed state of WarpgateConnection.

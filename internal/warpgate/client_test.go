@@ -1,13 +1,21 @@
 package warpgate
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"math"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNewClient(t *testing.T) {
@@ -523,4 +531,80 @@ func TestAPIErrorString(t *testing.T) {
 	if err.Error() != expected {
 		t.Errorf("expected %q, got %q", expected, err.Error())
 	}
+}
+
+func tlsServerCAPEM(srv *httptest.Server) []byte {
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+}
+
+func TestCACertVerifiesServer(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "t", CACert: tlsServerCAPEM(srv)})
+	tr := c.httpClient.Transport.(*http.Transport)
+	if tr.TLSClientConfig == nil || tr.TLSClientConfig.RootCAs == nil {
+		t.Fatal("expected RootCAs to be set from CACert")
+	}
+	if tr.TLSClientConfig.InsecureSkipVerify {
+		t.Fatal("CACert must not disable verification")
+	}
+	var out []any
+	if err := c.Get("/roles", &out); err != nil {
+		t.Fatalf("expected request to succeed against the trusted CA, got: %v", err)
+	}
+}
+
+func TestCACertRejectsOtherServer(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+
+	// Trust an unrelated self-signed CA that did not sign the server's cert.
+	c := NewClient(Config{Host: srv.URL, Token: "t", CACert: selfSignedPEM(t)})
+	if err := c.Get("/roles", nil); err == nil {
+		t.Fatal("expected certificate verification to fail for an untrusted server")
+	}
+}
+
+func TestNoCACertUsesSystemRoots(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Token: "t"})
+	if err := c.Get("/roles", nil); err == nil {
+		t.Fatal("expected verification against system roots to reject the test server")
+	}
+}
+
+func TestInsecureSkipVerifyWinsOverCACert(t *testing.T) {
+	c := NewClient(Config{Host: "https://x", InsecureSkipVerify: true, CACert: selfSignedPEM(t)})
+	tr := c.httpClient.Transport.(*http.Transport)
+	if !tr.TLSClientConfig.InsecureSkipVerify || tr.TLSClientConfig.RootCAs != nil {
+		t.Fatal("expected InsecureSkipVerify to take precedence over CACert")
+	}
+}
+
+func selfSignedPEM(t *testing.T) []byte {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "unrelated"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 }
