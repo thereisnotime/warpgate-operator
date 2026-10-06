@@ -554,7 +554,9 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 		setupCmd += fmt.Sprintf(` --kubernetes-port %d`, instanceKubernetesPort(inst))
 	}
 	if inst.Spec.DatabaseURL != "" {
-		setupCmd += fmt.Sprintf(` --database-url "%s"`, inst.Spec.DatabaseURL)
+		// The URL reaches the script through the environment so the shell never
+		// parses it as code.
+		setupCmd += ` --database-url "${DATABASE_URL}"`
 	}
 	if inst.Spec.RecordSessions != nil && *inst.Spec.RecordSessions {
 		// ponytail: seeded at first setup only; later toggles need the admin UI or parameters API
@@ -609,6 +611,23 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 	)
 
 	initScript := strings.Join(scriptParts, "\n")
+
+	initEnv := []corev1.EnvVar{
+		{
+			Name: "ADMIN_PASSWORD",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: inst.Spec.AdminPasswordSecretRef.Name,
+					},
+					Key: adminPasswordKey(inst),
+				},
+			},
+		},
+	}
+	if inst.Spec.DatabaseURL != "" {
+		initEnv = append(initEnv, corev1.EnvVar{Name: "DATABASE_URL", Value: inst.Spec.DatabaseURL})
+	}
 
 	// Init container volume mounts
 	initVolumeMounts := []corev1.VolumeMount{
@@ -775,19 +794,7 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 							Image:        image,
 							Command:      []string{"/bin/sh", "-c", initScript},
 							VolumeMounts: initVolumeMounts,
-							Env: []corev1.EnvVar{
-								{
-									Name: "ADMIN_PASSWORD",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: inst.Spec.AdminPasswordSecretRef.Name,
-											},
-											Key: adminPasswordKey(inst),
-										},
-									},
-								},
-							},
+							Env:          initEnv,
 						},
 					},
 					Containers: []corev1.Container{

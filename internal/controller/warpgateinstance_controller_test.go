@@ -3485,8 +3485,67 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			}
 			deploy := reconciler.buildDeployment(inst)
 			initCmd := deploy.Spec.Template.Spec.InitContainers[0].Command[2]
-			Expect(initCmd).To(ContainSubstring("--database-url"))
-			Expect(initCmd).To(ContainSubstring("postgres://host/db"))
+			Expect(initCmd).To(ContainSubstring(`--database-url "${DATABASE_URL}"`))
+			Expect(initCmd).NotTo(ContainSubstring("postgres://host/db"))
+			Expect(deploy.Spec.Template.Spec.InitContainers[0].Env).To(ContainElement(
+				corev1.EnvVar{Name: "DATABASE_URL", Value: "postgres://host/db"},
+			))
+		})
+
+		It("should never put a hostile DatabaseURL into the init script", func() {
+			hostile := "postgres://u:p@h/db\"; touch /pwned; echo \"$(id)`whoami`${HOME}'"
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "deploy-dburl-inject",
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: "dummy",
+					},
+					HTTP: &warpgatev1alpha1.HTTPListenerSpec{
+						Enabled: boolPtr(true),
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+					DatabaseURL: hostile,
+				},
+			}
+			deploy := reconciler.buildDeployment(inst)
+			initCtr := deploy.Spec.Template.Spec.InitContainers[0]
+			script := initCtr.Command[2]
+
+			for _, fragment := range []string{"touch /pwned", "$(id)", "`whoami`", "${HOME}", "u:p@h"} {
+				Expect(script).NotTo(ContainSubstring(fragment))
+			}
+			Expect(script).To(ContainSubstring(`--database-url "${DATABASE_URL}"`))
+			Expect(initCtr.Env).To(ContainElement(corev1.EnvVar{Name: "DATABASE_URL", Value: hostile}))
+		})
+
+		It("should not set DATABASE_URL when DatabaseURL is empty", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "deploy-no-dburl",
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{
+						Name: "dummy",
+					},
+					TLS: &warpgatev1alpha1.InstanceTLSSpec{
+						CertManager: boolPtr(false),
+					},
+				},
+			}
+			deploy := reconciler.buildDeployment(inst)
+			initCtr := deploy.Spec.Template.Spec.InitContainers[0]
+			Expect(initCtr.Command[2]).NotTo(ContainSubstring("--database-url"))
+			for _, e := range initCtr.Env {
+				Expect(e.Name).NotTo(Equal("DATABASE_URL"))
+			}
 		})
 
 		It("should use emptyDir volume when storage is disabled", func() {
