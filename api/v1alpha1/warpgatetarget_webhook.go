@@ -86,21 +86,36 @@ func (d *WarpgateTargetCustomDefaulter) Default(ctx context.Context, target *War
 		target.Spec.VNC.Port = 5900
 	}
 
-	// Default TLS mode to defaultTLSMode for HTTP, MySQL, and PostgreSQL targets.
-	if target.Spec.HTTP != nil && target.Spec.HTTP.TLS != nil && target.Spec.HTTP.TLS.Mode == "" {
-		target.Spec.HTTP.TLS.Mode = defaultTLSMode
+	// Default TLS mode and verification for HTTP, MySQL, PostgreSQL, and Kubernetes targets.
+	if target.Spec.HTTP != nil {
+		defaultTLS(target.Spec.HTTP.TLS)
 	}
-	if target.Spec.MySQL != nil && target.Spec.MySQL.TLS != nil && target.Spec.MySQL.TLS.Mode == "" {
-		target.Spec.MySQL.TLS.Mode = defaultTLSMode
+	if target.Spec.MySQL != nil {
+		defaultTLS(target.Spec.MySQL.TLS)
 	}
-	if target.Spec.PostgreSQL != nil && target.Spec.PostgreSQL.TLS != nil && target.Spec.PostgreSQL.TLS.Mode == "" {
-		target.Spec.PostgreSQL.TLS.Mode = defaultTLSMode
+	if target.Spec.PostgreSQL != nil {
+		defaultTLS(target.Spec.PostgreSQL.TLS)
 	}
-	if target.Spec.Kubernetes != nil && target.Spec.Kubernetes.TLS != nil && target.Spec.Kubernetes.TLS.Mode == "" {
-		target.Spec.Kubernetes.TLS.Mode = defaultTLSMode
+	if target.Spec.Kubernetes != nil {
+		defaultTLS(target.Spec.Kubernetes.TLS)
 	}
 
 	return nil
+}
+
+// defaultTLS fills in an explicit tls block: mode defaults to Preferred and
+// certificate verification defaults to on.
+func defaultTLS(tls *TLSConfigSpec) {
+	if tls == nil {
+		return
+	}
+	if tls.Mode == "" {
+		tls.Mode = defaultTLSMode
+	}
+	if tls.Verify == nil {
+		v := true
+		tls.Verify = &v
+	}
 }
 
 // +kubebuilder:webhook:path=/validate-warpgate-warpgate-warp-tech-v1alpha1-warpgatetarget,mutating=false,failurePolicy=fail,sideEffects=None,groups=warpgate.warpgate.warp.tech,resources=warpgatetargets,verbs=create;update;delete,versions=v1alpha1,name=vwarpgatetarget.kb.io,admissionReviewVersions=v1
