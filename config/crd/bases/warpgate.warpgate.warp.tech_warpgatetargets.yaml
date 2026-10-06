@@ -86,7 +86,10 @@ spec:
                         - Required
                         type: string
                       verify:
-                        description: verify enables TLS certificate verification.
+                        default: true
+                        description: |-
+                          verify enables TLS certificate verification. Defaults to true; set it to
+                          false explicitly to accept unverified certificates.
                         type: boolean
                     required:
                     - mode
@@ -153,7 +156,10 @@ spec:
                         - Required
                         type: string
                       verify:
-                        description: verify enables TLS certificate verification.
+                        default: true
+                        description: |-
+                          verify enables TLS certificate verification. Defaults to true; set it to
+                          false explicitly to accept unverified certificates.
                         type: boolean
                     required:
                     - mode
@@ -225,7 +231,10 @@ spec:
                         - Required
                         type: string
                       verify:
-                        description: verify enables TLS certificate verification.
+                        default: true
+                        description: |-
+                          verify enables TLS certificate verification. Defaults to true; set it to
+                          false explicitly to accept unverified certificates.
                         type: boolean
                     required:
                     - mode
@@ -298,7 +307,10 @@ spec:
                         - Required
                         type: string
                       verify:
-                        description: verify enables TLS certificate verification.
+                        default: true
+                        description: |-
+                          verify enables TLS certificate verification. Defaults to true; set it to
+                          false explicitly to accept unverified certificates.
                         type: boolean
                     required:
                     - mode

@@ -17,6 +17,7 @@ The operator provides a `WarpgatePasswordCredential` custom resource with the fo
 Status fields:
 - `userID` -- the resolved Warpgate user UUID.
 - `credentialID` -- the Warpgate-assigned credential UUID.
+- `appliedSecretVersion` -- `<secret>/<key>@<resourceVersion>` of the password Secret last pushed to Warpgate.
 - `conditions` -- standard Kubernetes conditions list.
 
 Print columns: `Username`, `CredentialID`, `Ready`.
@@ -71,3 +72,15 @@ Both credential controllers resolve the target user by username via the Warpgate
 
 **Scenarios:**
 - **Given** a credential CR referencing username `"alice"` **When** the controller reconciles **Then** it calls the Warpgate API to resolve `"alice"` to a UUID and stores it in `status.userID`.
+
+### REQ-CRED-006: Password Rotation
+
+**Status:** ADDED
+
+The password credential controller watches Secrets and enqueues every `WarpgatePasswordCredential` in the same namespace whose `passwordSecretRef.name` matches. On reconcile it compares the Secret's `<name>/<key>@<resourceVersion>` with `status.appliedSecretVersion`. If they differ (or the credential now belongs to a different user), it deletes the old Warpgate credential first and then creates a new one with the current password, so the old password never outlives the rotation.
+
+**Scenarios:**
+
+- **Given** a synced `WarpgatePasswordCredential` **When** its password Secret is updated **Then** the Secret watch triggers a reconcile that deletes the old credential and creates one with the new password.
+- **Given** the Secret is unchanged **When** the controller reconciles **Then** no Warpgate credential calls are made.
+- **Given** deleting the old credential fails **When** the controller reconciles **Then** it keeps the old `credentialID`, sets `Ready=False` with reason `RotateFailed`, and retries.

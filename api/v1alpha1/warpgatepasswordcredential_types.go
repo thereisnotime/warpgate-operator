@@ -39,6 +39,12 @@ type WarpgatePasswordCredentialStatus struct {
 	UserID string `json:"userID,omitempty"`
 	// credentialID is the Warpgate-assigned credential UUID.
 	CredentialID string `json:"credentialID,omitempty"`
+
+	// appliedSecretVersion identifies the password Secret revision
+	// (<name>/<key>@<resourceVersion>) last pushed to Warpgate. When the Secret
+	// changes, the credential is replaced so the old password stops working.
+	// +optional
+	AppliedSecretVersion string `json:"appliedSecretVersion,omitempty"`
 	// conditions represent the current state.
 	// +listType=map
 	// +listMapKey=type

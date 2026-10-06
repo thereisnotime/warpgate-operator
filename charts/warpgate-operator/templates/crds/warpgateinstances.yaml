@@ -86,7 +86,25 @@ spec:
                 description: |-
                   databaseURL overrides the default SQLite database with a PostgreSQL connection string.
                   Example: "postgres://user:pass@host:5432/warpgate"
+                  This field is deprecated because the value (including any password) is stored in
+                  plain text in this resource and in the generated Deployment. Use databaseURLSecretRef.
                 type: string
+              databaseURLSecretRef:
+                description: |-
+                  databaseURLSecretRef references a Secret key holding the database connection string.
+                  Takes precedence over databaseURL. The key defaults to "url".
+                properties:
+                  key:
+                    description: |-
+                      key is the key within the Secret. Defaults to "password" for password refs.
+                      Unused by tokenSecretRef (which always reads "username" and "password" keys).
+                    type: string
+                  name:
+                    description: name is the name of the Secret.
+                    type: string
+                required:
+                - name
+                type: object
               externalHost:
                 description: externalHost sets the external hostname for Warpgate
                   cookie domain and URL generation.
@@ -354,6 +372,15 @@ spec:
                       secretName references an existing TLS Secret (with tls.crt and tls.key).
                       If set, cert-manager is not used and the secret is mounted directly.
                     type: string
+                  verifyConnection:
+                    description: |-
+                      verifyConnection controls TLS verification on the auto-created WarpgateConnection.
+                      Unset: verify against the CA in secretName (its ca.crt, or tls.crt when there is no
+                      ca.crt) when secretName is set, and skip verification for the self-signed certificate
+                      generated inside the pod, which the operator has no copy of.
+                      true: always verify; reconciliation fails if the operator has no CA to verify against.
+                      false: never verify.
+                    type: boolean
                 type: object
               tolerations:
                 description: tolerations for scheduling.

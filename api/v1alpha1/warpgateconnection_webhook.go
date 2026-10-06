@@ -90,5 +90,11 @@ func validateConnection(conn *WarpgateConnection) (admission.Warnings, error) {
 	if conn.Spec.AuthSecretRef.Name == "" {
 		return nil, fmt.Errorf("spec.authSecretRef.name must not be empty")
 	}
+	if conn.Spec.CASecretRef != nil && conn.Spec.CASecretRef.Name == "" {
+		return nil, fmt.Errorf("spec.caSecretRef.name must not be empty")
+	}
+	if conn.Spec.CASecretRef != nil && conn.Spec.InsecureSkipVerify {
+		return admission.Warnings{"caSecretRef is ignored because insecureSkipVerify is true"}, nil
+	}
 	return nil, nil
 }

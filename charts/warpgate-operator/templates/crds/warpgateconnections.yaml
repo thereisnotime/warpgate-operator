@@ -73,6 +73,23 @@ spec:
                 required:
                 - name
                 type: object
+              caSecretRef:
+                description: |-
+                  caSecretRef references a Secret key holding a PEM CA bundle used to verify the
+                  Warpgate server certificate instead of the system trust store. The key defaults
+                  to "ca.crt". Ignored when insecureSkipVerify is true.
+                properties:
+                  key:
+                    description: |-
+                      key is the key within the Secret. Defaults to "password" for password refs.
+                      Unused by tokenSecretRef (which always reads "username" and "password" keys).
+                    type: string
+                  name:
+                    description: name is the name of the Secret.
+                    type: string
+                required:
+                - name
+                type: object
               host:
                 description: host is the URL of the Warpgate instance (e.g. https://warpgate.example.com).
                 type: string

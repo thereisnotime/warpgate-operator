@@ -18,8 +18,10 @@ package controller
 
 import (
 	"context"
+	"crypto/pbkdf2"
 	"crypto/sha256"
 	"fmt"
+	"hash/fnv"
 	"strings"
 	"time"
 
@@ -39,6 +41,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/yaml"
 
 	warpgatev1alpha1 "github.com/thereisnotime/warpgate-operator/api/v1alpha1"
 )
@@ -306,6 +309,44 @@ func adminPasswordKey(inst *warpgatev1alpha1.WarpgateInstance) string {
 	return "password"
 }
 
+// databaseURLFromSecret reports whether the database URL comes from a Secret.
+// databaseURLSecretRef wins over the deprecated inline databaseURL.
+func databaseURLFromSecret(inst *warpgatev1alpha1.WarpgateInstance) bool {
+	return inst.Spec.DatabaseURLSecretRef != nil && inst.Spec.DatabaseURLSecretRef.Name != ""
+}
+
+// externalDatabase reports whether Warpgate should use a database other than
+// the bundled SQLite file.
+func externalDatabase(inst *warpgatev1alpha1.WarpgateInstance) bool {
+	return databaseURLFromSecret(inst) || inst.Spec.DatabaseURL != ""
+}
+
+func databaseURLKey(inst *warpgatev1alpha1.WarpgateInstance) string {
+	if inst.Spec.DatabaseURLSecretRef != nil && inst.Spec.DatabaseURLSecretRef.Key != "" {
+		return inst.Spec.DatabaseURLSecretRef.Key
+	}
+	return "url"
+}
+
+// databaseURLEnv returns the DATABASE_URL variable for the init container,
+// sourced from the Secret when one is referenced.
+func databaseURLEnv(inst *warpgatev1alpha1.WarpgateInstance) corev1.EnvVar {
+	if databaseURLFromSecret(inst) {
+		return corev1.EnvVar{
+			Name: "DATABASE_URL",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: inst.Spec.DatabaseURLSecretRef.Name,
+					},
+					Key: databaseURLKey(inst),
+				},
+			},
+		}
+	}
+	return corev1.EnvVar{Name: "DATABASE_URL", Value: inst.Spec.DatabaseURL}
+}
+
 func instanceLabels(inst *warpgatev1alpha1.WarpgateInstance) map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/name":       "warpgate",
@@ -329,9 +370,34 @@ func configHash(inst *warpgatev1alpha1.WarpgateInstance) string {
 		kubernetesEnabled(inst)))
 	h.Write([]byte(inst.Spec.ExternalHost))
 	h.Write([]byte(inst.Spec.ConfigOverride))
-	h.Write([]byte(inst.Spec.DatabaseURL))
+	h.Write(databaseURLFingerprint(inst))
+	if databaseURLFromSecret(inst) {
+		h.Write([]byte(inst.Spec.DatabaseURLSecretRef.Name + "/" + databaseURLKey(inst)))
+	}
 	h.Write([]byte(inst.Spec.SSHKeysSecretName))
 	return fmt.Sprintf("%x", h.Sum(nil))[:12]
+}
+
+// databaseURLFingerprintIterations makes guessing a database password from the
+// published rollout hash expensive; the URL usually embeds a credential.
+const databaseURLFingerprintIterations = 100_000
+
+// databaseURLFingerprint derives a change-detection value for spec.databaseURL
+// with PBKDF2 instead of feeding the raw URL into the fast rollout hash, which
+// ends up in a pod template annotation anyone with pod read access can see.
+func databaseURLFingerprint(inst *warpgatev1alpha1.WarpgateInstance) []byte {
+	if inst.Spec.DatabaseURL == "" {
+		return nil
+	}
+	key, err := pbkdf2.Key(sha256.New, inst.Spec.DatabaseURL,
+		[]byte("warpgate-operator/database-url/"+string(inst.UID)),
+		databaseURLFingerprintIterations, 32)
+	if err != nil {
+		// Only fails for invalid parameters; still change on URL changes
+		// without exposing the raw value.
+		return []byte("database-url-set")
+	}
+	return key
 }
 
 // ---------------------------------------------------------------------------
@@ -341,9 +407,9 @@ func configHash(inst *warpgatev1alpha1.WarpgateInstance) string {
 func (r *WarpgateInstanceReconciler) buildWarpgateConfig(inst *warpgatev1alpha1.WarpgateInstance) string {
 	var b strings.Builder
 
-	if inst.Spec.DatabaseURL != "" {
-		fmt.Fprintf(&b, "database_url: \"%s\"\n", inst.Spec.DatabaseURL)
-	} else {
+	// An external database URL usually carries credentials, so it never goes
+	// into this ConfigMap. The init container appends it from DATABASE_URL.
+	if !externalDatabase(inst) {
 		b.WriteString("database_url: sqlite:/data/db\n")
 	}
 
@@ -377,7 +443,11 @@ func (r *WarpgateInstanceReconciler) buildWarpgateConfig(inst *warpgatev1alpha1.
 	}
 
 	if inst.Spec.ExternalHost != "" {
-		fmt.Fprintf(&b, "external_host: %s\n", inst.Spec.ExternalHost)
+		// Marshal instead of printf so the value can't break out of its scalar.
+		out, err := yaml.Marshal(map[string]string{"external_host": inst.Spec.ExternalHost})
+		if err == nil {
+			b.Write(out)
+		}
 	}
 
 	// Session recording lives in Warpgate's database parameters, not the config
@@ -553,8 +623,10 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 	if kubernetesEnabled(inst) {
 		setupCmd += fmt.Sprintf(` --kubernetes-port %d`, instanceKubernetesPort(inst))
 	}
-	if inst.Spec.DatabaseURL != "" {
-		setupCmd += fmt.Sprintf(` --database-url "%s"`, inst.Spec.DatabaseURL)
+	if externalDatabase(inst) {
+		// The URL reaches the script through the environment so the shell never
+		// parses it as code.
+		setupCmd += ` --database-url "${DATABASE_URL}"`
 	}
 	if inst.Spec.RecordSessions != nil && *inst.Spec.RecordSessions {
 		// ponytail: seeded at first setup only; later toggles need the admin UI or parameters API
@@ -586,6 +658,14 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 			`echo "Applying operator config..."`,
 			`cp /config/warpgate.yaml /data/warpgate.yaml`,
 		)
+		if externalDatabase(inst) {
+			// Write database_url from the environment as a single-quoted YAML
+			// scalar ('' is the only escape needed inside one).
+			scriptParts = append(scriptParts,
+				`sed -i '/^database_url:/d' /data/warpgate.yaml`,
+				`printf "database_url: '%s'\n" "$(printf '%s' "${DATABASE_URL}" | sed "s/'/''/g")" >> /data/warpgate.yaml`,
+			)
+		}
 	}
 
 	// 5. Generate self-signed TLS if no certs exist yet (and no TLS secret / cert-manager)
@@ -609,6 +689,23 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 	)
 
 	initScript := strings.Join(scriptParts, "\n")
+
+	initEnv := []corev1.EnvVar{
+		{
+			Name: "ADMIN_PASSWORD",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: inst.Spec.AdminPasswordSecretRef.Name,
+					},
+					Key: adminPasswordKey(inst),
+				},
+			},
+		},
+	}
+	if externalDatabase(inst) {
+		initEnv = append(initEnv, databaseURLEnv(inst))
+	}
 
 	// Init container volume mounts
 	initVolumeMounts := []corev1.VolumeMount{
@@ -662,7 +759,14 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 		}
 	}
 
-	hash := configHash(inst)
+	// Fold the init script into the rollout hash so pods pick up changes to
+	// the generated script (not just to the CR spec). This is a change-detection
+	// key, not a security hash: the script only references secrets by env var
+	// name and configHash already derives the database URL with PBKDF2.
+	rollout := fnv.New64a()
+	_, _ = rollout.Write([]byte(configHash(inst))) // hash writes never fail
+	_, _ = rollout.Write([]byte(initScript))
+	hash := fmt.Sprintf("%016x", rollout.Sum64())[:12]
 
 	// Deployment strategy — default Recreate for RWO PVC compatibility.
 	strategy := appsv1.DeploymentStrategy{
@@ -775,19 +879,7 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 							Image:        image,
 							Command:      []string{"/bin/sh", "-c", initScript},
 							VolumeMounts: initVolumeMounts,
-							Env: []corev1.EnvVar{
-								{
-									Name: "ADMIN_PASSWORD",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: inst.Spec.AdminPasswordSecretRef.Name,
-											},
-											Key: adminPasswordKey(inst),
-										},
-									},
-								},
-							},
+							Env:          initEnv,
 						},
 					},
 					Containers: []corev1.Container{
@@ -1092,6 +1184,11 @@ func (r *WarpgateInstanceReconciler) ensureWarpgateConnection(ctx context.Contex
 		return err
 	}
 
+	insecure, caRef, err := r.connectionTLS(ctx, inst)
+	if err != nil {
+		return err
+	}
+
 	// Create/update the WarpgateConnection CR.
 	host := fmt.Sprintf("https://%s-http.%s.svc:%d",
 		inst.Name, inst.Namespace, instanceHTTPPort(inst))
@@ -1109,7 +1206,8 @@ func (r *WarpgateInstanceReconciler) ensureWarpgateConnection(ctx context.Contex
 		conn.Spec = warpgatev1alpha1.WarpgateConnectionSpec{
 			Host:               host,
 			AuthSecretRef:      warpgatev1alpha1.AuthSecretRef{Name: authSecretName},
-			InsecureSkipVerify: true, // self-signed cert within cluster
+			InsecureSkipVerify: insecure,
+			CASecretRef:        caRef,
 		}
 		return nil
 	})
@@ -1119,6 +1217,43 @@ func (r *WarpgateInstanceReconciler) ensureWarpgateConnection(ctx context.Contex
 
 	inst.Status.ConnectionRef = connName
 	return nil
+}
+
+// connectionTLS decides how the auto-created WarpgateConnection verifies the
+// instance. With tls.secretName the operator knows the served certificate and
+// verifies against it (ca.crt, falling back to tls.crt). Otherwise the pod
+// serves a self-signed certificate generated at startup that the operator never
+// sees, so verification is skipped unless tls.verifyConnection demands it.
+func (r *WarpgateInstanceReconciler) connectionTLS(
+	ctx context.Context, inst *warpgatev1alpha1.WarpgateInstance,
+) (insecure bool, caRef *warpgatev1alpha1.SecretKeyRef, err error) {
+	var verify *bool
+	if inst.Spec.TLS != nil {
+		verify = inst.Spec.TLS.VerifyConnection
+	}
+	if verify != nil && !*verify {
+		return true, nil, nil
+	}
+
+	if tlsSecretProvided(inst) {
+		name := inst.Spec.TLS.SecretName
+		var secret corev1.Secret
+		if err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: inst.Namespace}, &secret); err != nil {
+			return false, nil, fmt.Errorf("getting TLS secret %q for connection verification: %w", name, err)
+		}
+		for _, key := range []string{"ca.crt", corev1.TLSCertKey} {
+			if len(secret.Data[key]) > 0 {
+				return false, &warpgatev1alpha1.SecretKeyRef{Name: name, Key: key}, nil
+			}
+		}
+		return false, nil, fmt.Errorf("TLS secret %q has neither ca.crt nor tls.crt to verify the connection against", name)
+	}
+
+	if verify != nil && *verify {
+		return false, nil, fmt.Errorf("tls.verifyConnection is true but there is no CA to verify against; set tls.secretName")
+	}
+	// Self-signed certificate generated inside the pod.
+	return true, nil, nil
 }
 
 // ---------------------------------------------------------------------------

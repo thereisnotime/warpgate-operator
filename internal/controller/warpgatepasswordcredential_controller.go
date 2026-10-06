@@ -29,7 +29,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	warpgatev1alpha1 "github.com/thereisnotime/warpgate-operator/api/v1alpha1"
 	"github.com/thereisnotime/warpgate-operator/internal/warpgate"
@@ -114,6 +116,7 @@ func (r *WarpgatePasswordCredentialReconciler) Reconcile(ctx context.Context, re
 		_ = r.Status().Update(ctx, &cred)
 		return ctrl.Result{}, err
 	}
+	prevUserID := cred.Status.UserID
 	cred.Status.UserID = wgUser.ID
 
 	// Read the password from the referenced Secret.
@@ -153,6 +156,34 @@ func (r *WarpgatePasswordCredentialReconciler) Reconcile(ctx context.Context, re
 		return ctrl.Result{}, err
 	}
 
+	// Warpgate can't update a password credential in place, so a rotated Secret
+	// (or a credential that now belongs to a different user) means replacing it.
+	// The old credential is removed first so the previous password never
+	// outlives the rotation.
+	version := passwordSecretVersion(&secret, key)
+	userChanged := prevUserID != "" && prevUserID != wgUser.ID
+	if cred.Status.CredentialID != "" && (cred.Status.AppliedSecretVersion != version || userChanged) {
+		owner := prevUserID
+		if owner == "" {
+			owner = wgUser.ID
+		}
+		if err := wgClient.DeletePasswordCredential(owner, cred.Status.CredentialID); err != nil && !warpgate.IsNotFound(err) {
+			log.Error(err, "Failed to delete outdated password credential", "credentialID", cred.Status.CredentialID)
+			meta.SetStatusCondition(&cred.Status.Conditions, metav1.Condition{
+				Type:               "Ready",
+				Status:             metav1.ConditionFalse,
+				Reason:             "RotateFailed",
+				Message:            fmt.Sprintf("Failed to remove outdated password credential: %v", err),
+				ObservedGeneration: cred.Generation,
+			})
+			_ = r.Status().Update(ctx, &cred)
+			return ctrl.Result{}, err
+		}
+		log.Info("Deleted outdated password credential", "credentialID", cred.Status.CredentialID)
+		cred.Status.CredentialID = ""
+		cred.Status.AppliedSecretVersion = ""
+	}
+
 	// Create the credential if it doesn't exist yet.
 	if cred.Status.CredentialID == "" {
 		created, err := wgClient.CreatePasswordCredential(wgUser.ID, string(password))
@@ -169,6 +200,7 @@ func (r *WarpgatePasswordCredentialReconciler) Reconcile(ctx context.Context, re
 			return ctrl.Result{}, err
 		}
 		cred.Status.CredentialID = created.ID
+		cred.Status.AppliedSecretVersion = version
 		log.Info("created password credential in Warpgate", "credentialID", created.ID)
 	}
 
@@ -187,10 +219,36 @@ func (r *WarpgatePasswordCredentialReconciler) Reconcile(ctx context.Context, re
 	return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
 }
 
-// SetupWithManager sets up the controller with the Manager.
+// passwordSecretVersion identifies the Secret revision a password was read from.
+func passwordSecretVersion(secret *corev1.Secret, key string) string {
+	return fmt.Sprintf("%s/%s@%s", secret.Name, key, secret.ResourceVersion)
+}
+
+// credentialsForSecret maps a Secret to the password credentials in its
+// namespace that read their password from it.
+func (r *WarpgatePasswordCredentialReconciler) credentialsForSecret(ctx context.Context, obj client.Object) []reconcile.Request {
+	var list warpgatev1alpha1.WarpgatePasswordCredentialList
+	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace())); err != nil {
+		logf.FromContext(ctx).Error(err, "Failed to list password credentials for Secret", "secret", obj.GetName())
+		return nil
+	}
+	var reqs []reconcile.Request
+	for _, cred := range list.Items {
+		if cred.Spec.PasswordSecretRef.Name == obj.GetName() {
+			reqs = append(reqs, reconcile.Request{NamespacedName: types.NamespacedName{
+				Name: cred.Name, Namespace: cred.Namespace,
+			}})
+		}
+	}
+	return reqs
+}
+
+// SetupWithManager sets up the controller with the Manager. It also watches
+// Secrets so a rotated password reaches Warpgate without waiting for a resync.
 func (r *WarpgatePasswordCredentialReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&warpgatev1alpha1.WarpgatePasswordCredential{}).
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.credentialsForSecret)).
 		Named("warpgatepasswordcredential").
 		Complete(r)
 }

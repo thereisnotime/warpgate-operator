@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	warpgatev1alpha1 "github.com/thereisnotime/warpgate-operator/api/v1alpha1"
+	"github.com/thereisnotime/warpgate-operator/internal/warpgate"
 )
 
 var _ = Describe("WarpgateTarget Controller", func() {
@@ -43,6 +44,50 @@ var _ = Describe("WarpgateTarget Controller", func() {
 	)
 
 	const targetRequeueAfter = 5 * time.Minute
+
+	verifyPtr := func(b bool) *bool { return &b }
+
+	Context("toWarpgateTLS", func() {
+		It("verifies when the tls block is absent", func() {
+			Expect(toWarpgateTLS(nil)).To(Equal(warpgate.TLSConfig{Mode: "Preferred", Verify: true}))
+		})
+
+		It("verifies when verify is not set", func() {
+			got := toWarpgateTLS(&warpgatev1alpha1.TLSConfigSpec{Mode: "Required"})
+			Expect(got).To(Equal(warpgate.TLSConfig{Mode: "Required", Verify: true}))
+		})
+
+		It("verifies when verify is true", func() {
+			got := toWarpgateTLS(&warpgatev1alpha1.TLSConfigSpec{Mode: "Required", Verify: verifyPtr(true)})
+			Expect(got.Verify).To(BeTrue())
+		})
+
+		It("skips verification only when verify is explicitly false", func() {
+			got := toWarpgateTLS(&warpgatev1alpha1.TLSConfigSpec{Mode: "Preferred", Verify: verifyPtr(false)})
+			Expect(got).To(Equal(warpgate.TLSConfig{Mode: "Preferred", Verify: false}))
+		})
+
+		It("gets verify=true from the CRD default when a tls block omits it", func() {
+			target := &warpgatev1alpha1.WarpgateTarget{
+				ObjectMeta: metav1.ObjectMeta{Name: "tls-default-verify", Namespace: testNamespace},
+				Spec: warpgatev1alpha1.WarpgateTargetSpec{
+					ConnectionRef: "unused",
+					Name:          "tls-default-verify",
+					HTTP: &warpgatev1alpha1.HTTPTargetSpec{
+						URL: "https://app.example.com",
+						TLS: &warpgatev1alpha1.TLSConfigSpec{Mode: "Required"},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, target)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, target) })
+
+			var stored warpgatev1alpha1.WarpgateTarget
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: target.Name, Namespace: testNamespace}, &stored)).To(Succeed())
+			Expect(stored.Spec.HTTP.TLS.Verify).NotTo(BeNil())
+			Expect(*stored.Spec.HTTP.TLS.Verify).To(BeTrue())
+		})
+	})
 
 	BeforeEach(func() {
 		reconciler = &WarpgateTargetReconciler{
@@ -645,7 +690,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 						},
 						TLS: &warpgatev1alpha1.TLSConfigSpec{
 							Mode:   "Required",
-							Verify: true,
+							Verify: verifyPtr(true),
 						},
 					},
 				},
@@ -767,7 +812,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 						},
 						TLS: &warpgatev1alpha1.TLSConfigSpec{
 							Mode:   "Preferred",
-							Verify: false,
+							Verify: verifyPtr(false),
 						},
 					},
 				},
@@ -1466,7 +1511,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 						ExternalHost: "app.example.com",
 						TLS: &warpgatev1alpha1.TLSConfigSpec{
 							Mode:   "Required",
-							Verify: true,
+							Verify: verifyPtr(true),
 						},
 					},
 				},

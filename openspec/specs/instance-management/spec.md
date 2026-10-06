@@ -21,12 +21,14 @@ The operator provides a `WarpgateInstance` custom resource with the following sp
 - `mysql` (optional) -- MySQL proxy listener: `enabled`, `port`.
 - `postgresql` (optional) -- PostgreSQL proxy listener: `enabled`, `port`.
 - `storage` (optional) -- PVC configuration: `size` (default `1Gi`), `storageClassName`.
-- `tls` (optional) -- TLS configuration: `certManager` (default `true`), `issuerRef` with `name` and `kind`.
+- `tls` (optional) -- TLS configuration: `certManager` (default `true`), `issuerRef` with `name` and `kind`, `secretName`, and `verifyConnection`.
 - `resources` (optional) -- CPU/memory requests and limits.
 - `nodeSelector` (optional) -- node scheduling constraints.
 - `tolerations` (optional) -- scheduling tolerations.
 - `createConnection` (optional, default `true`) -- auto-create a `WarpgateConnection` CR.
 - `externalHost` (optional) -- external hostname for cookie domain and URL generation.
+- `databaseURLSecretRef` (optional) -- Secret key (`name`, `key` defaulting to `url`) holding an external database URL. Takes precedence over `databaseURL`.
+- `databaseURL` (optional, deprecated) -- inline external database URL, stored in plain text.
 
 Status fields:
 
@@ -103,3 +105,39 @@ The controller requeues every 5 minutes. On each pass it compares the owned reso
 
 - **Given** a deployed `WarpgateInstance` whose StatefulSet was manually edited **When** the controller reconciles **Then** it overwrites the StatefulSet back to the desired state.
 - **Given** a deployed `WarpgateInstance` whose HTTP Service was deleted **When** the controller reconciles **Then** it recreates the Service.
+
+### REQ-INST-007: No Spec Values in the Init Script
+
+**Status:** ADDED
+
+The init container runs a generated `sh -c` script. User-controlled values (admin password, database URL) are passed to it as environment variables and referenced as quoted expansions (`"${ADMIN_PASSWORD}"`, `"${DATABASE_URL}"`), so the shell never parses them as code.
+
+**Scenarios:**
+
+- **Given** a `WarpgateInstance` whose `databaseURL` contains shell metacharacters (`"`, `;`, `$(...)`, backticks) **When** the controller builds the Deployment **Then** the init script only references `${DATABASE_URL}` and the raw value appears solely in the init container's `DATABASE_URL` environment variable.
+
+### REQ-INST-008: Database Credentials Stay Out of the ConfigMap
+
+**Status:** ADDED
+
+When an external database is configured (`databaseURLSecretRef` or the deprecated `databaseURL`), the generated `warpgate.yaml` ConfigMap omits `database_url`. The init container gets the URL as `DATABASE_URL` (from the referenced Secret when set) and appends it to `/data/warpgate.yaml` as a single-quoted YAML scalar. Other interpolated values such as `externalHost` are emitted through a YAML marshaller. The validating webhook warns when `databaseURL` is used, and when it is ignored because `databaseURLSecretRef` is also set.
+
+**Scenarios:**
+
+- **Given** a `WarpgateInstance` with `databaseURLSecretRef` **When** the controller reconciles **Then** the ConfigMap contains no `database_url` and the init container's `DATABASE_URL` uses a `secretKeyRef`.
+- **Given** a `WarpgateInstance` with only `databaseURL` **When** it is admitted **Then** the webhook returns a deprecation warning and the instance keeps working.
+- **Given** an `externalHost` containing a newline and extra YAML keys **When** the config is generated **Then** it parses back to the exact `externalHost` string and no extra keys appear.
+- **Given** the operator changes the generated init script **When** it reconciles an existing instance **Then** the pod template hash changes and the Deployment rolls out.
+
+### REQ-INST-009: Verified Auto-Created Connection
+
+**Status:** ADDED
+
+The auto-created `WarpgateConnection` verifies the instance's TLS certificate whenever the operator knows it. With `tls.secretName`, the connection gets `caSecretRef` pointing at that Secret's `ca.crt` (or `tls.crt` if there is no `ca.crt`) and `insecureSkipVerify: false`. Without it, the pod serves a self-signed certificate it generates at startup, so the connection skips verification. `tls.verifyConnection: true` makes the missing CA a reconcile error instead; `tls.verifyConnection: false` always skips verification.
+
+**Scenarios:**
+
+- **Given** a `WarpgateInstance` with `tls.secretName` whose Secret has `ca.crt` **When** the controller reconciles **Then** the connection has `caSecretRef: {name: <secretName>, key: ca.crt}` and verification on.
+- **Given** a `WarpgateInstance` without `tls.secretName` **When** the controller reconciles **Then** the connection has `insecureSkipVerify: true`.
+- **Given** `tls.verifyConnection: true` and no `tls.secretName` **When** the controller reconciles **Then** no connection is created and `Ready=False` with reason `ConnectionFailed`.
+

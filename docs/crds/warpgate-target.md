@@ -111,9 +111,11 @@ Seven target types are supported: SSH, HTTP, MySQL, PostgreSQL, Kubernetes, RDP,
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `tls.mode` | `string` | Yes | - | TLS mode: `Disabled`, `Preferred`, or `Required` |
-| `tls.verify` | `bool` | No | `false` | Enable TLS certificate verification |
+| `tls.verify` | `bool` | No | `true` | Verify the target's TLS certificate. Set `false` explicitly to accept unverified certificates |
 
 When the `tls` block is omitted entirely, Warpgate's own default applies: mode `Preferred` with verification on.
+A `tls` block that leaves out `verify` also verifies. Before this default existed, a block such as
+`tls: {mode: Required}` silently turned verification off; add `verify: false` if you really need that.
 
 ### SecretKeyRef (shared)
 
