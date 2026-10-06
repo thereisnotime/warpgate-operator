@@ -21,6 +21,7 @@ import (
 	"crypto/pbkdf2"
 	"crypto/sha256"
 	"fmt"
+	"hash/fnv"
 	"strings"
 	"time"
 
@@ -759,8 +760,13 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 	}
 
 	// Fold the init script into the rollout hash so pods pick up changes to
-	// the generated script (not just to the CR spec).
-	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(configHash(inst)+initScript)))[:12]
+	// the generated script (not just to the CR spec). This is a change-detection
+	// key, not a security hash: the script only references secrets by env var
+	// name and configHash already derives the database URL with PBKDF2.
+	rollout := fnv.New64a()
+	rollout.Write([]byte(configHash(inst)))
+	rollout.Write([]byte(initScript))
+	hash := fmt.Sprintf("%016x", rollout.Sum64())[:12]
 
 	// Deployment strategy — default Recreate for RWO PVC compatibility.
 	strategy := appsv1.DeploymentStrategy{
