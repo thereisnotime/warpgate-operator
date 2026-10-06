@@ -380,11 +380,13 @@ func (r *WarpgateTargetReconciler) databaseAuth(ctx context.Context, namespace, 
 }
 
 // toWarpgateTLS converts an optional CRD TLS block; absent means Warpgate's default (Preferred, verify).
+// Verification is only turned off when the spec says verify: false explicitly.
 func toWarpgateTLS(spec *warpgatev1alpha1.TLSConfigSpec) warpgate.TLSConfig {
 	if spec == nil {
 		return warpgate.TLSConfig{Mode: "Preferred", Verify: true}
 	}
-	return warpgate.TLSConfig{Mode: spec.Mode, Verify: spec.Verify}
+	verify := spec.Verify == nil || *spec.Verify
+	return warpgate.TLSConfig{Mode: spec.Mode, Verify: verify}
 }
 
 func boolValue(b *bool) bool {
