@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.5.0](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.15...v0.5.0) (2026-10-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* WarpgateTarget tls blocks without a verify field now verify the target certificate. Targets with self-signed or otherwise untrusted certificates that relied on the old implicit false need an explicit verify: false.
+
+### Features
+
+* v0.30.0 release — namespace scoping, graphics_pipeline RDP, Vault backends, dep bump ([#139](https://github.com/thereisnotime/warpgate-operator/issues/139)) ([ffcb80f](https://github.com/thereisnotime/warpgate-operator/commit/ffcb80f94c37685add94e179e1b968563c4fa3e8))
+
+
+### Bug Fixes
+
+* harden database URL handling, TLS verification and password rotation ([#128](https://github.com/thereisnotime/warpgate-operator/issues/128)) ([72c9c0f](https://github.com/thereisnotime/warpgate-operator/commit/72c9c0f5040d398ca06d6313b745b910e0516385))
+
 ## [0.4.15](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.14...v0.4.15) (2026-09-16)
 
 
