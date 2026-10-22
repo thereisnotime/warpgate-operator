@@ -161,8 +161,8 @@ type RDPTargetSpec struct {
 	// verifyTLS verifies the RDP server certificate against the system root store.
 	// +optional
 	VerifyTLS bool `json:"verifyTLS,omitempty"`
-	// compression is the codec: remotefx (default) or lossless.
-	// +kubebuilder:validation:Enum=remotefx;lossless
+	// compression is the codec: remotefx (default), lossless, or graphics_pipeline (RDPGFX).
+	// +kubebuilder:validation:Enum=remotefx;lossless;graphics_pipeline
 	// +optional
 	Compression string `json:"compression,omitempty"`
 	// interactiveLogon shows the target's own sign-in screen instead of logging on automatically.

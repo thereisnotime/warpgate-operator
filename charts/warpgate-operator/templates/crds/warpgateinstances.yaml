@@ -275,6 +275,91 @@ spec:
                       More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
                     type: object
                 type: object
+              secretBackends:
+                description: |-
+                  secretBackends configures external secret backends (e.g. HashiCorp Vault / OpenBao).
+                  Requires Warpgate v0.30.0+.
+                properties:
+                  vault:
+                    description: vault configures a HashiCorp Vault or OpenBao secret
+                      backend.
+                    properties:
+                      appRole:
+                        description: |-
+                          appRole configures AppRole authentication.
+                          Mutually exclusive with tokenSecretRef.
+                        properties:
+                          roleID:
+                            description: roleID is the AppRole role ID.
+                            type: string
+                          secretIDSecretRef:
+                            description: secretIDSecretRef references a Secret whose
+                              key holds the AppRole secret ID.
+                            properties:
+                              key:
+                                description: |-
+                                  key is the key within the Secret. Defaults to "password" for password refs.
+                                  Unused by tokenSecretRef (which always reads "username" and "password" keys).
+                                type: string
+                              name:
+                                description: name is the name of the Secret.
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - roleID
+                        - secretIDSecretRef
+                        type: object
+                      caBundleSecretRef:
+                        description: caBundleSecretRef references a Secret containing
+                          a PEM CA bundle for the Vault TLS connection.
+                        properties:
+                          key:
+                            description: |-
+                              key is the key within the Secret. Defaults to "password" for password refs.
+                              Unused by tokenSecretRef (which always reads "username" and "password" keys).
+                            type: string
+                          name:
+                            description: name is the name of the Secret.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      path:
+                        default: secret
+                        description: path is the KV mount path in Vault. Defaults
+                          to "secret".
+                        type: string
+                      tlsSkipVerify:
+                        description: |-
+                          tlsSkipVerify disables TLS verification for the Vault connection.
+                          Not recommended for production.
+                        type: boolean
+                      tokenSecretRef:
+                        description: |-
+                          tokenSecretRef references a Secret whose key holds the Vault token.
+                          Mutually exclusive with appRole.
+                        properties:
+                          key:
+                            description: |-
+                              key is the key within the Secret. Defaults to "password" for password refs.
+                              Unused by tokenSecretRef (which always reads "username" and "password" keys).
+                            type: string
+                          name:
+                            description: name is the name of the Secret.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      url:
+                        description: url is the Vault/OpenBao server address (e.g.
+                          "https://vault.example.com").
+                        type: string
+                    required:
+                    - url
+                    type: object
+                type: object
               ssh:
                 description: ssh configures the SSH protocol listener.
                 properties:

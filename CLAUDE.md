@@ -17,7 +17,7 @@ A Kubernetes operator written in Go that manages [Warpgate](https://github.com/w
 - **API communication:** REST API with dual auth — bearer token (recommended) or username/password session fallback
 - **Secrets:** Sensitive fields (tokens, passwords, SSH keys) reference Kubernetes Secrets, not inline CRD specs
 - **Cleanup:** Finalizer-based — deleting a CR deletes the corresponding Warpgate resource
-- **Scope:** Operator is cluster-scoped, CRs are namespace-scoped
+- **Scope:** Operator is cluster-scoped by default (optionally limited to namespaces by name or label selector), CRs are namespace-scoped
 
 ## CRDs
 

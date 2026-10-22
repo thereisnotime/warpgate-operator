@@ -44,7 +44,7 @@ The chart installs 10 CRDs under the `warpgate.warpgate.warp.tech/v1alpha1` API 
 | `image.pullPolicy` | Image pull policy | `IfNotPresent` |
 | `replicaCount` | Number of operator replicas | `1` |
 | `crds.install` | Install CRDs as part of the release | `true` |
-| `rbac.create` | Create ClusterRole and ClusterRoleBinding | `true` |
+| `rbac.create` | Create the manager ClusterRole and its binding (a ClusterRoleBinding, or RoleBindings when the watched namespaces are limited) | `true` |
 | `serviceAccount.create` | Create a ServiceAccount | `true` |
 | `webhooks.enabled` | Enable admission webhooks | `true` |
 | `webhooks.certManager.enabled` | Use cert-manager for webhook TLS | `true` |
@@ -52,10 +52,31 @@ The chart installs 10 CRDs under the `warpgate.warpgate.warp.tech/v1alpha1` API 
 | `metrics.enabled` | Enable metrics endpoint | `true` |
 | `metrics.secure` | Serve metrics over HTTPS | `true` |
 | `leaderElection.enabled` | Enable leader election for HA | `true` |
+| `operator.watchNamespaces` | Namespaces to watch (empty = all, unless `operator.watchNamespaceSelector` is set) | `[]` |
+| `operator.watchNamespaceSelector` | Label selector of additional namespaces to watch | `""` |
 | `resources.requests.cpu` | CPU request | `100m` |
 | `resources.requests.memory` | Memory request | `128Mi` |
 | `resources.limits.cpu` | CPU limit | `500m` |
 | `resources.limits.memory` | Memory limit | `256Mi` |
+
+## Limiting the Watched Namespaces
+
+By default the operator watches all namespaces and its ClusterRole is bound cluster-wide. Set
+`operator.watchNamespaces` and/or `operator.watchNamespaceSelector` to watch only some namespaces:
+the operator then caches and reads objects, including Secrets, only there, and the chart binds the
+manager ClusterRole with a RoleBinding in each listed namespace and the release namespace instead
+of a ClusterRoleBinding.
+
+```yaml
+operator:
+  watchNamespaces:
+    - team-a
+  watchNamespaceSelector: warpgate.warp.tech/watch=true
+```
+
+Namespaces selected only by label need a RoleBinding to the
+manager ClusterRole (`<fullname>-manager`), created alongside the label. The operator
+restarts itself when the set of matching namespaces changes.
 
 ## Links
 

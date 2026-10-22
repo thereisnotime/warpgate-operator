@@ -17,7 +17,9 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
+	"errors"
 	"flag"
 	"os"
 	"time"
@@ -30,6 +32,8 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -38,6 +42,7 @@ import (
 
 	warpgatev1alpha1 "github.com/thereisnotime/warpgate-operator/api/v1alpha1"
 	"github.com/thereisnotime/warpgate-operator/internal/controller"
+	"github.com/thereisnotime/warpgate-operator/internal/scope"
 	"github.com/thereisnotime/warpgate-operator/internal/version"
 	// +kubebuilder:scaffold:imports
 )
@@ -64,6 +69,7 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var reconcileInterval time.Duration
+	var watchNamespaces, watchNamespaceSelector string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -84,6 +90,11 @@ func main() {
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	flag.DurationVar(&reconcileInterval, "reconcile-interval", 5*time.Minute,
 		"How often controllers re-sync resources with the Warpgate API.")
+	flag.StringVar(&watchNamespaces, "watch-namespaces", "",
+		"Comma-separated namespaces to watch. Empty watches all namespaces unless --watch-namespace-selector is set.")
+	flag.StringVar(&watchNamespaceSelector, "watch-namespace-selector", "",
+		"Label selector of namespaces to watch, in addition to --watch-namespaces. "+
+			"The operator exits to restart when the matching namespaces change.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -159,8 +170,31 @@ func main() {
 		metricsServerOptions.KeyName = metricsCertKey
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	namespaces, err := scope.Parse(watchNamespaces, watchNamespaceSelector)
+	if err != nil {
+		setupLog.Error(err, "Invalid namespace scope")
+		os.Exit(1)
+	}
+	restConfig := ctrl.GetConfigOrDie()
+	var watched []string
+	var cacheOptions cache.Options
+	if namespaces.Enabled() {
+		reader, err := client.New(restConfig, client.Options{Scheme: scheme})
+		if err != nil {
+			setupLog.Error(err, "Failed to create client")
+			os.Exit(1)
+		}
+		watched, cacheOptions.DefaultNamespaces, err = namespaces.CacheNamespaces(context.Background(), reader)
+		if err != nil {
+			setupLog.Error(err, "Failed to resolve the watched namespaces")
+			os.Exit(1)
+		}
+		setupLog.Info("Watching namespaces", "namespaces", watched)
+	}
+
+	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 		Scheme:                 scheme,
+		Cache:                  cacheOptions,
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
 		HealthProbeBindAddress: probeAddr,
@@ -344,8 +378,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	if namespaces.Selector != nil {
+		if err := mgr.Add(&scope.Watcher{
+			Namespaces: namespaces,
+			Reader:     mgr.GetAPIReader(),
+			Current:    watched,
+			Interval:   30 * time.Second,
+		}); err != nil {
+			setupLog.Error(err, "Failed to add the namespace watcher")
+			os.Exit(1)
+		}
+	}
+
 	setupLog.Info("Starting manager", "version", version.Version, "commit", version.Commit, "date", version.Date)
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+		if errors.Is(err, scope.ErrNamespacesChanged) {
+			setupLog.Info("Restarting for the changed set of namespaces")
+			os.Exit(0)
+		}
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)
 	}
