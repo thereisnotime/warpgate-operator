@@ -380,6 +380,29 @@ func (r *WarpgateInstanceReconciler) buildWarpgateConfig(inst *warpgatev1alpha1.
 		fmt.Fprintf(&b, "external_host: %s\n", inst.Spec.ExternalHost)
 	}
 
+	if sb := inst.Spec.SecretBackends; sb != nil && sb.Vault != nil {
+		v := sb.Vault
+		b.WriteString("secret_backends:\n")
+		b.WriteString("  - type: vault\n")
+		fmt.Fprintf(&b, "    url: \"%s\"\n", v.URL)
+		if v.Path != "" {
+			fmt.Fprintf(&b, "    path: \"%s\"\n", v.Path)
+		}
+		if v.TLSSkipVerify {
+			b.WriteString("    tls_skip_verify: true\n")
+		}
+		if v.TokenSecretRef != nil {
+			b.WriteString("    auth:\n")
+			b.WriteString("      type: token\n")
+			b.WriteString("      # token injected at runtime via VAULT_TOKEN env var\n")
+		} else if v.AppRole != nil {
+			b.WriteString("    auth:\n")
+			b.WriteString("      type: approle\n")
+			fmt.Fprintf(&b, "      role_id: \"%s\"\n", v.AppRole.RoleID)
+			b.WriteString("      # secret_id injected at runtime via VAULT_SECRET_ID env var\n")
+		}
+	}
+
 	// Session recording lives in Warpgate's database parameters, not the config
 	// file; it is seeded through unattended-setup (see the init script).
 

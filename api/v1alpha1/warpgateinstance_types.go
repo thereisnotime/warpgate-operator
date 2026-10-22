@@ -121,6 +121,61 @@ type WarpgateInstanceSpec struct {
 	// externalHost sets the external hostname for Warpgate cookie domain and URL generation.
 	// +optional
 	ExternalHost string `json:"externalHost,omitempty"`
+
+	// secretBackends configures external secret backends (e.g. HashiCorp Vault / OpenBao).
+	// Requires Warpgate v0.30.0+.
+	// +optional
+	SecretBackends *SecretBackendsSpec `json:"secretBackends,omitempty"`
+}
+
+// SecretBackendsSpec configures external secret backends for Warpgate.
+type SecretBackendsSpec struct {
+	// vault configures a HashiCorp Vault or OpenBao secret backend.
+	// +optional
+	Vault *VaultSecretBackendSpec `json:"vault,omitempty"`
+}
+
+// VaultSecretBackendSpec configures a HashiCorp Vault / OpenBao backend for storing
+// Warpgate passwords and SSH private keys.
+type VaultSecretBackendSpec struct {
+	// url is the Vault/OpenBao server address (e.g. "https://vault.example.com").
+	// +required
+	URL string `json:"url"`
+
+	// path is the KV mount path in Vault. Defaults to "secret".
+	// +optional
+	// +kubebuilder:default="secret"
+	Path string `json:"path,omitempty"`
+
+	// tokenSecretRef references a Secret whose key holds the Vault token.
+	// Mutually exclusive with appRole.
+	// +optional
+	TokenSecretRef *SecretKeyRef `json:"tokenSecretRef,omitempty"`
+
+	// appRole configures AppRole authentication.
+	// Mutually exclusive with tokenSecretRef.
+	// +optional
+	AppRole *VaultAppRoleSpec `json:"appRole,omitempty"`
+
+	// tlsSkipVerify disables TLS verification for the Vault connection.
+	// Not recommended for production.
+	// +optional
+	TLSSkipVerify bool `json:"tlsSkipVerify,omitempty"`
+
+	// caBundleSecretRef references a Secret containing a PEM CA bundle for the Vault TLS connection.
+	// +optional
+	CABundleSecretRef *SecretKeyRef `json:"caBundleSecretRef,omitempty"`
+}
+
+// VaultAppRoleSpec configures AppRole authentication for a Vault backend.
+type VaultAppRoleSpec struct {
+	// roleID is the AppRole role ID.
+	// +required
+	RoleID string `json:"roleID"`
+
+	// secretIDSecretRef references a Secret whose key holds the AppRole secret ID.
+	// +required
+	SecretIDSecretRef SecretKeyRef `json:"secretIDSecretRef"`
 }
 
 // HTTPListenerSpec configures the HTTP/HTTPS protocol listener.
