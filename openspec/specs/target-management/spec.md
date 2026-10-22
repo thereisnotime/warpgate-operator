@@ -46,6 +46,7 @@ HTTP targets support `url`, optional `tls` configuration (mode: `Disabled`/`Pref
 
 **Scenarios:**
 - **Given** an HTTP target with TLS mode `Required` and verify `true` **When** the controller reconciles **Then** the Warpgate API request includes the TLS configuration.
+- **Given** a target whose `tls` block omits `verify` **When** it is admitted and reconciled **Then** `verify` defaults to `true` (CRD default and webhook) and the Warpgate API request has `verify: true`. Verification is only disabled when `verify: false` is set explicitly.
 
 ### REQ-TARGET-004: MySQL Target
 **Status:** ADDED

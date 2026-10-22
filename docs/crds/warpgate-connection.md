@@ -21,6 +21,8 @@ Auth mode is auto-detected from the referenced Secret: if the `token` key exists
 | `authSecretRef.usernameKey` | `string` | No | `username` | Key in the Secret that holds the username (session auth) |
 | `authSecretRef.passwordKey` | `string` | No | `password` | Key in the Secret that holds the password (session auth) |
 | `insecureSkipVerify` | `bool` | No | `false` | Disable TLS certificate verification (not recommended for production) |
+| `caSecretRef.name` | `string` | No | - | Secret holding a PEM CA bundle used to verify the Warpgate server certificate instead of the system trust store |
+| `caSecretRef.key` | `string` | No | `ca.crt` | Key in that Secret |
 
 ## Status Fields
 
@@ -120,4 +122,5 @@ The admission webhook applies these defaults if not set:
 - If the Secret contains the token key, token auth is used regardless of whether username/password keys also exist.
 - Username/password session auth requires OTP to be disabled on the Warpgate instance. If OTP is enabled, use token auth instead.
 - The `insecureSkipVerify` flag is provided for development/testing environments with self-signed certificates. Avoid using it in production.
+  For a private or self-signed CA, point `caSecretRef` at a Secret with the CA certificate instead, which keeps verification on.
 - Multiple `WarpgateConnection` resources can coexist in the same namespace, each pointing to a different Warpgate instance. Other CRDs select which instance to use via `connectionRef`.

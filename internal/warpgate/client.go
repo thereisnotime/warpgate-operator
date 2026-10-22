@@ -3,6 +3,7 @@ package warpgate
 import (
 	"bytes"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,6 +21,9 @@ type Config struct {
 	Username           string // For session auth fallback
 	Password           string // For session auth fallback
 	InsecureSkipVerify bool
+	// CACert is a PEM bundle of CAs trusted for the Warpgate server certificate.
+	// When set (and InsecureSkipVerify is false), it replaces the system roots.
+	CACert []byte
 }
 
 // APIError represents an error response from the Warpgate API.
@@ -52,9 +56,17 @@ func NewClient(cfg Config) *Client {
 	jar, _ := cookiejar.New(nil)
 
 	transport := &http.Transport{}
-	if cfg.InsecureSkipVerify {
+	switch {
+	case cfg.InsecureSkipVerify:
 		transport.TLSClientConfig = &tls.Config{
 			InsecureSkipVerify: true, // #nosec G402 -- user-configured InsecureSkipVerify
+		}
+	case len(cfg.CACert) > 0:
+		pool := x509.NewCertPool()
+		pool.AppendCertsFromPEM(cfg.CACert)
+		transport.TLSClientConfig = &tls.Config{
+			RootCAs:    pool,
+			MinVersion: tls.VersionTLS12,
 		}
 	}
 

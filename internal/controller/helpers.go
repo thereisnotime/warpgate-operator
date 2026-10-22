@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"crypto/x509"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -44,6 +45,11 @@ func getWarpgateClient(ctx context.Context, r client.Reader, namespace, connecti
 		return nil, fmt.Errorf("getting auth secret %q: %w", conn.Spec.AuthSecretRef.Name, err)
 	}
 
+	caCert, err := loadConnectionCA(ctx, r, &conn)
+	if err != nil {
+		return nil, err
+	}
+
 	tokenKey := conn.Spec.AuthSecretRef.TokenKey
 	if tokenKey == "" {
 		tokenKey = "token"
@@ -55,6 +61,7 @@ func getWarpgateClient(ctx context.Context, r client.Reader, namespace, connecti
 			Host:               conn.Spec.Host,
 			Token:              string(token),
 			InsecureSkipVerify: conn.Spec.InsecureSkipVerify,
+			CACert:             caCert,
 		}), nil
 	}
 
@@ -83,5 +90,28 @@ func getWarpgateClient(ctx context.Context, r client.Reader, namespace, connecti
 		Username:           string(username),
 		Password:           string(password),
 		InsecureSkipVerify: conn.Spec.InsecureSkipVerify,
+		CACert:             caCert,
 	}), nil
+}
+
+// loadConnectionCA returns the PEM CA bundle referenced by conn.spec.caSecretRef,
+// or nil when there is none or verification is disabled anyway.
+func loadConnectionCA(ctx context.Context, r client.Reader, conn *warpgatev1alpha1.WarpgateConnection) ([]byte, error) {
+	ref := conn.Spec.CASecretRef
+	if ref == nil || conn.Spec.InsecureSkipVerify {
+		return nil, nil
+	}
+	key := ref.Key
+	if key == "" {
+		key = "ca.crt"
+	}
+	var secret corev1.Secret
+	if err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: conn.Namespace}, &secret); err != nil {
+		return nil, fmt.Errorf("getting CA secret %q: %w", ref.Name, err)
+	}
+	pem := secret.Data[key]
+	if !x509.NewCertPool().AppendCertsFromPEM(pem) {
+		return nil, fmt.Errorf("key %q in CA secret %q does not contain a PEM certificate", key, ref.Name)
+	}
+	return pem, nil
 }

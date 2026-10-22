@@ -197,6 +197,28 @@ func validatePort(port *int32, fldPath *field.Path, allowZero bool) *field.Error
 	return nil
 }
 
+// validateDatabase checks the external database settings and warns about the
+// plain-text databaseURL field.
+func validateDatabase(inst *WarpgateInstance, specPath *field.Path) (field.ErrorList, admission.Warnings) {
+	var errs field.ErrorList
+	var warnings admission.Warnings
+	dbRef := inst.Spec.DatabaseURLSecretRef
+	if dbRef != nil && dbRef.Name == "" {
+		errs = append(errs, field.Required(specPath.Child("databaseURLSecretRef", "name"), "databaseURLSecretRef.name must not be empty"))
+	}
+	if inst.Spec.DatabaseURL != "" || dbRef != nil {
+		warnings = append(warnings, "an external database is configured; SQLite persistence via PVC is not needed")
+	}
+	if inst.Spec.DatabaseURL != "" {
+		if dbRef != nil {
+			warnings = append(warnings, "databaseURL is ignored because databaseURLSecretRef is set")
+		} else {
+			warnings = append(warnings, "databaseURL is deprecated and stored in plain text; move it to a Secret and use databaseURLSecretRef")
+		}
+	}
+	return errs, warnings
+}
+
 // validateWarpgateInstance runs all field-level validation checks.
 func validateWarpgateInstance(inst *WarpgateInstance) (admission.Warnings, error) {
 	var allErrs field.ErrorList
@@ -253,11 +275,15 @@ func validateWarpgateInstance(inst *WarpgateInstance) (admission.Warnings, error
 		}
 	}
 
-	if inst.Spec.DatabaseURL != "" {
-		warnings = append(warnings, "databaseURL is set — SQLite persistence via PVC is not needed")
+	if tls := inst.Spec.TLS; tls != nil && tls.VerifyConnection != nil && *tls.VerifyConnection && tls.SecretName == "" {
+		warnings = append(warnings, "tls.verifyConnection is true but tls.secretName is not set; the operator has no CA to verify the auto-created connection against")
 	}
+	dbErrs, dbWarnings := validateDatabase(inst, specPath)
+	allErrs = append(allErrs, dbErrs...)
+	warnings = append(warnings, dbWarnings...)
+	externalDB := inst.Spec.DatabaseURL != "" || inst.Spec.DatabaseURLSecretRef != nil
 	noStorage := inst.Spec.Storage != nil && inst.Spec.Storage.Enabled != nil && !*inst.Spec.Storage.Enabled
-	if noStorage && inst.Spec.DatabaseURL == "" {
+	if noStorage && !externalDB {
 		warnings = append(warnings, "storage is disabled and no databaseURL is set — data will be lost on pod restart")
 	}
 

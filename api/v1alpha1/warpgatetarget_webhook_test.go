@@ -501,3 +501,39 @@ func TestValidate_DeleteAlwaysSucceeds(t *testing.T) {
 		t.Errorf("delete validation should always succeed: %v", err)
 	}
 }
+
+func TestDefault_TLSVerifyDefaultsToTrue(t *testing.T) {
+	target := validHTTPTarget()
+	target.Spec.HTTP.TLS = &TLSConfigSpec{Mode: "Required"}
+
+	if err := (&WarpgateTargetCustomDefaulter{}).Default(context.Background(), target); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if target.Spec.HTTP.TLS.Verify == nil || !*target.Spec.HTTP.TLS.Verify {
+		t.Errorf("expected verify to default to true, got %v", target.Spec.HTTP.TLS.Verify)
+	}
+}
+
+func TestDefault_TLSVerifyFalsePreserved(t *testing.T) {
+	target := validMySQLTarget()
+	target.Spec.MySQL.TLS = &TLSConfigSpec{Mode: "Preferred", Verify: boolPtr(false)}
+
+	if err := (&WarpgateTargetCustomDefaulter{}).Default(context.Background(), target); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if target.Spec.MySQL.TLS.Verify == nil || *target.Spec.MySQL.TLS.Verify {
+		t.Errorf("expected explicit verify=false to be kept, got %v", target.Spec.MySQL.TLS.Verify)
+	}
+}
+
+func TestDefault_TLSAbsentStaysAbsent(t *testing.T) {
+	target := validPostgreSQLTarget()
+	target.Spec.PostgreSQL.TLS = nil
+
+	if err := (&WarpgateTargetCustomDefaulter{}).Default(context.Background(), target); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if target.Spec.PostgreSQL.TLS != nil {
+		t.Errorf("expected no tls block to be added, got %+v", target.Spec.PostgreSQL.TLS)
+	}
+}

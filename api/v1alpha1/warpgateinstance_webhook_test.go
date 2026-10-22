@@ -623,3 +623,92 @@ func TestInstanceValidate_NoWarnStorageDisabledWithDB(t *testing.T) {
 		}
 	}
 }
+
+func TestInstanceValidate_WarnDatabaseURLDeprecated(t *testing.T) {
+	inst := validInstance()
+	inst.Spec.DatabaseURL = "postgres://user:pass@host:5432/warpgate"
+
+	warnings, err := (&WarpgateInstanceCustomValidator{}).ValidateCreate(context.Background(), inst)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !containsWarning(warnings, "deprecated") {
+		t.Errorf("expected a deprecation warning for databaseURL, got: %v", warnings)
+	}
+}
+
+func TestInstanceValidate_DatabaseURLSecretRef(t *testing.T) {
+	inst := validInstance()
+	inst.Spec.DatabaseURLSecretRef = &SecretKeyRef{Name: "wg-db"}
+
+	warnings, err := (&WarpgateInstanceCustomValidator{}).ValidateCreate(context.Background(), inst)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if containsWarning(warnings, "deprecated") {
+		t.Errorf("did not expect a deprecation warning, got: %v", warnings)
+	}
+	if !containsWarning(warnings, "SQLite") {
+		t.Errorf("expected the external database warning, got: %v", warnings)
+	}
+
+	inst.Spec.DatabaseURL = "postgres://inline"
+	warnings, err = (&WarpgateInstanceCustomValidator{}).ValidateCreate(context.Background(), inst)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !containsWarning(warnings, "ignored") {
+		t.Errorf("expected a precedence warning when both are set, got: %v", warnings)
+	}
+}
+
+func TestInstanceValidate_DatabaseURLSecretRefRequiresName(t *testing.T) {
+	inst := validInstance()
+	inst.Spec.DatabaseURLSecretRef = &SecretKeyRef{Key: "url"}
+
+	if _, err := (&WarpgateInstanceCustomValidator{}).ValidateCreate(context.Background(), inst); err == nil {
+		t.Fatal("expected an error for databaseURLSecretRef without a name")
+	}
+}
+
+func TestInstanceValidate_NoDataLossWarnWithDatabaseURLSecretRef(t *testing.T) {
+	inst := validInstance()
+	inst.Spec.Storage = &StorageSpec{Enabled: boolPtr(false), Size: "1Gi"}
+	inst.Spec.DatabaseURLSecretRef = &SecretKeyRef{Name: "wg-db"}
+
+	warnings, err := (&WarpgateInstanceCustomValidator{}).ValidateCreate(context.Background(), inst)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if containsWarning(warnings, "data will be lost") {
+		t.Errorf("should not warn about data loss with an external database, got: %v", warnings)
+	}
+}
+
+func containsWarning(warnings []string, substr string) bool {
+	for _, w := range warnings {
+		if strings.Contains(w, substr) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestInstanceValidate_WarnVerifyConnectionWithoutSecret(t *testing.T) {
+	inst := validInstance()
+	inst.Spec.TLS = &InstanceTLSSpec{VerifyConnection: boolPtr(true)}
+
+	warnings, err := (&WarpgateInstanceCustomValidator{}).ValidateCreate(context.Background(), inst)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !containsWarning(warnings, "verifyConnection") {
+		t.Errorf("expected a verifyConnection warning, got: %v", warnings)
+	}
+
+	inst.Spec.TLS.SecretName = "warpgate-tls"
+	warnings, _ = (&WarpgateInstanceCustomValidator{}).ValidateCreate(context.Background(), inst)
+	if containsWarning(warnings, "verifyConnection") {
+		t.Errorf("did not expect a verifyConnection warning with secretName set, got: %v", warnings)
+	}
+}

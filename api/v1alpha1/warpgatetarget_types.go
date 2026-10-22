@@ -25,8 +25,11 @@ type TLSConfigSpec struct {
 	// mode is the TLS mode: Disabled, Preferred, or Required.
 	// +kubebuilder:validation:Enum=Disabled;Preferred;Required
 	Mode string `json:"mode"`
-	// verify enables TLS certificate verification.
-	Verify bool `json:"verify,omitempty"`
+	// verify enables TLS certificate verification. Defaults to true; set it to
+	// false explicitly to accept unverified certificates.
+	// +optional
+	// +kubebuilder:default=true
+	Verify *bool `json:"verify,omitempty"`
 }
 
 // SSHTargetSpec defines the configuration for an SSH target.
