@@ -2775,9 +2775,10 @@ var _ = Describe("WarpgateTarget Controller", func() {
 					ConnectionRef: connName,
 					Name:          "my-rdppw-target",
 					RDP: &warpgatev1alpha1.RDPTargetSpec{
-						Host:     "10.0.0.51",
-						Port:     3389,
-						Username: "Administrator",
+						Host:        "10.0.0.51",
+						Port:        3389,
+						Username:    "Administrator",
+						Compression: "graphics_pipeline",
 						PasswordSecretRef: &warpgatev1alpha1.SecretKeyRef{
 							Name: pwSecretName,
 							Key:  "password",
@@ -2805,6 +2806,7 @@ var _ = Describe("WarpgateTarget Controller", func() {
 			var opts map[string]any
 			Expect(json.Unmarshal(req["options"], &opts)).To(Succeed())
 			Expect(opts["kind"]).To(Equal("Rdp"))
+			Expect(opts["compression"]).To(Equal("graphics_pipeline"))
 			auth, ok := opts["auth"].(map[string]any)
 			Expect(ok).To(BeTrue())
 			Expect(auth["kind"]).To(Equal("Password"))

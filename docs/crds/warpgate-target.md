@@ -94,7 +94,7 @@ Seven target types are supported: SSH, HTTP, MySQL, PostgreSQL, Kubernetes, RDP,
 | `rdp.domain` | `string` | No | - | Windows logon domain |
 | `rdp.passwordSecretRef` | `object` | No | - | Secret reference for the logon password |
 | `rdp.verifyTLS` | `bool` | No | `false` | Verify the server certificate against the system root store |
-| `rdp.compression` | `string` | No | `remotefx` | `remotefx` or `lossless` |
+| `rdp.compression` | `string` | No | `remotefx` | `remotefx`, `lossless` or `graphics_pipeline` |
 | `rdp.interactiveLogon` | `bool` | No | `false` | Show the target's sign-in screen instead of logging on automatically |
 | `rdp.tlsSecurity` | `string` | No | `Tls12` | `Tls12`, `Tls12WithLegacyCiphers`, or `Tls10Unsafe` |
 

@@ -322,11 +322,12 @@ spec:
                   must be set.
                 properties:
                   compression:
-                    description: 'compression is the codec: remotefx (default) or
-                      lossless.'
+                    description: 'compression is the codec: remotefx (default), lossless,
+                      or graphics_pipeline (RDPGFX).'
                     enum:
                     - remotefx
                     - lossless
+                    - graphics_pipeline
                     type: string
                   domain:
                     description: domain is the Windows logon domain.

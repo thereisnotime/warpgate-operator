@@ -92,7 +92,7 @@ type RDPOptions struct {
 	Domain           string       `json:"domain,omitempty"`
 	Auth             PasswordAuth `json:"auth"`
 	VerifyTLS        bool         `json:"verify_tls"`
-	Compression      string       `json:"compression"` // "remotefx" or "lossless"
+	Compression      string       `json:"compression"` // "remotefx", "lossless" or "graphics_pipeline"
 	InteractiveLogon bool         `json:"interactive_logon"`
 	TLSSecurity      string       `json:"tls_security"` // Tls12, Tls12WithLegacyCiphers, Tls10Unsafe
 }
