@@ -110,3 +110,9 @@ networkPolicy:
 operator:
   # -- How often controllers re-sync resources with the Warpgate API.
   reconcileInterval: "5m"
+  # -- Namespaces to watch; empty watches all unless watchNamespaceSelector is set.
+  # Limiting them binds the manager ClusterRole per namespace instead of cluster-wide.
+  watchNamespaces: []
+  # -- Label selector of additional namespaces to watch (e.g. warpgate.warp.tech/watch=true).
+  # Each selected namespace not in watchNamespaces needs a RoleBinding to the manager ClusterRole.
+  watchNamespaceSelector: ""

@@ -47,6 +47,12 @@ spec:
             {{- if .Values.operator.reconcileInterval }}
             - --reconcile-interval={{ .Values.operator.reconcileInterval }}
             {{- end }}
+            {{- with .Values.operator.watchNamespaces }}
+            - --watch-namespaces={{ join "," . }}
+            {{- end }}
+            {{- with .Values.operator.watchNamespaceSelector }}
+            - --watch-namespace-selector={{ . }}
+            {{- end }}
             {{- if .Values.webhooks.enabled }}
             - --webhook-cert-path=/tmp/k8s-webhook-server/serving-certs
             {{- end }}

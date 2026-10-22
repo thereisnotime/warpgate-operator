@@ -124,3 +124,15 @@ The `main` branch requires all changes through PRs with 6 required status checks
 **Scenarios:**
 - **Given** a PR to `main` **When** any required status check fails **Then** the PR cannot be merged.
 - **Given** a direct push to `main` by a non-admin **Then** the push is rejected.
+
+### REQ-INFRA-015: Namespace Scoping
+**Status:** ADDED
+
+The operator can be limited to a set of namespaces with `--watch-namespaces` (names) and `--watch-namespace-selector` (a namespace label selector). The manager cache, and so every read including Secrets, covers only those namespaces. The Helm chart's `operator.watchNamespaces` and `operator.watchNamespaceSelector` values pass the flags and bind the manager ClusterRole with RoleBindings instead of a ClusterRoleBinding.
+
+**Scenarios:**
+- **Given** neither flag is set **When** the operator starts **Then** it watches all namespaces as before.
+- **Given** `--watch-namespaces=a,b` **When** the operator starts **Then** it only caches and reconciles objects in `a` and `b`.
+- **Given** `--watch-namespace-selector` **When** a namespace starts or stops matching it **Then** the operator exits so that it restarts with the new set of namespaces.
+- **Given** the flags select no namespace **When** the operator starts **Then** it exits with an error instead of watching all namespaces.
+- **Given** `operator.watchNamespaces` in the Helm values **When** the chart is rendered **Then** it creates a RoleBinding to the manager ClusterRole in each listed namespace and the release namespace, and no ClusterRoleBinding.

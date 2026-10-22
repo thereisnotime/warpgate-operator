@@ -31,6 +31,7 @@ lifecycle management.
 - **Auto-generated passwords** for users, stored in Kubernetes Secrets
 - **Auto-created Secrets** for ticket values
 - **Admission webhooks** that validate and default CRD specs at create/update time, catching misconfigurations before they reach the controller
+- **Optional namespace scoping** by name or label selector (`--watch-namespaces`, `--watch-namespace-selector`), so the operator only reads objects and Secrets in the namespaces it manages
 
 ## Installation
 
