@@ -26,8 +26,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	warpgatev1alpha1 "github.com/thereisnotime/warpgate-operator/api/v1alpha1"
+	"github.com/thereisnotime/warpgate-operator/internal/scope"
 	"github.com/thereisnotime/warpgate-operator/internal/warpgate"
 )
+
+// secretErrorReason returns the condition reason for err: SecretNotSelected when
+// a referenced Secret exists but is hidden by --secret-selector, else fallback.
+func secretErrorReason(err error, fallback string) string {
+	if scope.IsNotSelected(err) {
+		return "SecretNotSelected"
+	}
+	return fallback
+}
 
 // getWarpgateClient builds a Warpgate API client by looking up the named WarpgateConnection
 // CR and its referenced credentials Secret.

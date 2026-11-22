@@ -157,7 +157,7 @@ func (r *WarpgateInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	if shouldCreateConnection(&inst) {
 		if err := r.ensureWarpgateConnection(ctx, &inst); err != nil {
 			log.Error(err, "failed to ensure WarpgateConnection")
-			r.setCondition(&inst, metav1.ConditionFalse, "ConnectionFailed", err.Error())
+			r.setCondition(&inst, metav1.ConditionFalse, secretErrorReason(err, "ConnectionFailed"), err.Error())
 			_ = r.Status().Update(ctx, &inst)
 			return ctrl.Result{}, err
 		}

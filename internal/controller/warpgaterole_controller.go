@@ -64,7 +64,7 @@ func (r *WarpgateRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		meta.SetStatusCondition(&role.Status.Conditions, metav1.Condition{
 			Type:               "Ready",
 			Status:             metav1.ConditionFalse,
-			Reason:             "ClientError",
+			Reason:             secretErrorReason(err, "ClientError"),
 			Message:            fmt.Sprintf("Failed to get Warpgate client: %v", err),
 			ObservedGeneration: role.Generation,
 		})

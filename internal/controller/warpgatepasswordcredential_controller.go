@@ -68,7 +68,7 @@ func (r *WarpgatePasswordCredentialReconciler) Reconcile(ctx context.Context, re
 		meta.SetStatusCondition(&cred.Status.Conditions, metav1.Condition{
 			Type:               "Ready",
 			Status:             metav1.ConditionFalse,
-			Reason:             "ClientError",
+			Reason:             secretErrorReason(err, "ClientError"),
 			Message:            fmt.Sprintf("Failed to get Warpgate client: %v", err),
 			ObservedGeneration: cred.Generation,
 		})
@@ -129,7 +129,7 @@ func (r *WarpgatePasswordCredentialReconciler) Reconcile(ctx context.Context, re
 		meta.SetStatusCondition(&cred.Status.Conditions, metav1.Condition{
 			Type:               "Ready",
 			Status:             metav1.ConditionFalse,
-			Reason:             "SecretNotFound",
+			Reason:             secretErrorReason(err, "SecretNotFound"),
 			Message:            fmt.Sprintf("Failed to get password secret %q: %v", cred.Spec.PasswordSecretRef.Name, err),
 			ObservedGeneration: cred.Generation,
 		})

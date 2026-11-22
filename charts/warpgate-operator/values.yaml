@@ -116,3 +116,7 @@ operator:
   # -- Label selector of additional namespaces to watch (e.g. warpgate.warp.tech/watch=true).
   # Each selected namespace not in watchNamespaces needs a RoleBinding to the manager ClusterRole.
   watchNamespaceSelector: ""
+  # -- Label selector limiting the Secrets the operator caches and reads (e.g. warpgate.warp.tech/managed=true).
+  # Empty reads every Secret in the watched namespaces. When set, Secrets referenced by Warpgate resources
+  # must carry the label; Secrets the operator creates get it automatically.
+  secretSelector: ""
