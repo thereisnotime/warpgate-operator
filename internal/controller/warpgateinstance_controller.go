@@ -909,7 +909,9 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 						{
 							Name:  "warpgate",
 							Image: image,
-							Args:  []string{"--config", "/data/warpgate.yaml", "run", "--skip-securing-files"},
+							// Global flags must precede the subcommand: warpgate's clap
+							// parser rejects --skip-securing-files after "run".
+							Args:  []string{"--config", "/data/warpgate.yaml", "--skip-securing-files", "run"},
 							Ports: ports,
 							VolumeMounts: []corev1.VolumeMount{
 								{Name: "data", MountPath: "/data"},

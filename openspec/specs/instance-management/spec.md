@@ -141,3 +141,14 @@ The auto-created `WarpgateConnection` verifies the instance's TLS certificate wh
 - **Given** a `WarpgateInstance` without `tls.secretName` **When** the controller reconciles **Then** the connection has `insecureSkipVerify: true`.
 - **Given** `tls.verifyConnection: true` and no `tls.secretName` **When** the controller reconciles **Then** no connection is created and `Ready=False` with reason `ConnectionFailed`.
 
+
+### REQ-INST-010: Warpgate CLI Argument Order
+
+**Status:** ADDED
+
+Warpgate's top-level options (`--config`, `--skip-securing-files`) are not global clap arguments, so they must come before the subcommand. The main container runs `warpgate --config /data/warpgate.yaml --skip-securing-files run` and the init script runs `warpgate --skip-securing-files unattended-setup ...`.
+
+**Scenarios:**
+
+- **Given** any `WarpgateInstance` **When** the controller builds the Deployment **Then** the warpgate container args are `["--config", "/data/warpgate.yaml", "--skip-securing-files", "run"]`.
+- **Given** any `WarpgateInstance` **When** the controller builds the Deployment **Then** the init script invokes `warpgate --skip-securing-files unattended-setup`.

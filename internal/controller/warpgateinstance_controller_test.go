@@ -3296,6 +3296,24 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			Expect(reconciler.buildDeployment(inst).Spec.Template.Spec.InitContainers[0].Command[2]).To(ContainSubstring("--record-sessions"))
 		})
 
+		It("should pass global flags before the run subcommand", func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "arg-order",
+					Namespace: testNamespace,
+				},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version: "0.30.4",
+				},
+			}
+			deploy := reconciler.buildDeployment(inst)
+			// clap only accepts top-level options before the subcommand.
+			Expect(deploy.Spec.Template.Spec.Containers[0].Args).To(Equal(
+				[]string{"--config", "/data/warpgate.yaml", "--skip-securing-files", "run"}))
+			Expect(deploy.Spec.Template.Spec.InitContainers[0].Command[2]).To(
+				ContainSubstring("warpgate --skip-securing-files unattended-setup "))
+		})
+
 		It("should set HTTP enable: false when HTTP is disabled", func() {
 			f := false
 			inst := &warpgatev1alpha1.WarpgateInstance{
