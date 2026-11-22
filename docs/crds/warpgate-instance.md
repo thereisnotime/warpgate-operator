@@ -29,7 +29,7 @@ CRDs like `WarpgateRole` and `WarpgateUser` can reference the deployed instance 
 | `tls.certManager` | `bool` | No | `true` | Enable automatic TLS via cert-manager |
 | `tls.issuerRef.name` | `string` | No | - | Name of a cert-manager Issuer or ClusterIssuer |
 | `tls.issuerRef.kind` | `string` | No | - | `Issuer` or `ClusterIssuer` |
-| `tls.secretName` | `string` | No | - | Existing TLS Secret (`tls.crt`, `tls.key`, optional `ca.crt`) served by Warpgate |
+| `tls.secretName` | `string` | No | - | Existing TLS Secret (`tls.crt`, `tls.key`, optional `ca.crt`) served by Warpgate instead of the cert-manager one |
 | `tls.verifyConnection` | `bool` | No | unset | TLS verification for the auto-created `WarpgateConnection`. See notes |
 | `resources` | `ResourceRequirements` | No | - | CPU/memory requests and limits for the Warpgate container |
 | `nodeSelector` | `map[string]string` | No | - | Node selector constraints |
@@ -167,20 +167,25 @@ spec:
 ## Notes
 
 - **cert-manager integration:** When `tls.certManager` is true (the default), the operator creates a `Certificate`
-  resource for TLS. If no `tls.issuerRef` is provided, a self-signed `Issuer` is created automatically. Make sure
-  cert-manager is installed in the cluster before deploying a `WarpgateInstance` with cert-manager TLS enabled.
+  resource for TLS. If no `tls.issuerRef` is provided, a self-signed `Issuer` is created automatically. The
+  Certificate's Secret (`<name>-tls`) is mounted into the pod and copied into `/data` by the init container, so
+  Warpgate serves the cert-manager certificate. The Deployment is held back until cert-manager has issued that
+  Secret; meanwhile the instance reports `Ready=False` with reason `CertificatePending`. When the certificate is
+  renewed the pods are restarted to pick it up. Make sure cert-manager is installed in the cluster before deploying a
+  `WarpgateInstance` with cert-manager TLS enabled, or set `tls.certManager: false`.
 - **Auto-created WarpgateConnection:** When `createConnection` is true, the operator creates a `WarpgateConnection`
   CR in the same namespace, configured to talk to the deployed instance's internal Service URL. The connection name
   is stored in `status.connectionRef`. Other CRDs can reference it via `connectionRef` to manage resources on this
   instance.
-- **Connection TLS verification:** When `tls.secretName` is set, the auto-created connection verifies Warpgate's
-  certificate against that Secret's `ca.crt` (or `tls.crt` when there is no `ca.crt`) through `caSecretRef`. The
-  certificate must then be valid for `<name>-http.<namespace>.svc`. Without `tls.secretName` the pod serves a
+- **Connection TLS verification:** The auto-created connection verifies Warpgate's certificate whenever the operator
+  knows it: with `tls.secretName`, or with `tls.certManager` (which serves the `<name>-tls` Secret). It verifies
+  against that Secret's `ca.crt` (or `tls.crt` when there is no `ca.crt`) through `caSecretRef`, so the certificate
+  must be valid for `<name>-http.<namespace>.svc`; the cert-manager Certificate already includes that name.
+  `tls.secretName` takes precedence over the cert-manager Secret when both are set. With neither, the pod serves a
   self-signed certificate it generates itself, which the operator never sees, so the connection skips verification.
-  Set `tls.verifyConnection: true` to refuse that (reconciliation fails until `tls.secretName` is set), or `false` to
-  skip verification even with a TLS Secret, for example when its certificate doesn't cover the in-cluster Service name.
-  Note that `tls.certManager` on its own does not change the served certificate; to serve and verify the
-  cert-manager certificate, also set `tls.secretName: <name>-tls`.
+  Set `tls.verifyConnection: true` to refuse that (reconciliation fails until a TLS Secret or cert-manager is
+  configured), or `false` to skip verification even with a TLS Secret, for example when its certificate doesn't
+  cover the in-cluster Service name.
 - **Storage:** Warpgate stores its database and configuration in `/data`. The operator provisions a PVC via the
   StatefulSet's `volumeClaimTemplates`. Scaling down to zero replicas does not delete the PVC -- data persists
   across restarts.

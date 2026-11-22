@@ -220,7 +220,7 @@ var _ = Describe("Connection TLS verification", func() {
 		})
 
 		It("skips verification for the self-generated certificate by default", func() {
-			for _, tls := range []*warpgatev1alpha1.InstanceTLSSpec{nil, {CertManager: boolPtr(true)}, {CertManager: boolPtr(false)}} {
+			for _, tls := range []*warpgatev1alpha1.InstanceTLSSpec{nil, {}, {CertManager: boolPtr(false)}} {
 				insecure, caRef, err := reconciler.connectionTLS(ctx, newInstance(tls))
 				Expect(err).NotTo(HaveOccurred())
 				Expect(insecure).To(BeTrue())

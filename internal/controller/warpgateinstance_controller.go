@@ -40,13 +40,27 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/yaml"
 
 	warpgatev1alpha1 "github.com/thereisnotime/warpgate-operator/api/v1alpha1"
 )
 
 const instanceFinalizer = "warpgate.warp.tech/instance-finalizer"
+
+const (
+	configHashAnnotation = "warpgate.warp.tech/config-hash"
+	// tlsHashAnnotation tracks the served certificate so pods restart (and
+	// copy the new pair into /data) when the TLS Secret changes, for example
+	// on a cert-manager renewal.
+	tlsHashAnnotation = "warpgate.warp.tech/tls-hash"
+
+	// certificatePendingRequeue is a fallback in case the Secret watch misses
+	// the cert-manager Secret being created.
+	certificatePendingRequeue = 10 * time.Second
+)
 
 // WarpgateInstanceReconciler reconciles a WarpgateInstance object.
 type WarpgateInstanceReconciler struct {
@@ -131,6 +145,38 @@ func (r *WarpgateInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		}
 	}
 
+	if certManagerEnabled(&inst) {
+		if err := r.ensureCertManagerResources(ctx, &inst); err != nil {
+			log.Error(err, "failed to ensure cert-manager resources")
+			r.setCondition(&inst, metav1.ConditionFalse, "CertManagerFailed", err.Error())
+			_ = r.Status().Update(ctx, &inst)
+			return ctrl.Result{}, err
+		}
+	}
+
+	// The pod mounts the cert-manager Secret, so hold the Deployment back until
+	// cert-manager has issued it instead of leaving the pod stuck on a missing
+	// volume. The Secret watch requeues as soon as it shows up.
+	if usesCertManagerSecret(&inst) {
+		issued, err := r.tlsSecretIssued(ctx, &inst)
+		if err != nil {
+			log.Error(err, "failed to get cert-manager TLS Secret")
+			r.setCondition(&inst, metav1.ConditionFalse, "CertManagerFailed", err.Error())
+			_ = r.Status().Update(ctx, &inst)
+			return ctrl.Result{}, err
+		}
+		if !issued {
+			name := certManagerSecretName(&inst)
+			log.Info("Waiting for cert-manager to issue TLS Secret", "secret", name)
+			r.setCondition(&inst, metav1.ConditionFalse, "CertificatePending",
+				fmt.Sprintf("waiting for cert-manager to issue Secret %q", name))
+			if err := r.Status().Update(ctx, &inst); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{RequeueAfter: certificatePendingRequeue}, nil
+		}
+	}
+
 	if err := r.ensureDeployment(ctx, &inst); err != nil {
 		log.Error(err, "failed to ensure Deployment")
 		r.setCondition(&inst, metav1.ConditionFalse, "DeploymentFailed", err.Error())
@@ -143,15 +189,6 @@ func (r *WarpgateInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		r.setCondition(&inst, metav1.ConditionFalse, "ServiceFailed", err.Error())
 		_ = r.Status().Update(ctx, &inst)
 		return ctrl.Result{}, err
-	}
-
-	if certManagerEnabled(&inst) {
-		if err := r.ensureCertManagerResources(ctx, &inst); err != nil {
-			log.Error(err, "failed to ensure cert-manager resources")
-			r.setCondition(&inst, metav1.ConditionFalse, "CertManagerFailed", err.Error())
-			_ = r.Status().Update(ctx, &inst)
-			return ctrl.Result{}, err
-		}
 	}
 
 	if shouldCreateConnection(&inst) {
@@ -293,6 +330,33 @@ func certManagerEnabled(inst *warpgatev1alpha1.WarpgateInstance) bool {
 
 func tlsSecretProvided(inst *warpgatev1alpha1.WarpgateInstance) bool {
 	return inst.Spec.TLS != nil && inst.Spec.TLS.SecretName != ""
+}
+
+// certManagerSecretName is the Secret cert-manager writes the instance's
+// Certificate to.
+func certManagerSecretName(inst *warpgatev1alpha1.WarpgateInstance) string {
+	return inst.Name + "-tls"
+}
+
+// usesCertManagerSecret reports whether the pod serves the cert-manager
+// certificate. A user-provided tls.secretName takes precedence.
+func usesCertManagerSecret(inst *warpgatev1alpha1.WarpgateInstance) bool {
+	return certManagerEnabled(inst) && !tlsSecretProvided(inst)
+}
+
+// servedTLSSecret returns the Secret whose certificate Warpgate serves:
+// tls.secretName when set, otherwise the cert-manager Certificate's Secret.
+// An empty name means the pod serves a self-signed certificate it generates
+// itself.
+func servedTLSSecret(inst *warpgatev1alpha1.WarpgateInstance) string {
+	switch {
+	case tlsSecretProvided(inst):
+		return inst.Spec.TLS.SecretName
+	case certManagerEnabled(inst):
+		return certManagerSecretName(inst)
+	default:
+		return ""
+	}
 }
 
 func shouldCreateConnection(inst *warpgatev1alpha1.WarpgateInstance) bool {
@@ -605,9 +669,10 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 
 	// Build the init script matching the official Helm chart pattern:
 	// 1. Copy SSH keys from secret mount to /data/ssh-keys/ (if mounted)
-	// 2. Copy TLS certs from secret mount (tls.crt -> tls.certificate.pem, tls.key -> tls.key.pem)
-	// 3. Run unattended-setup if /data/warpgate.yaml doesn't exist
-	// 4. Copy config override if provided
+	// 2. Run unattended-setup if /data/warpgate.yaml doesn't exist
+	// 3. Copy config override if provided
+	// 4. Copy TLS certs from the secret mount (tls.crt -> tls.certificate.pem,
+	//    tls.key -> tls.key.pem), or generate a self-signed pair
 	// 5. Set file permissions to 600
 	var scriptParts []string
 	scriptParts = append(scriptParts, "#!/bin/sh", "set -e")
@@ -624,19 +689,7 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 		)
 	}
 
-	// 2. Copy TLS certs from secret mount if provided
-	if tlsSecretProvided(inst) {
-		scriptParts = append(scriptParts,
-			`echo "Copying TLS certificates from secret..."`,
-			`if [ -f /tls-secret/tls.crt ]; then`,
-			`  cp /tls-secret/tls.crt /data/tls.certificate.pem`,
-			`  cp /tls-secret/tls.key /data/tls.key.pem`,
-			`  chmod 600 /data/tls.certificate.pem /data/tls.key.pem`,
-			`fi`,
-		)
-	}
-
-	// 3. Run unattended-setup if warpgate.yaml doesn't exist. Setup owns the
+	// 2. Run unattended-setup if warpgate.yaml doesn't exist. Setup owns the
 	// one-time state that lives outside the config file: the admin user, SSH
 	// keys, and the recording parameter.
 	setupCmd := fmt.Sprintf(
@@ -669,7 +722,7 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 		`fi`,
 	)
 
-	// 4. Copy config override if provided
+	// 3. Copy config override if provided
 	if inst.Spec.ConfigOverride != "" {
 		scriptParts = append(scriptParts,
 			`echo "Applying config override..."`,
@@ -691,8 +744,19 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 		}
 	}
 
-	// 5. Generate self-signed TLS if no certs exist yet (and no TLS secret / cert-manager)
-	if !tlsSecretProvided(inst) && !certManagerEnabled(inst) {
+	// 4. Copy the served TLS certificate (tls.secretName or the cert-manager
+	// Secret) on every start, after setup so nothing setup generates can
+	// replace it. Without one, generate a self-signed pair once.
+	if servedTLSSecret(inst) != "" {
+		scriptParts = append(scriptParts,
+			`echo "Copying TLS certificates from secret..."`,
+			`if [ -f /tls-secret/tls.crt ]; then`,
+			`  cp /tls-secret/tls.crt /data/tls.certificate.pem`,
+			`  cp /tls-secret/tls.key /data/tls.key.pem`,
+			`  chmod 600 /data/tls.certificate.pem /data/tls.key.pem`,
+			`fi`,
+		)
+	} else {
 		scriptParts = append(scriptParts,
 			`if [ ! -f /data/tls.certificate.pem ]; then`,
 			`  echo "Generating self-signed TLS certificate..."`,
@@ -740,7 +804,7 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 			Name: "ssh-keys", MountPath: "/ssh-keys", ReadOnly: true,
 		})
 	}
-	if tlsSecretProvided(inst) {
+	if servedTLSSecret(inst) != "" {
 		initVolumeMounts = append(initVolumeMounts, corev1.VolumeMount{
 			Name: "tls-secret", MountPath: "/tls-secret", ReadOnly: true,
 		})
@@ -850,13 +914,13 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 		})
 	}
 
-	// Optional TLS secret volume (spec.tls.secretName)
-	if tlsSecretProvided(inst) {
+	// Optional TLS secret volume (spec.tls.secretName or the cert-manager Secret)
+	if name := servedTLSSecret(inst); name != "" {
 		volumes = append(volumes, corev1.Volume{
 			Name: "tls-secret",
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: inst.Spec.TLS.SecretName,
+					SecretName: name,
 				},
 			},
 		})
@@ -892,7 +956,7 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: labels,
 					Annotations: map[string]string{
-						"warpgate.warp.tech/config-hash": hash,
+						configHashAnnotation: hash,
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -935,9 +999,16 @@ func (r *WarpgateInstanceReconciler) ensureDeployment(ctx context.Context, inst 
 	if err := controllerutil.SetControllerReference(inst, desired, r.Scheme); err != nil {
 		return fmt.Errorf("setting owner reference on Deployment: %w", err)
 	}
+	tlsHash, err := r.tlsSecretHash(ctx, inst)
+	if err != nil {
+		return err
+	}
+	if tlsHash != "" {
+		desired.Spec.Template.Annotations[tlsHashAnnotation] = tlsHash
+	}
 
 	var existing appsv1.Deployment
-	err := r.Get(ctx, types.NamespacedName{Name: desired.Name, Namespace: desired.Namespace}, &existing)
+	err = r.Get(ctx, types.NamespacedName{Name: desired.Name, Namespace: desired.Namespace}, &existing)
 	if apierrors.IsNotFound(err) {
 		return r.Create(ctx, desired)
 	}
@@ -945,19 +1016,56 @@ func (r *WarpgateInstanceReconciler) ensureDeployment(ctx context.Context, inst 
 		return err
 	}
 
-	// Check if update is needed by comparing image, config hash, and replicas.
+	// Check if update is needed by comparing image, config and TLS hashes, and replicas.
 	existingImage := existing.Spec.Template.Spec.Containers[0].Image
 	desiredImage := desired.Spec.Template.Spec.Containers[0].Image
-	existingHash := existing.Spec.Template.Annotations["warpgate.warp.tech/config-hash"]
-	desiredHash := desired.Spec.Template.Annotations["warpgate.warp.tech/config-hash"]
+	existingAnn := existing.Spec.Template.Annotations
+	desiredAnn := desired.Spec.Template.Annotations
+	hashChanged := existingAnn[configHashAnnotation] != desiredAnn[configHashAnnotation] ||
+		existingAnn[tlsHashAnnotation] != desiredAnn[tlsHashAnnotation]
 
-	if existingImage != desiredImage || existingHash != desiredHash || *existing.Spec.Replicas != *desired.Spec.Replicas {
+	if existingImage != desiredImage || hashChanged || *existing.Spec.Replicas != *desired.Spec.Replicas {
 		existing.Spec.Template = desired.Spec.Template
 		existing.Spec.Replicas = desired.Spec.Replicas
 		existing.Spec.Strategy = desired.Spec.Strategy
 		return r.Update(ctx, &existing)
 	}
 	return nil
+}
+
+// tlsSecretIssued reports whether the cert-manager Secret exists and holds a
+// certificate and key.
+func (r *WarpgateInstanceReconciler) tlsSecretIssued(ctx context.Context, inst *warpgatev1alpha1.WarpgateInstance) (bool, error) {
+	var secret corev1.Secret
+	err := r.Get(ctx, types.NamespacedName{Name: certManagerSecretName(inst), Namespace: inst.Namespace}, &secret)
+	if apierrors.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return len(secret.Data[corev1.TLSCertKey]) > 0 && len(secret.Data[corev1.TLSPrivateKeyKey]) > 0, nil
+}
+
+// tlsSecretHash fingerprints the served certificate (public data only) so a
+// renewed or rotated TLS Secret rolls the pods. It returns "" when there is no
+// TLS Secret or it can't be found yet.
+func (r *WarpgateInstanceReconciler) tlsSecretHash(ctx context.Context, inst *warpgatev1alpha1.WarpgateInstance) (string, error) {
+	name := servedTLSSecret(inst)
+	if name == "" {
+		return "", nil
+	}
+	var secret corev1.Secret
+	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: inst.Namespace}, &secret)
+	if apierrors.IsNotFound(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("getting TLS secret %q: %w", name, err)
+	}
+	h := fnv.New64a()
+	_, _ = h.Write(secret.Data[corev1.TLSCertKey]) // hash writes never fail
+	return fmt.Sprintf("%016x", h.Sum64())[:12], nil
 }
 
 // ---------------------------------------------------------------------------
@@ -1136,7 +1244,7 @@ func (r *WarpgateInstanceReconciler) ensureCertificate(ctx context.Context, inst
 	desired.SetNamespace(inst.Namespace)
 
 	spec := map[string]any{
-		"secretName": inst.Name + "-tls",
+		"secretName": certManagerSecretName(inst),
 		"issuerRef": map[string]any{
 			"name": issuerRefName,
 			"kind": issuerKind,
@@ -1243,10 +1351,11 @@ func (r *WarpgateInstanceReconciler) ensureWarpgateConnection(ctx context.Contex
 }
 
 // connectionTLS decides how the auto-created WarpgateConnection verifies the
-// instance. With tls.secretName the operator knows the served certificate and
-// verifies against it (ca.crt, falling back to tls.crt). Otherwise the pod
-// serves a self-signed certificate generated at startup that the operator never
-// sees, so verification is skipped unless tls.verifyConnection demands it.
+// instance. With tls.secretName or cert-manager the operator knows the served
+// certificate and verifies against its Secret (ca.crt, falling back to
+// tls.crt). Otherwise the pod serves a self-signed certificate generated at
+// startup that the operator never sees, so verification is skipped unless
+// tls.verifyConnection demands it.
 func (r *WarpgateInstanceReconciler) connectionTLS(
 	ctx context.Context, inst *warpgatev1alpha1.WarpgateInstance,
 ) (insecure bool, caRef *warpgatev1alpha1.SecretKeyRef, err error) {
@@ -1258,8 +1367,7 @@ func (r *WarpgateInstanceReconciler) connectionTLS(
 		return true, nil, nil
 	}
 
-	if tlsSecretProvided(inst) {
-		name := inst.Spec.TLS.SecretName
+	if name := servedTLSSecret(inst); name != "" {
 		var secret corev1.Secret
 		if err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: inst.Namespace}, &secret); err != nil {
 			return false, nil, fmt.Errorf("getting TLS secret %q for connection verification: %w", name, err)
@@ -1273,7 +1381,7 @@ func (r *WarpgateInstanceReconciler) connectionTLS(
 	}
 
 	if verify != nil && *verify {
-		return false, nil, fmt.Errorf("tls.verifyConnection is true but there is no CA to verify against; set tls.secretName")
+		return false, nil, fmt.Errorf("tls.verifyConnection is true but there is no CA to verify against; enable tls.certManager or set tls.secretName")
 	}
 	// Self-signed certificate generated inside the pod.
 	return true, nil, nil
@@ -1325,6 +1433,24 @@ func (r *WarpgateInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.PersistentVolumeClaim{}).
 		Owns(&warpgatev1alpha1.WarpgateConnection{}).
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.instancesForTLSSecret)).
 		Named("warpgateinstance").
 		Complete(r)
+}
+
+// instancesForTLSSecret maps a Secret to the instances that serve it, so an
+// instance waiting on cert-manager reconciles as soon as the Secret is issued
+// and a renewed certificate rolls the pods.
+func (r *WarpgateInstanceReconciler) instancesForTLSSecret(ctx context.Context, obj client.Object) []reconcile.Request {
+	var list warpgatev1alpha1.WarpgateInstanceList
+	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace())); err != nil {
+		return nil
+	}
+	var reqs []reconcile.Request
+	for i := range list.Items {
+		if servedTLSSecret(&list.Items[i]) == obj.GetName() {
+			reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&list.Items[i])})
+		}
+	}
+	return reqs
 }
