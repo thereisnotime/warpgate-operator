@@ -20,8 +20,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/x509"
-	"encoding/json"
+	"encoding/binary"
 	"fmt"
+	"strconv"
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
@@ -57,9 +58,23 @@ func newClientCache() *clientCache {
 var warpgateClients = newClientCache()
 
 func configFingerprint(cfg warpgate.Config) [sha256.Size]byte {
-	// Config only holds strings, bools, bytes and a duration, so Marshal can't fail.
-	data, _ := json.Marshal(cfg)
-	return sha256.Sum256(data)
+	h := sha256.New()
+	// Length-prefix every field so adjacent values can't run into each other.
+	for _, f := range [][]byte{
+		[]byte(cfg.Host),
+		[]byte(cfg.Token),
+		[]byte(cfg.Username),
+		[]byte(cfg.Password),
+		[]byte(strconv.FormatBool(cfg.InsecureSkipVerify)),
+		cfg.CACert,
+		[]byte(cfg.Timeout.String()),
+	} {
+		_ = binary.Write(h, binary.BigEndian, uint64(len(f)))
+		_, _ = h.Write(f)
+	}
+	var sum [sha256.Size]byte
+	copy(sum[:], h.Sum(nil))
+	return sum
 }
 
 // get returns the cached client for key, building a new one when there is none
