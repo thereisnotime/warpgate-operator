@@ -18,8 +18,11 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -29,25 +32,114 @@ import (
 	"github.com/thereisnotime/warpgate-operator/internal/warpgate"
 )
 
-// getWarpgateClient builds a Warpgate API client by looking up the named WarpgateConnection
-// CR and its referenced credentials Secret.
+// clientCache keeps one long-lived warpgate.Client (and so one HTTP connection
+// pool) per WarpgateConnection. Building a client per reconcile used to leak a
+// keep-alive connection and its goroutines on every reconcile.
+//
+// Entries are keyed by the connection's namespace/name and carry a fingerprint
+// of the resolved config (host, TLS settings, CA bundle and credentials), so a
+// change to the connection spec or to the auth/CA Secrets swaps the client.
+type clientCache struct {
+	mu      sync.Mutex
+	entries map[types.NamespacedName]clientCacheEntry
+}
+
+type clientCacheEntry struct {
+	fingerprint [sha256.Size]byte
+	client      *warpgate.Client
+}
+
+func newClientCache() *clientCache {
+	return &clientCache{entries: map[types.NamespacedName]clientCacheEntry{}}
+}
+
+// warpgateClients is shared by all controllers in the manager.
+var warpgateClients = newClientCache()
+
+func configFingerprint(cfg warpgate.Config) [sha256.Size]byte {
+	// Config only holds strings, bools, bytes and a duration, so Marshal can't fail.
+	data, _ := json.Marshal(cfg)
+	return sha256.Sum256(data)
+}
+
+// get returns the cached client for key, building a new one when there is none
+// or the config changed. A replaced client has its idle connections closed.
+func (cc *clientCache) get(key types.NamespacedName, cfg warpgate.Config) *warpgate.Client {
+	fp := configFingerprint(cfg)
+
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+
+	if e, ok := cc.entries[key]; ok {
+		if e.fingerprint == fp {
+			return e.client
+		}
+		e.client.CloseIdleConnections()
+	}
+	c := warpgate.NewClient(cfg)
+	cc.entries[key] = clientCacheEntry{fingerprint: fp, client: c}
+	return c
+}
+
+// evict drops the client for key and closes its idle connections.
+func (cc *clientCache) evict(key types.NamespacedName) {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	if e, ok := cc.entries[key]; ok {
+		e.client.CloseIdleConnections()
+		delete(cc.entries, key)
+	}
+}
+
+func (cc *clientCache) has(key types.NamespacedName) bool {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	_, ok := cc.entries[key]
+	return ok
+}
+
+// getWarpgateClient returns a Warpgate API client for the named WarpgateConnection,
+// bound to ctx. The underlying client is cached per connection and reused across reconciles.
 func getWarpgateClient(ctx context.Context, r client.Reader, namespace, connectionName string) (*warpgate.Client, error) {
 	var conn warpgatev1alpha1.WarpgateConnection
 	if err := r.Get(ctx, types.NamespacedName{Name: connectionName, Namespace: namespace}, &conn); err != nil {
 		return nil, fmt.Errorf("getting WarpgateConnection %q: %w", connectionName, err)
 	}
+	return clientForConnection(ctx, r, &conn)
+}
 
+// clientForConnection resolves conn's credentials and CA and returns the cached
+// client for it, bound to ctx.
+func clientForConnection(ctx context.Context, r client.Reader, conn *warpgatev1alpha1.WarpgateConnection) (*warpgate.Client, error) {
+	cfg, err := connectionConfig(ctx, r, conn)
+	if err != nil {
+		return nil, err
+	}
+	key := types.NamespacedName{Namespace: conn.Namespace, Name: conn.Name}
+	return warpgateClients.get(key, cfg).WithContext(ctx), nil
+}
+
+// connectionConfig builds the warpgate.Config for conn from its auth Secret and
+// optional CA Secret. It prefers bearer token auth when the token key exists in
+// the Secret, falling back to username/password otherwise.
+func connectionConfig(ctx context.Context, r client.Reader, conn *warpgatev1alpha1.WarpgateConnection) (warpgate.Config, error) {
 	var secret corev1.Secret
 	if err := r.Get(ctx, types.NamespacedName{
 		Name:      conn.Spec.AuthSecretRef.Name,
-		Namespace: namespace,
+		Namespace: conn.Namespace,
 	}, &secret); err != nil {
-		return nil, fmt.Errorf("getting auth secret %q: %w", conn.Spec.AuthSecretRef.Name, err)
+		return warpgate.Config{}, fmt.Errorf("getting auth secret %q: %w", conn.Spec.AuthSecretRef.Name, err)
 	}
 
-	caCert, err := loadConnectionCA(ctx, r, &conn)
+	caCert, err := loadConnectionCA(ctx, r, conn)
 	if err != nil {
-		return nil, err
+		return warpgate.Config{}, err
+	}
+
+	cfg := warpgate.Config{
+		Host:               conn.Spec.Host,
+		InsecureSkipVerify: conn.Spec.InsecureSkipVerify,
+		CACert:             caCert,
 	}
 
 	tokenKey := conn.Spec.AuthSecretRef.TokenKey
@@ -57,12 +149,8 @@ func getWarpgateClient(ctx context.Context, r client.Reader, namespace, connecti
 
 	// Prefer token-based auth if the token key exists in the Secret.
 	if token, ok := secret.Data[tokenKey]; ok && len(token) > 0 {
-		return warpgate.NewClient(warpgate.Config{
-			Host:               conn.Spec.Host,
-			Token:              string(token),
-			InsecureSkipVerify: conn.Spec.InsecureSkipVerify,
-			CACert:             caCert,
-		}), nil
+		cfg.Token = string(token)
+		return cfg, nil
 	}
 
 	// Fall back to username/password auth.
@@ -77,21 +165,17 @@ func getWarpgateClient(ctx context.Context, r client.Reader, namespace, connecti
 
 	username, ok := secret.Data[usernameKey]
 	if !ok {
-		return nil, fmt.Errorf("key %q not found in auth secret %q", usernameKey, conn.Spec.AuthSecretRef.Name)
+		return warpgate.Config{}, fmt.Errorf("key %q not found in auth secret %q", usernameKey, conn.Spec.AuthSecretRef.Name)
 	}
 
 	password, ok := secret.Data[passwordKey]
 	if !ok {
-		return nil, fmt.Errorf("key %q not found in auth secret %q", passwordKey, conn.Spec.AuthSecretRef.Name)
+		return warpgate.Config{}, fmt.Errorf("key %q not found in auth secret %q", passwordKey, conn.Spec.AuthSecretRef.Name)
 	}
 
-	return warpgate.NewClient(warpgate.Config{
-		Host:               conn.Spec.Host,
-		Username:           string(username),
-		Password:           string(password),
-		InsecureSkipVerify: conn.Spec.InsecureSkipVerify,
-		CACert:             caCert,
-	}), nil
+	cfg.Username = string(username)
+	cfg.Password = string(password)
+	return cfg, nil
 }
 
 // loadConnectionCA returns the PEM CA bundle referenced by conn.spec.caSecretRef,

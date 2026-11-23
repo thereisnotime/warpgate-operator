@@ -21,18 +21,16 @@ import (
 	"fmt"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	warpgatev1alpha1 "github.com/thereisnotime/warpgate-operator/api/v1alpha1"
-	"github.com/thereisnotime/warpgate-operator/internal/warpgate"
 )
 
 // WarpgateConnectionReconciler reconciles a WarpgateConnection object
@@ -57,11 +55,15 @@ func (r *WarpgateConnectionReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// Fetch the WarpgateConnection CR.
 	var conn warpgatev1alpha1.WarpgateConnection
 	if err := r.Get(ctx, req.NamespacedName, &conn); err != nil {
+		if apierrors.IsNotFound(err) {
+			warpgateClients.evict(req.NamespacedName)
+		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	// Handle deletion.
 	if !conn.DeletionTimestamp.IsZero() {
+		warpgateClients.evict(req.NamespacedName)
 		if controllerutil.ContainsFinalizer(&conn, warpgateFinalizer) {
 			controllerutil.RemoveFinalizer(&conn, warpgateFinalizer)
 			if err := r.Update(ctx, &conn); err != nil {
@@ -80,7 +82,7 @@ func (r *WarpgateConnectionReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// Build a Warpgate client from the referenced Secret.
-	wgClient, err := r.buildClient(ctx, &conn)
+	wgClient, err := clientForConnection(ctx, r.Client, &conn)
 	if err != nil {
 		log.Error(err, "failed to build Warpgate client")
 		r.setReadyCondition(&conn, metav1.ConditionFalse, "ConnectionFailed", fmt.Sprintf("Failed to build client: %v", err))
@@ -111,67 +113,6 @@ func (r *WarpgateConnectionReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
-}
-
-// buildClient reads the auth Secret and creates a Warpgate API client.
-// It prefers bearer token auth when the token key exists in the Secret,
-// falling back to username/password otherwise.
-func (r *WarpgateConnectionReconciler) buildClient(ctx context.Context, conn *warpgatev1alpha1.WarpgateConnection) (*warpgate.Client, error) {
-	var secret corev1.Secret
-	if err := r.Get(ctx, types.NamespacedName{
-		Name:      conn.Spec.AuthSecretRef.Name,
-		Namespace: conn.Namespace,
-	}, &secret); err != nil {
-		return nil, fmt.Errorf("getting auth secret %q: %w", conn.Spec.AuthSecretRef.Name, err)
-	}
-
-	caCert, err := loadConnectionCA(ctx, r.Client, conn)
-	if err != nil {
-		return nil, err
-	}
-
-	tokenKey := conn.Spec.AuthSecretRef.TokenKey
-	if tokenKey == "" {
-		tokenKey = "token"
-	}
-
-	// Prefer token-based auth if the token key exists in the Secret.
-	if token, ok := secret.Data[tokenKey]; ok && len(token) > 0 {
-		return warpgate.NewClient(warpgate.Config{
-			Host:               conn.Spec.Host,
-			Token:              string(token),
-			InsecureSkipVerify: conn.Spec.InsecureSkipVerify,
-			CACert:             caCert,
-		}), nil
-	}
-
-	// Fall back to username/password auth.
-	usernameKey := conn.Spec.AuthSecretRef.UsernameKey
-	if usernameKey == "" {
-		usernameKey = "username"
-	}
-	passwordKey := conn.Spec.AuthSecretRef.PasswordKey
-	if passwordKey == "" {
-		passwordKey = "password"
-	}
-
-	username, ok := secret.Data[usernameKey]
-	if !ok {
-		return nil, fmt.Errorf("key %q not found in auth secret %q", usernameKey, conn.Spec.AuthSecretRef.Name)
-	}
-
-	password, ok := secret.Data[passwordKey]
-	if !ok {
-		return nil, fmt.Errorf("key %q not found in auth secret %q", passwordKey, conn.Spec.AuthSecretRef.Name)
-	}
-
-	return warpgate.NewClient(warpgate.Config{
-		Host:               conn.Spec.Host,
-		Username:           string(username),
-		Password:           string(password),
-		InsecureSkipVerify: conn.Spec.InsecureSkipVerify,
-		CACert:             caCert,
-	}), nil
 }
 
 // setReadyCondition updates the Ready condition on the WarpgateConnection status.

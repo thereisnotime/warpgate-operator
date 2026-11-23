@@ -79,3 +79,16 @@ When `caSecretRef` is set, the operator reads the PEM bundle from the Secret and
 - **Given** a connection whose `caSecretRef` holds the CA that signed Warpgate's certificate **When** the controller reconciles **Then** it connects and sets `Ready=True`.
 - **Given** a connection whose `caSecretRef` points at a missing Secret or non-PEM data **When** the controller reconciles **Then** it sets `Ready=False` with reason `ConnectionFailed`.
 
+### REQ-CONN-007: Shared API Client per Connection
+
+**Status:** ADDED
+
+Controllers reuse one Warpgate API client, and so one HTTP connection pool, per `WarpgateConnection` instead of building one per reconcile. The client is rebuilt when the resolved connection config changes (host, `insecureSkipVerify`, CA bundle or credentials) and dropped when the connection is deleted; a replaced client closes its idle connections. Every request has a 30s timeout and uses the reconcile context. Session auth logs in once for concurrent callers and logs in again once when Warpgate answers 401.
+
+**Scenarios:**
+
+- **Given** many resources referencing one connection **When** they are reconciled repeatedly **Then** the operator reuses keep-alive connections rather than opening one per reconcile.
+- **Given** the auth Secret or the connection host changes **When** the next reconcile runs **Then** it uses a new client with the new settings and the old client's idle connections are closed.
+- **Given** Warpgate stops responding **When** a request is in flight **Then** it fails after the timeout instead of blocking the worker.
+- **Given** a session-auth connection whose session expired **When** a request gets 401 **Then** the client logs in again and retries the request once.
+

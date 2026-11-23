@@ -27,7 +27,7 @@ func TestNewClient(t *testing.T) {
 		if c.baseURL != "https://warpgate.example.com/@warpgate/admin/api" {
 			t.Errorf("unexpected baseURL: %s", c.baseURL)
 		}
-		if c.authed {
+		if c.session.isAuthed() {
 			t.Error("session client should not be pre-authed")
 		}
 		if c.token != "" {
@@ -43,7 +43,7 @@ func TestNewClient(t *testing.T) {
 		if c.baseURL != "https://warpgate.example.com/@warpgate/admin/api" {
 			t.Errorf("unexpected baseURL: %s", c.baseURL)
 		}
-		if !c.authed {
+		if !c.session.isAuthed() {
 			t.Error("token client should be pre-authed")
 		}
 		if c.token != "my-secret-token" {
@@ -293,7 +293,7 @@ func TestNonJSONErrorBody(t *testing.T) {
 func TestInvalidURLRequestCreation(t *testing.T) {
 	c := &Client{
 		baseURL:  "://bad-url",
-		username: "u", password: "p", authed: true,
+		username: "u", password: "p", session: newSession(true),
 		httpClient: &http.Client{},
 	}
 	err := c.Get("/test", nil)
@@ -312,8 +312,11 @@ func TestSecureClientNoTLSConfig(t *testing.T) {
 		InsecureSkipVerify: false,
 	})
 	transport := c.httpClient.Transport.(*http.Transport)
-	if transport.TLSClientConfig != nil {
-		t.Error("expected no TLSClientConfig when InsecureSkipVerify is false")
+	// The transport is cloned from http.DefaultTransport, which may already carry
+	// a TLSClientConfig (HTTP/2 NextProtos). What matters is that verification
+	// stays on and the system roots are used.
+	if tc := transport.TLSClientConfig; tc != nil && (tc.InsecureSkipVerify || tc.RootCAs != nil) {
+		t.Error("expected default TLS verification with system roots when InsecureSkipVerify is false")
 	}
 }
 
@@ -400,7 +403,7 @@ func (t *brokenBodyTransport) RoundTrip(*http.Request) (*http.Response, error) {
 func TestDoReadAllError(t *testing.T) {
 	c := &Client{
 		baseURL:  "http://localhost",
-		username: "u", password: "p", authed: true,
+		username: "u", password: "p", session: newSession(true),
 		httpClient: &http.Client{
 			Transport: &brokenBodyTransport{statusCode: 200},
 		},
@@ -432,10 +435,10 @@ func TestDoNilResultWithBody(t *testing.T) {
 func TestLoginSkippedWhenAlreadyAuthed(t *testing.T) {
 	// Verify that login() is a no-op when already authenticated.
 	c := NewTestClient("http://localhost")
-	if !c.authed {
+	if !c.session.isAuthed() {
 		t.Fatal("expected test client to be pre-authed")
 	}
-	err := c.login()
+	_, err := c.login()
 	if err != nil {
 		t.Fatalf("expected nil from login() when already authed, got: %v", err)
 	}
@@ -490,7 +493,7 @@ func TestLoginHTTPPostFailure(t *testing.T) {
 		Username: "admin",
 		Password: "secret",
 	})
-	err := c.login()
+	_, err := c.login()
 	if err == nil {
 		t.Fatal("expected login request error, got nil")
 	}
@@ -509,7 +512,7 @@ func TestLoginHTTPErrorResponse(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(Config{Host: srv.URL, Username: "admin", Password: "bad"})
-	err := c.login()
+	_, err := c.login()
 	if err == nil {
 		t.Fatal("expected error from login, got nil")
 	}
