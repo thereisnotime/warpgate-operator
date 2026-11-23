@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/thereisnotime/warpgate-operator/compare/v0.5.0...v0.5.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **client:** reuse one Warpgate client per connection ([#158](https://github.com/thereisnotime/warpgate-operator/issues/158)) ([80a3246](https://github.com/thereisnotime/warpgate-operator/commit/80a32469072bdb6b5b1c458831e396de3bd6e96c))
+
 ## [0.5.0](https://github.com/thereisnotime/warpgate-operator/compare/v0.4.15...v0.5.0) (2026-10-22)
 
 
