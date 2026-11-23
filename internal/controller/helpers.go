@@ -17,12 +17,10 @@ limitations under the License.
 package controller
 
 import (
+	"bytes"
 	"context"
-	"crypto/sha256"
 	"crypto/x509"
-	"encoding/binary"
 	"fmt"
-	"strconv"
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
@@ -37,17 +35,17 @@ import (
 // pool) per WarpgateConnection. Building a client per reconcile used to leak a
 // keep-alive connection and its goroutines on every reconcile.
 //
-// Entries are keyed by the connection's namespace/name and carry a fingerprint
-// of the resolved config (host, TLS settings, CA bundle and credentials), so a
-// change to the connection spec or to the auth/CA Secrets swaps the client.
+// Entries are keyed by the connection's namespace/name and remember the config
+// the client was built from (host, TLS settings, CA bundle and credentials), so
+// a change to the connection spec or to the auth/CA Secrets swaps the client.
 type clientCache struct {
 	mu      sync.Mutex
 	entries map[types.NamespacedName]clientCacheEntry
 }
 
 type clientCacheEntry struct {
-	fingerprint [sha256.Size]byte
-	client      *warpgate.Client
+	cfg    warpgate.Config
+	client *warpgate.Client
 }
 
 func newClientCache() *clientCache {
@@ -57,42 +55,30 @@ func newClientCache() *clientCache {
 // warpgateClients is shared by all controllers in the manager.
 var warpgateClients = newClientCache()
 
-func configFingerprint(cfg warpgate.Config) [sha256.Size]byte {
-	h := sha256.New()
-	// Length-prefix every field so adjacent values can't run into each other.
-	for _, f := range [][]byte{
-		[]byte(cfg.Host),
-		[]byte(cfg.Token),
-		[]byte(cfg.Username),
-		[]byte(cfg.Password),
-		[]byte(strconv.FormatBool(cfg.InsecureSkipVerify)),
-		cfg.CACert,
-		[]byte(cfg.Timeout.String()),
-	} {
-		_ = binary.Write(h, binary.BigEndian, uint64(len(f)))
-		_, _ = h.Write(f)
-	}
-	var sum [sha256.Size]byte
-	copy(sum[:], h.Sum(nil))
-	return sum
+func sameConfig(a, b warpgate.Config) bool {
+	return a.Host == b.Host &&
+		a.Token == b.Token &&
+		a.Username == b.Username &&
+		a.Password == b.Password &&
+		a.InsecureSkipVerify == b.InsecureSkipVerify &&
+		bytes.Equal(a.CACert, b.CACert) &&
+		a.Timeout == b.Timeout
 }
 
 // get returns the cached client for key, building a new one when there is none
 // or the config changed. A replaced client has its idle connections closed.
 func (cc *clientCache) get(key types.NamespacedName, cfg warpgate.Config) *warpgate.Client {
-	fp := configFingerprint(cfg)
-
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 
 	if e, ok := cc.entries[key]; ok {
-		if e.fingerprint == fp {
+		if sameConfig(e.cfg, cfg) {
 			return e.client
 		}
 		e.client.CloseIdleConnections()
 	}
 	c := warpgate.NewClient(cfg)
-	cc.entries[key] = clientCacheEntry{fingerprint: fp, client: c}
+	cc.entries[key] = clientCacheEntry{cfg: cfg, client: c}
 	return c
 }
 

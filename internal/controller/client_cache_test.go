@@ -89,6 +89,7 @@ func TestClientCacheReusesAndReplaces(t *testing.T) {
 		"insecure": {Host: cfg.Host, Token: "a", InsecureSkipVerify: true},
 		"ca":       {Host: cfg.Host, Token: "a", CACert: []byte("pem")},
 		"password": {Host: cfg.Host, Username: "u", Password: "p2"},
+		"timeout":  {Host: cfg.Host, Token: "a", Timeout: time.Second},
 	} {
 		cc.get(key, cfg)
 		if got := cc.get(key, changed); got == first {
