@@ -102,6 +102,42 @@ func TestInstanceDefault_Image(t *testing.T) {
 	}
 }
 
+func TestInstanceDefault_Version(t *testing.T) {
+	inst := validInstance()
+	inst.Spec.Version = ""
+	inst.Spec.Image = ""
+
+	d := &WarpgateInstanceCustomDefaulter{}
+	if err := d.Default(context.Background(), inst); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if inst.Spec.Version != DefaultWarpgateVersion {
+		t.Errorf("expected version defaulted to %q, got %q", DefaultWarpgateVersion, inst.Spec.Version)
+	}
+	expected := "ghcr.io/warp-tech/warpgate:" + DefaultWarpgateVersion
+	if inst.Spec.Image != expected {
+		t.Errorf("expected image %q from defaulted version, got %q", expected, inst.Spec.Image)
+	}
+}
+
+func TestInstanceDefault_VersionPreservedWhenImageSet(t *testing.T) {
+	inst := validInstance()
+	inst.Spec.Version = ""
+	inst.Spec.Image = "custom/warpgate:pinned"
+
+	d := &WarpgateInstanceCustomDefaulter{}
+	if err := d.Default(context.Background(), inst); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// An explicit image means the operator must not force a version default.
+	if inst.Spec.Version != "" {
+		t.Errorf("version should stay empty when image is pinned, got %q", inst.Spec.Version)
+	}
+	if inst.Spec.Image != "custom/warpgate:pinned" {
+		t.Errorf("explicit image should be preserved, got %q", inst.Spec.Image)
+	}
+}
+
 func TestInstanceDefault_ImagePreserved(t *testing.T) {
 	inst := validInstance()
 	inst.Spec.Image = "custom/warpgate:latest"

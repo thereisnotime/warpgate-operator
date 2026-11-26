@@ -622,6 +622,13 @@ spec:
                     - url
                     type: object
                 type: object
+              seedImage:
+                description: |-
+                  seedImage overrides the utility image used by the config-seed init container
+                  on shell-less (distroless, Warpgate >= 0.27) deployments. It must contain a
+                  POSIX shell plus cp/sed/awk (busybox does). Defaults to a pinned busybox.
+                  Ignored for shell-bearing Warpgate images (<= 0.26), which seed in-image.
+                type: string
               ssh:
                 description: ssh configures the SSH protocol listener.
                 properties:
@@ -855,12 +862,13 @@ spec:
                   type: object
                 type: array
               version:
-                description: version is the Warpgate image tag to deploy (e.g. "0.21.1",
-                  "latest").
+                default: 0.30.6
+                description: |-
+                  version is the Warpgate image tag to deploy (e.g. "0.21.1", "latest").
+                  Defaults to the operator's current default when omitted.
                 type: string
             required:
             - adminPasswordSecretRef
-            - version
             type: object
           status:
             description: status defines the observed state of WarpgateInstance

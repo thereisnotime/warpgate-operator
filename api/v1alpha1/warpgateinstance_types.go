@@ -21,15 +21,35 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// DefaultWarpgateVersion is the Warpgate image tag deployed when a
+// WarpgateInstance pins neither spec.version nor spec.image. Kept current so new
+// instances land on a maintained, distroless Warpgate release by default.
+const DefaultWarpgateVersion = "0.30.6"
+
+// DefaultSeedImage is the utility image used by the config-seed init container on
+// shell-less (distroless, Warpgate >= 0.27) deployments. It must ship a POSIX
+// shell plus cp/sed/awk; busybox does. Pinned by multi-arch manifest digest so
+// the seed step is reproducible and independent of the Warpgate image.
+const DefaultSeedImage = "docker.io/library/busybox:1.37.0@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec"
+
 // WarpgateInstanceSpec defines the desired state of a Warpgate deployment.
 type WarpgateInstanceSpec struct {
 	// version is the Warpgate image tag to deploy (e.g. "0.21.1", "latest").
-	// +required
-	Version string `json:"version"`
+	// Defaults to the operator's current default when omitted.
+	// +optional
+	// +kubebuilder:default="0.30.6"
+	Version string `json:"version,omitempty"`
 
 	// image overrides the full image reference. Defaults to ghcr.io/warp-tech/warpgate:<version>.
 	// +optional
 	Image string `json:"image,omitempty"`
+
+	// seedImage overrides the utility image used by the config-seed init container
+	// on shell-less (distroless, Warpgate >= 0.27) deployments. It must contain a
+	// POSIX shell plus cp/sed/awk (busybox does). Defaults to a pinned busybox.
+	// Ignored for shell-bearing Warpgate images (<= 0.26), which seed in-image.
+	// +optional
+	SeedImage string `json:"seedImage,omitempty"`
 
 	// replicas is the number of Warpgate pods. Defaults to 1.
 	// +optional

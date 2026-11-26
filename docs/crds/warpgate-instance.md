@@ -9,14 +9,17 @@ CRDs like `WarpgateRole` and `WarpgateUser` can reference the deployed instance 
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `version` | `string` | Yes | - | Warpgate image tag to deploy (e.g. `0.26.0`, `latest`) |
+| `version` | `string` | No | `0.30.6` | Warpgate image tag to deploy (e.g. `0.26.0`, `0.30.6`, `latest`) |
 
 > Warpgate's ghcr tags carry **no** leading `v` (e.g.
-> `ghcr.io/warp-tech/warpgate:0.26.0`), and only some versions are published
-> there (0.26.0 is the highest at time of writing; 0.27+/0.30.x are not on
-> ghcr). Pick a published tag that supports the features you need (k8s targets
-> since 0.21, `--skip-securing-files` since ~0.22).
+> `ghcr.io/warp-tech/warpgate:0.30.6`). When `version` and `image` are both
+> omitted the operator deploys its current default (`0.30.6`). The operator
+> supports both the shell-bearing images (<= 0.26) and the distroless images
+> (>= 0.27, including 0.30.x): config seeding adapts automatically, so you can
+> pin any published tag (k8s targets since 0.21, `--skip-securing-files` since
+> ~0.22).
 | `image` | `string` | No | `ghcr.io/warp-tech/warpgate:<version>` | Full image reference override |
+| `seedImage` | `string` | No | pinned `busybox` | Utility image for the config-seed init container on distroless (>= 0.27) images; needs `sh`/`cp`/`sed`/`awk`. Ignored for <= 0.26 |
 | `replicas` | `int32` | No | `1` | Number of Warpgate pods (minimum 1) |
 | `adminPasswordSecretRef.name` | `string` | Yes | - | Name of the Secret containing the initial admin password |
 | `adminPasswordSecretRef.key` | `string` | Yes | - | Key in the Secret that holds the admin password |
@@ -252,6 +255,16 @@ is `https://<externalHost>/@warpgate/api/sso/return`.
 
 ## Notes
 
+- **Config seeding and image compatibility:** Warpgate's config lives in the read-only ConfigMap the operator
+  generates and is reapplied to the writable `/data/warpgate.yaml` on every pod boot, so a ConfigMap change takes
+  effect on the next reconcile. How that copy runs depends on the image. Shell-bearing images (<= 0.26, Debian
+  based) seed the config with a single in-image init container. Distroless images (>= 0.27, including 0.30.x) ship
+  no `/bin/sh` or `cp`, so seeding is split into two init containers: a shell-free `init-setup` that runs the
+  Warpgate binary directly to bootstrap the admin user, keys and self-signed certificate once (idempotent via
+  Warpgate's own `--if-config-exists skip`), and an `init-config` container built from a small utility image
+  (`seedImage`, a pinned `busybox` by default) that performs the file operations. The operator picks the path
+  automatically from the resolved version; set `seedImage` to override the utility image (for example to use an
+  internal mirror).
 - **cert-manager integration:** When `tls.certManager` is true (the default), the operator creates a `Certificate`
   resource for TLS. If no `tls.issuerRef` is provided, a self-signed `Issuer` is created automatically. The
   Certificate's Secret (`<name>-tls`) is mounted into the pod and copied into `/data` by the init container, so
