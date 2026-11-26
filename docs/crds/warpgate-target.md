@@ -79,7 +79,11 @@ Seven target types are supported: SSH, HTTP, MySQL, PostgreSQL, Kubernetes, RDP,
 |-------|------|----------|---------|-------------|
 | `kubernetes.clusterURL` | `string` | Yes | - | Kubernetes API server URL |
 | `kubernetes.authKind` | `string` | Yes | - | `Token`, `Certificate`, or `IamRole` (EKS) |
-| `kubernetes.tokenSecretRef` | `object` | No | - | Secret reference for the bearer token (default key `token`) |
+| `kubernetes.tokenSecretRef` | `object` | No | - | Secret reference for the bearer token (default key `token`). For `Token` auth, set this or `serviceAccountToken` |
+| `kubernetes.serviceAccountToken` | `object` | No | - | Request a short-lived token for a ServiceAccount instead of reading one from a Secret. See [ServiceAccount tokens](#serviceaccount-tokens) |
+| `kubernetes.serviceAccountToken.name` | `string` | Yes | - | ServiceAccount in the target's namespace |
+| `kubernetes.serviceAccountToken.audiences` | `[]string` | Yes | - | 1-8 audiences the token is issued for. No commas or whitespace |
+| `kubernetes.serviceAccountToken.expirationSeconds` | `int64` | No | `7200` | Requested lifetime, 7200-172800. Renewed after half of the lifetime actually granted |
 | `kubernetes.certificateSecretRef` | `object` | No | - | Secret reference for the PEM client certificate (default key `certificate`) |
 | `kubernetes.privateKeySecretRef` | `object` | No | - | Secret reference for the PEM client key (default key `privateKey`) |
 | `kubernetes.tls` | `object` | No | - | TLS configuration |
@@ -129,6 +133,8 @@ A `tls` block that leaves out `verify` also verifies. Before this default existe
 | Field | Type | Description |
 |-------|------|-------------|
 | `externalID` | `string` | Warpgate-assigned target UUID |
+| `serviceAccountToken.expirationTimestamp` | `Time` | Expiry of the token last sent to Warpgate (`serviceAccountToken` targets only). The token itself is never stored |
+| `serviceAccountToken.renewAfter` | `Time` | When the operator requests the next token |
 | `conditions` | `[]Condition` | Standard Kubernetes conditions |
 
 ## Print Columns
@@ -268,6 +274,38 @@ spec:
       verify: true
 ```
 
+### Kubernetes Target with a ServiceAccount Token
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: warpgate-k8s-drinking
+  annotations:
+    # The audiences tokens for this ServiceAccount may be issued for...
+    warpgate.warp.tech/token-audiences: zone10-drinking
+    # ...and the clusterURLs they may be sent to (exact match).
+    warpgate.warp.tech/token-cluster-urls: https://192.168.42.49:6443
+---
+apiVersion: warpgate.warpgate.warp.tech/v1alpha1
+kind: WarpgateTarget
+metadata:
+  name: k8s-drinking
+spec:
+  connectionRef: my-warpgate
+  name: k8s-drinking
+  kubernetes:
+    clusterURL: https://192.168.42.49:6443
+    authKind: Token
+    serviceAccountToken:
+      name: warpgate-k8s-drinking
+      audiences: [zone10-drinking]
+      expirationSeconds: 7200
+```
+
+The operator also needs permission to request the token (Helm value `serviceAccountTokens.allowed`).
+See [ServiceAccount tokens](#serviceaccount-tokens).
+
 ### RDP Target
 
 ```yaml
@@ -315,6 +353,11 @@ The following rules are enforced by the admission webhook on create and update:
 - **MySQL targets:** `mysql.host` and `mysql.username` are required; `mysql.port` must be between 1 and 65535
 - **PostgreSQL targets:** `postgresql.host` and `postgresql.username` are required; `postgresql.port` must be between 1 and 65535; `postgresql.protocolVersion` must be `3.0` or `3.2` when set
 - **Kubernetes targets:** `kubernetes.clusterURL` is required; `kubernetes.authKind` must be `Token`, `Certificate`, or `IamRole`
+  - `Token` needs exactly one of `tokenSecretRef` and `serviceAccountToken`
+  - `Certificate` needs both `certificateSecretRef` and `privateKeySecretRef`
+  - `serviceAccountToken` is rejected for `Certificate` and `IamRole`
+  - `serviceAccountToken.name` must be a valid ServiceAccount name; `audiences` needs 1-8 unique values without commas, whitespace or control characters; `expirationSeconds` must be between 7200 and 172800
+- Updates that don't change the spec (finalizers, labels, annotations) and updates of objects being deleted are not validated, so objects admitted under older rules can always finish deleting
 - **RDP targets:** `rdp.host` and `rdp.username` are required; `rdp.port` must be between 1 and 65535
 - **VNC targets:** `vnc.host` is required; `vnc.port` must be between 1 and 65535
 - **TLS config** (HTTP, MySQL, PostgreSQL, Kubernetes): `tls.mode` must be one of `Disabled`, `Preferred`, or `Required`
@@ -335,3 +378,76 @@ The following defaults are applied on create and update:
 - Exactly one target type must be set. Setting zero or more than one is invalid.
 - Password secrets must exist in the same namespace as the `WarpgateTarget` CR.
 - For SSH targets with `authKind: Password`, the `passwordSecretRef` field is required.
+
+## ServiceAccount Tokens
+
+With `kubernetes.serviceAccountToken`, the operator gets the target's bearer token from the Kubernetes
+[TokenRequest API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/)
+instead of a Secret:
+
+1. It reads the ServiceAccount (uncached, so no ServiceAccount informer is needed) and checks its two opt-in
+   annotations.
+2. It requests a token with exactly the listed `audiences` and `expirationSeconds`.
+3. It sends the token to Warpgate and keeps it in memory, never in a Secret, the status, a log or an event.
+4. After half of the lifetime the API server actually granted, it requests a new one. It also requests one at once
+   when the ServiceAccount (by UID), `clusterURL`, the audiences or the lifetime change, and after an operator
+   restart.
+
+Two things must allow a token before one is requested:
+
+- **The ServiceAccount opts in** with two comma-separated, exact-match annotations:
+  - `warpgate.warp.tech/token-audiences`: every value in `audiences` must be in it;
+  - `warpgate.warp.tech/token-cluster-urls`: `clusterURL` must be in it, so a token is only ever sent where the
+    ServiceAccount's owner agreed. Without this pin, anyone who can edit the WarpgateTarget could point
+    `clusterURL` at their own host and receive a valid token.
+- **The operator may request it.** The generated ClusterRole has no `serviceaccounts/token` permission. With Helm,
+  list each ServiceAccount:
+
+  ```yaml
+  serviceAccountTokens:
+    allowed:
+      - namespace: warpgate-operator
+        serviceAccounts: [warpgate-k8s-drinking]
+  ```
+
+  This renders a Role and RoleBinding in that namespace: `create` on `serviceaccounts/token` and `get` on
+  `serviceaccounts`, both limited by `resourceNames`. For raw-manifest installs, see
+  [`config/samples/serviceaccount-token-rbac.yaml`](../../config/samples/serviceaccount-token-rbac.yaml).
+
+The trust boundary is the ServiceAccount's namespace. Anyone who can change ServiceAccounts there (`update`,
+`patch`, or delete and recreate one with a listed name) controls the annotations. Anyone who can create Pods there
+can run as the ServiceAccount and get tokens with any audience without the operator. Keep these ServiceAccounts in
+a namespace only administrators can write to, for example the operator's own.
+
+### Condition Reasons
+
+| Reason | Meaning |
+|--------|---------|
+| `ServiceAccountNotFound` | The ServiceAccount doesn't exist in the target's namespace |
+| `ServiceAccountNotOptedIn` | The ServiceAccount lacks `warpgate.warp.tech/token-audiences` or `warpgate.warp.tech/token-cluster-urls` |
+| `TokenAudienceNotAllowed` | An audience in the spec is missing from `token-audiences` |
+| `TokenClusterURLNotAllowed` | `clusterURL` is not in `token-cluster-urls` |
+| `TokenRequestForbidden` | The operator may not read the ServiceAccount or request its tokens (not in `serviceAccountTokens.allowed`) |
+| `TokenRequestError` | Any other failure (API errors, an empty token or expiry in the response) |
+
+After a token failure, or a failed Warpgate update of a target holding a token, the operator retries within a
+minute, sooner than the reconcile interval. Warpgate keeps the previous token until it expires, so a failed
+renewal does not cut access at once.
+
+### Lifetime and Warpgate Sessions
+
+Warpgate reads a target's token when a Kubernetes session opens and keeps it for that session, at most
+`kubernetes.session_max_age` (30 minutes by default). New sessions get a renewed token at once. Ones already open
+keep the old token for up to that long. The token is renewed at half its lifetime, so keep `expirationSeconds`
+above four times `session_max_age`: that leaves twice `session_max_age` after a renewal, with room for retries.
+The minimum of 7200 (2h) covers the default.
+
+### Choosing Audiences
+
+Without audiences, TokenRequest issues a token for the API server's own audiences, valid against the operator's
+cluster. That is why `audiences` is required. Pick a value only the target cluster accepts. Don't list the local
+API server's audience (such as `https://kubernetes.default.svc.cluster.local` or `k3s`) in the annotation unless
+the target is the operator's own cluster.
+
+See [docs/guides/kubernetes-serviceaccount-tokens.md](../guides/kubernetes-serviceaccount-tokens.md) for setting
+up a remote cluster to accept these tokens.

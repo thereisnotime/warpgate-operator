@@ -134,8 +134,19 @@ type KubernetesTargetSpec struct {
 	// +kubebuilder:validation:Enum=Token;Certificate;IamRole
 	AuthKind string `json:"authKind"`
 	// tokenSecretRef references a Secret containing the bearer token (for Token auth).
+	// Mutually exclusive with serviceAccountToken.
 	// +optional
 	TokenSecretRef *SecretKeyRef `json:"tokenSecretRef,omitempty"`
+	// serviceAccountToken makes the operator request a short-lived bearer token for a
+	// ServiceAccount in the target's namespace through the TokenRequest API, instead of
+	// reading one from a Secret (for Token auth). The token is kept in memory only and
+	// renewed after half its lifetime. Mutually exclusive with tokenSecretRef.
+	// The ServiceAccount must allow the audiences and the clusterURL with the annotations
+	// warpgate.warp.tech/token-audiences and warpgate.warp.tech/token-cluster-urls, and the
+	// operator needs get and create on serviceaccounts/token for it (Helm value
+	// serviceAccountTokens.allowed).
+	// +optional
+	ServiceAccountToken *ServiceAccountTokenSpec `json:"serviceAccountToken,omitempty"`
 	// certificateSecretRef references a Secret containing the PEM client certificate (for Certificate auth).
 	// +optional
 	CertificateSecretRef *SecretKeyRef `json:"certificateSecretRef,omitempty"`
@@ -145,6 +156,68 @@ type KubernetesTargetSpec struct {
 	// tls configures TLS settings for the API server connection.
 	// +optional
 	TLS *TLSConfigSpec `json:"tls,omitempty"`
+}
+
+// ServiceAccountTokenAudiencesAnnotation is the annotation a ServiceAccount must carry
+// before the operator requests tokens for it. Its value is a comma-separated list of the
+// audiences tokens may be issued for; every audience in serviceAccountToken.audiences
+// must appear in it.
+const ServiceAccountTokenAudiencesAnnotation = "warpgate.warp.tech/token-audiences" // #nosec G101 -- annotation name, not a credential
+
+// ServiceAccountTokenClusterURLsAnnotation is the second annotation a ServiceAccount must
+// carry: a comma-separated list of the clusterURLs its tokens may be sent to. The target's
+// spec.kubernetes.clusterURL must match one entry exactly. Without it, anyone allowed to
+// edit a WarpgateTarget could point clusterURL at a host they control and receive a valid
+// token.
+const ServiceAccountTokenClusterURLsAnnotation = "warpgate.warp.tech/token-cluster-urls" // #nosec G101 -- annotation name, not a credential
+
+// Lifetime bounds and default for serviceAccountToken.expirationSeconds, in seconds.
+// The minimum (2h) leaves at least an hour after a renewal at half the lifetime: twice
+// Warpgate's default kubernetes.session_max_age (30m), with time to retry a failed renewal.
+const (
+	ServiceAccountTokenMinExpirationSeconds     int64 = 7200
+	ServiceAccountTokenMaxExpirationSeconds     int64 = 172800
+	ServiceAccountTokenDefaultExpirationSeconds int64 = 7200
+)
+
+// ServiceAccountTokenSpec configures a token requested from the Kubernetes TokenRequest API.
+type ServiceAccountTokenSpec struct {
+	// name is the ServiceAccount in the target's namespace.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +required
+	Name string `json:"name"`
+	// audiences the token is issued for: what the cluster at clusterURL expects in the
+	// token's aud claim. Required, so a token is never issued for the operator cluster's
+	// own API audiences by accident. Every value must be allowed by the ServiceAccount's
+	// warpgate.warp.tech/token-audiences annotation, and clusterURL by its
+	// warpgate.warp.tech/token-cluster-urls annotation.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=8
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=256
+	// +listType=set
+	// +required
+	Audiences []string `json:"audiences"`
+	// expirationSeconds is the requested token lifetime. The API server may shorten it.
+	// The operator renews after half the lifetime it actually got. Keep it above twice
+	// Warpgate's kubernetes.session_max_age (30m by default).
+	// +kubebuilder:validation:Minimum=7200
+	// +kubebuilder:validation:Maximum=172800
+	// +kubebuilder:default=7200
+	// +optional
+	ExpirationSeconds *int64 `json:"expirationSeconds,omitempty"`
+}
+
+// ServiceAccountTokenStatus reports the token the operator last sent to Warpgate.
+// It never contains the token itself.
+type ServiceAccountTokenStatus struct {
+	// expirationTimestamp is when the current token expires.
+	// +optional
+	ExpirationTimestamp *metav1.Time `json:"expirationTimestamp,omitempty"`
+	// renewAfter is when the operator requests the next token.
+	// +optional
+	RenewAfter *metav1.Time `json:"renewAfter,omitempty"`
 }
 
 // RDPTargetSpec defines the configuration for an RDP target.
@@ -248,6 +321,10 @@ type WarpgateTargetSpec struct {
 type WarpgateTargetStatus struct {
 	// externalID is the target's ID in Warpgate.
 	ExternalID string `json:"externalID,omitempty"`
+	// serviceAccountToken reports the expiry and renewal time of the token requested for
+	// spec.kubernetes.serviceAccountToken. Unset for every other target.
+	// +optional
+	ServiceAccountToken *ServiceAccountTokenStatus `json:"serviceAccountToken,omitempty"`
 	// conditions represent the current state of the WarpgateTarget resource.
 	// +listType=map
 	// +listMapKey=type

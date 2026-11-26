@@ -28,6 +28,9 @@ lifecycle management.
 - **Multi-instance support** via `WarpgateConnection` CRDs pointing to different Warpgate instances
 - **Continuous drift reconciliation** that enforces desired state every 5 minutes
 - **Secret references** for sensitive fields -- no inline tokens or passwords in CRD specs
+- **Short-lived ServiceAccount tokens** for Kubernetes targets (`spec.kubernetes.serviceAccountToken`): requested from the
+  TokenRequest API, kept in memory only and renewed, with nothing to copy between clusters
+  ([guide](docs/guides/kubernetes-serviceaccount-tokens.md))
 - **Finalizer-based cleanup** that removes Warpgate resources when CRs are deleted
 - **Auto-generated passwords** for users, stored in Kubernetes Secrets
 - **Auto-created Secrets** for ticket values

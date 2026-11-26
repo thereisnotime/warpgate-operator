@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -42,6 +43,60 @@ type WarpgateTargetReconciler struct {
 	client.Client
 	Scheme            *runtime.Scheme
 	ReconcileInterval time.Duration
+
+	// APIReader reads ServiceAccounts for serviceAccountToken targets without a cache,
+	// so the operator needs no list/watch on ServiceAccounts. Falls back to Client.
+	APIReader client.Reader
+	// Now returns the current time; tests replace it to move the clock. Defaults to time.Now.
+	Now func() time.Time
+
+	tokensOnce sync.Once
+	tokens     *tokenCache
+}
+
+func (r *WarpgateTargetReconciler) apiReader() client.Reader {
+	if r.APIReader != nil {
+		return r.APIReader
+	}
+	return r.Client
+}
+
+func (r *WarpgateTargetReconciler) now() time.Time {
+	if r.Now != nil {
+		return r.Now()
+	}
+	return time.Now()
+}
+
+func (r *WarpgateTargetReconciler) tokenCache() *tokenCache {
+	r.tokensOnce.Do(func() { r.tokens = newTokenCache() })
+	return r.tokens
+}
+
+// requeueAfter is the reconcile interval, shortened so a serviceAccountToken is renewed
+// on time (never below one second). Without a token it is the interval unchanged; 0
+// keeps meaning no periodic resync.
+func (r *WarpgateTargetReconciler) requeueAfter(tok *issuedToken) time.Duration {
+	d := r.ReconcileInterval
+	if tok == nil {
+		return d
+	}
+	if untilRenew := tok.renewAt.Sub(r.now()); d <= 0 || untilRenew < d {
+		d = untilRenew
+	}
+	return max(d, time.Second)
+}
+
+// retryAfter is the requeue after a failure: the reconcile interval, capped at
+// tokenRetryInterval for serviceAccountToken failures and for Warpgate API failures on a
+// target that carries a token (hasToken), so Warpgate gets the renewed token well
+// before the old one expires.
+func (r *WarpgateTargetReconciler) retryAfter(err error, hasToken bool) time.Duration {
+	_, isTokenErr := tokenErrorReason(err)
+	if (isTokenErr || hasToken) && (r.ReconcileInterval <= 0 || r.ReconcileInterval > tokenRetryInterval) {
+		return tokenRetryInterval
+	}
+	return r.ReconcileInterval
 }
 
 // +kubebuilder:rbac:groups=warpgate.warpgate.warp.tech,resources=warpgatetargets,verbs=get;list;watch;create;update;patch;delete
@@ -81,6 +136,7 @@ func (r *WarpgateTargetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				return ctrl.Result{}, err
 			}
 		}
+		r.tokenCache().drop(target.UID)
 		return ctrl.Result{}, nil
 	}
 
@@ -91,30 +147,42 @@ func (r *WarpgateTargetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	targetReq, targetType, err := r.buildTargetRequest(ctx, &target)
+	targetReq, targetType, tok, err := r.buildTargetRequest(ctx, &target)
 	if err != nil {
-		log.Error(err, "unable to build target request")
-		r.setCondition(&target, metav1.ConditionFalse, secretErrorReason(err, "BuildError"), err.Error())
+		reason, isTokenErr := tokenErrorReason(err)
+		if !isTokenErr {
+			reason = secretErrorReason(err, "BuildError")
+		}
+		log.Error(err, "unable to build target request", "reason", reason)
+		r.setCondition(&target, metav1.ConditionFalse, reason, err.Error())
 		if updateErr := r.Status().Update(ctx, &target); updateErr != nil {
 			log.Error(updateErr, "unable to update status")
 		}
-		return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
+		return ctrl.Result{RequeueAfter: r.retryAfter(err, false)}, nil
+	}
+	// The token (if any) must not leave this function in an error message: the
+	// Warpgate client includes response bodies in its errors.
+	secret := ""
+	if tok != nil {
+		secret = tok.token
 	}
 
 	if target.Status.ExternalID == "" {
 		created, err := wgClient.CreateTarget(*targetReq)
 		if err != nil {
+			err = redactError(err, secret)
 			log.Error(err, "unable to create target in warpgate")
 			r.setCondition(&target, metav1.ConditionFalse, "CreateError", err.Error())
 			if updateErr := r.Status().Update(ctx, &target); updateErr != nil {
 				log.Error(updateErr, "unable to update status")
 			}
-			return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
+			return ctrl.Result{RequeueAfter: r.retryAfter(err, tok != nil)}, nil
 		}
 		target.Status.ExternalID = created.ID
 	} else {
 		_, err := wgClient.UpdateTarget(target.Status.ExternalID, *targetReq)
 		if err != nil {
+			err = redactError(err, secret)
 			if warpgate.IsNotFound(err) {
 				// deleted out-of-band; clear ID so next reconcile recreates it
 				log.Info("target not found in warpgate, will recreate", "externalID", target.Status.ExternalID)
@@ -130,25 +198,38 @@ func (r *WarpgateTargetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if updateErr := r.Status().Update(ctx, &target); updateErr != nil {
 				log.Error(updateErr, "unable to update status")
 			}
-			return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
+			return ctrl.Result{RequeueAfter: r.retryAfter(err, tok != nil)}, nil
 		}
 	}
 
+	if tok != nil {
+		expires, renew := metav1.NewTime(tok.expiresAt), metav1.NewTime(tok.renewAt)
+		target.Status.ServiceAccountToken = &warpgatev1alpha1.ServiceAccountTokenStatus{
+			ExpirationTimestamp: &expires,
+			RenewAfter:          &renew,
+		}
+	} else {
+		target.Status.ServiceAccountToken = nil
+		r.tokenCache().drop(target.UID)
+	}
 	r.setCondition(&target, metav1.ConditionTrue, targetType, "target reconciled successfully")
 	if err := r.Status().Update(ctx, &target); err != nil {
 		log.Error(err, "unable to update status")
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: r.ReconcileInterval}, nil
+	return ctrl.Result{RequeueAfter: r.requeueAfter(tok)}, nil
 }
 
-func (r *WarpgateTargetReconciler) buildTargetRequest(ctx context.Context, target *warpgatev1alpha1.WarpgateTarget) (*warpgate.TargetRequest, string, error) {
+// buildTargetRequest builds the Warpgate API request. For a Kubernetes target with
+// serviceAccountToken it also returns the token it put into the request.
+func (r *WarpgateTargetReconciler) buildTargetRequest(ctx context.Context, target *warpgatev1alpha1.WarpgateTarget) (*warpgate.TargetRequest, string, *issuedToken, error) {
 	spec := &target.Spec
 	ns := target.Namespace
 
 	var opts any
 	var targetType string
+	var tok *issuedToken
 	var err error
 
 	switch {
@@ -166,7 +247,7 @@ func (r *WarpgateTargetReconciler) buildTargetRequest(ctx context.Context, targe
 		opts, err = r.buildPostgreSQLOptions(ctx, ns, spec.PostgreSQL)
 	case spec.Kubernetes != nil:
 		targetType = "Kubernetes"
-		opts, err = r.buildKubernetesOptions(ctx, ns, spec.Kubernetes)
+		opts, tok, err = r.buildKubernetesOptions(ctx, target)
 	case spec.RDP != nil:
 		targetType = "RDP"
 		opts, err = r.buildRDPOptions(ctx, ns, spec.RDP)
@@ -174,15 +255,15 @@ func (r *WarpgateTargetReconciler) buildTargetRequest(ctx context.Context, targe
 		targetType = "VNC"
 		opts, err = r.buildVNCOptions(ctx, ns, spec.VNC)
 	default:
-		return nil, "", fmt.Errorf("exactly one target type (ssh, http, mysql, postgresql, kubernetes, rdp, vnc) must be specified")
+		return nil, "", nil, fmt.Errorf("exactly one target type (ssh, http, mysql, postgresql, kubernetes, rdp, vnc) must be specified")
 	}
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 
 	rawOpts, err := warpgate.MarshalOptions(opts)
 	if err != nil {
-		return nil, "", fmt.Errorf("marshaling target options: %w", err)
+		return nil, "", nil, fmt.Errorf("marshaling target options: %w", err)
 	}
 
 	req := &warpgate.TargetRequest{
@@ -200,15 +281,15 @@ func (r *WarpgateTargetReconciler) buildTargetRequest(ctx context.Context, targe
 	if spec.GroupRef != "" {
 		var group warpgatev1alpha1.WarpgateTargetGroup
 		if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: spec.GroupRef}, &group); err != nil {
-			return nil, "", fmt.Errorf("getting target group %q: %w", spec.GroupRef, err)
+			return nil, "", nil, fmt.Errorf("getting target group %q: %w", spec.GroupRef, err)
 		}
 		if group.Status.ExternalID == "" {
-			return nil, "", fmt.Errorf("target group %q not yet synced", spec.GroupRef)
+			return nil, "", nil, fmt.Errorf("target group %q not yet synced", spec.GroupRef)
 		}
 		req.GroupID = group.Status.ExternalID
 	}
 
-	return req, targetType, nil
+	return req, targetType, tok, nil
 }
 
 func (r *WarpgateTargetReconciler) buildSSHOptions(ctx context.Context, ns string, spec *warpgatev1alpha1.SSHTargetSpec, target *warpgatev1alpha1.WarpgateTarget) (any, error) {
@@ -292,28 +373,44 @@ func (r *WarpgateTargetReconciler) buildPostgreSQLOptions(ctx context.Context, n
 	}, nil
 }
 
-func (r *WarpgateTargetReconciler) buildKubernetesOptions(ctx context.Context, ns string, spec *warpgatev1alpha1.KubernetesTargetSpec) (any, error) {
+func (r *WarpgateTargetReconciler) buildKubernetesOptions(ctx context.Context, target *warpgatev1alpha1.WarpgateTarget) (any, *issuedToken, error) {
+	ns, spec := target.Namespace, target.Spec.Kubernetes
 	auth := warpgate.KubernetesAuth{Kind: spec.AuthKind}
+	var tok *issuedToken
 	var err error
 	switch spec.AuthKind {
 	case "Token":
-		if auth.Token, err = r.readSecretValue(ctx, ns, spec.TokenSecretRef, "token"); err != nil {
-			return nil, fmt.Errorf("reading Kubernetes token secret: %w", err)
+		switch {
+		case spec.ServiceAccountToken != nil && spec.TokenSecretRef != nil:
+			return nil, nil, fmt.Errorf("tokenSecretRef and serviceAccountToken are mutually exclusive")
+		case spec.ServiceAccountToken != nil:
+			t, err := r.serviceAccountToken(ctx, target)
+			if err != nil {
+				return nil, nil, err
+			}
+			auth.Token, tok = t.token, &t
+		default:
+			if auth.Token, err = r.readSecretValue(ctx, ns, spec.TokenSecretRef, "token"); err != nil {
+				return nil, nil, fmt.Errorf("reading Kubernetes token secret: %w", err)
+			}
 		}
 	case "Certificate":
 		if auth.Certificate, err = r.readSecretValue(ctx, ns, spec.CertificateSecretRef, "certificate"); err != nil {
-			return nil, fmt.Errorf("reading Kubernetes certificate secret: %w", err)
+			return nil, nil, fmt.Errorf("reading Kubernetes certificate secret: %w", err)
 		}
 		if auth.PrivateKey, err = r.readSecretValue(ctx, ns, spec.PrivateKeySecretRef, "privateKey"); err != nil {
-			return nil, fmt.Errorf("reading Kubernetes private key secret: %w", err)
+			return nil, nil, fmt.Errorf("reading Kubernetes private key secret: %w", err)
 		}
+	}
+	if tok == nil {
+		r.tokenCache().drop(target.UID)
 	}
 	return warpgate.KubernetesOptions{
 		Kind:       "Kubernetes",
 		ClusterURL: spec.ClusterURL,
 		TLS:        toWarpgateTLS(spec.TLS),
 		Auth:       auth,
-	}, nil
+	}, tok, nil
 }
 
 func (r *WarpgateTargetReconciler) buildRDPOptions(ctx context.Context, ns string, spec *warpgatev1alpha1.RDPTargetSpec) (any, error) {
@@ -394,6 +491,9 @@ func boolValue(b *bool) bool {
 }
 
 func (r *WarpgateTargetReconciler) readSecretValue(ctx context.Context, namespace string, ref *warpgatev1alpha1.SecretKeyRef, defaultKey string) (string, error) {
+	if ref == nil {
+		return "", fmt.Errorf("no Secret reference set (key %q)", defaultKey)
+	}
 	var secret corev1.Secret
 	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: ref.Name}, &secret); err != nil {
 		return "", fmt.Errorf("getting secret %q: %w", ref.Name, err)

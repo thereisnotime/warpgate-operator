@@ -62,6 +62,36 @@ jobs:
       - name: Validate with kubeconform
         run: kubeconform -strict -ignore-missing-schemas -summary /tmp/rendered.yaml
 
+      - name: Template and check serviceAccountTokens RBAC
+        run: |
+          set -euo pipefail
+          # The default must not grant serviceaccounts/token anywhere. Match RBAC rule list
+          # items only: the CRD descriptions mention serviceaccounts/token too.
+          if grep -qE '^\s*- "?serviceaccounts/token"?$' /tmp/rendered.yaml; then
+            echo "default render grants serviceaccounts/token" >&2; exit 1
+          fi
+          helm template warpgate-operator charts/warpgate-operator \
+            -f hack/helm/serviceaccount-tokens-values.yaml > /tmp/rendered-sat.yaml
+          kubeconform -strict -ignore-missing-schemas -summary /tmp/rendered-sat.yaml
+          # One Role and RoleBinding per entry, each limited to its ServiceAccounts.
+          test "$(grep -c '^kind: Role$' /tmp/rendered-sat.yaml)" -eq 2
+          test "$(grep -c '^kind: RoleBinding$' /tmp/rendered-sat.yaml)" -eq 2
+          test "$(grep -c '"warpgate-k8s-a"' /tmp/rendered-sat.yaml)" -eq 2
+          test "$(grep -c '"warpgate-k8s-c"' /tmp/rendered-sat.yaml)" -eq 2
+          # An incomplete entry must fail the render instead of granting nothing silently.
+          if helm template warpgate-operator charts/warpgate-operator \
+            --set 'serviceAccountTokens.allowed[0].namespace=x' >/dev/null 2>&1; then
+            echo "an entry without serviceAccounts rendered" >&2; exit 1
+          fi
+          # A namespace listed twice would render two Roles with the same name.
+          if helm template warpgate-operator charts/warpgate-operator \
+            --set 'serviceAccountTokens.allowed[0].namespace=x' \
+            --set 'serviceAccountTokens.allowed[0].serviceAccounts[0]=a' \
+            --set 'serviceAccountTokens.allowed[1].namespace=x' \
+            --set 'serviceAccountTokens.allowed[1].serviceAccounts[0]=b' >/dev/null 2>&1; then
+            echo "a duplicate namespace rendered" >&2; exit 1
+          fi
+
   install-test:
     name: Install Test (kind)
     runs-on: ubuntu-latest

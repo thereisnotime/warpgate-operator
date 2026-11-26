@@ -55,6 +55,7 @@ The chart installs 10 CRDs under the `warpgate.warpgate.warp.tech/v1alpha1` API 
 | `operator.watchNamespaces` | Namespaces to watch (empty = all, unless `operator.watchNamespaceSelector` is set) | `[]` |
 | `operator.watchNamespaceSelector` | Label selector of additional namespaces to watch | `""` |
 | `operator.secretSelector` | Label selector limiting the Secrets the operator caches and reads (empty = all) | `""` |
+| `serviceAccountTokens.allowed` | ServiceAccounts the operator may request tokens for (`namespace` + `serviceAccounts` per entry); renders a Role and RoleBinding each | `[]` |
 | `resources.requests.cpu` | CPU request | `100m` |
 | `resources.requests.memory` | Memory request | `128Mi` |
 | `resources.limits.cpu` | CPU limit | `500m` |
@@ -104,6 +105,27 @@ operator:
 Kubernetes RBAC can't grant access by label, so the enforced boundary is still the namespace
 (`operator.watchNamespaces`). The selector keeps everything else out of the operator's memory
 and out of what its controllers can read through the cache.
+
+## ServiceAccount Tokens for Kubernetes Targets
+
+Kubernetes targets can use a short-lived token the operator requests for a ServiceAccount
+(`spec.kubernetes.serviceAccountToken`) instead of a token in a Secret. The manager ClusterRole has no
+permission for that. List each ServiceAccount the operator may request tokens for:
+
+```yaml
+serviceAccountTokens:
+  allowed:
+    - namespace: warpgate-operator
+      serviceAccounts:
+        - warpgate-k8s-drinking
+```
+
+Each entry renders a Role and RoleBinding in its namespace with `create` on `serviceaccounts/token` and
+`get` on `serviceaccounts`, both limited by `resourceNames` to the listed ServiceAccounts. List each
+namespace once (a duplicate fails the render). Nothing renders when `rbac.create` is `false`. The
+ServiceAccount must also opt in with the `warpgate.warp.tech/token-audiences` and
+`warpgate.warp.tech/token-cluster-urls` annotations. See the
+[guide](https://github.com/thereisnotime/warpgate-operator/blob/main/docs/guides/kubernetes-serviceaccount-tokens.md).
 
 ## Links
 
