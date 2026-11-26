@@ -60,6 +60,12 @@ func (d *WarpgateInstanceCustomDefaulter) Default(ctx context.Context, inst *War
 		inst.Spec.Replicas = &one
 	}
 
+	// Version defaults to the operator's current default when neither version nor
+	// image is pinned.
+	if inst.Spec.Version == "" && inst.Spec.Image == "" {
+		inst.Spec.Version = DefaultWarpgateVersion
+	}
+
 	// Image defaults to ghcr.io/warp-tech/warpgate:<version>.
 	if inst.Spec.Image == "" && inst.Spec.Version != "" {
 		inst.Spec.Image = fmt.Sprintf("ghcr.io/warp-tech/warpgate:%s", inst.Spec.Version)
@@ -234,8 +240,10 @@ func validateWarpgateInstance(inst *WarpgateInstance) (admission.Warnings, error
 	var warnings admission.Warnings
 	specPath := field.NewPath("spec")
 
-	if inst.Spec.Version == "" {
-		allErrs = append(allErrs, field.Required(specPath.Child("version"), "version must not be empty"))
+	// version is optional (it defaults), but an instance must resolve to an image
+	// one way or another: either version or an explicit image.
+	if inst.Spec.Version == "" && inst.Spec.Image == "" {
+		allErrs = append(allErrs, field.Required(specPath.Child("version"), "version must not be empty unless image is set"))
 	}
 	if inst.Spec.AdminPasswordSecretRef.Name == "" {
 		allErrs = append(allErrs, field.Required(specPath.Child("adminPasswordSecretRef", "name"), "adminPasswordSecretRef.name must not be empty"))

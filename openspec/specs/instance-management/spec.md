@@ -12,8 +12,9 @@ The `WarpgateInstance` CRD deploys and manages Warpgate bastion host instances d
 
 The operator provides a `WarpgateInstance` custom resource with the following spec fields:
 
-- `version` (required) -- Warpgate image tag to deploy.
+- `version` (optional, default `0.30.6`) -- Warpgate image tag to deploy. When both `version` and `image` are omitted the operator deploys its current default.
 - `image` (optional) -- full image reference override, defaults to `ghcr.io/warp-tech/warpgate:<version>`.
+- `seedImage` (optional) -- utility image for the config-seed init container on distroless (Warpgate >= 0.27) deployments; must provide `sh`, `cp`, `sed` and `awk`. Defaults to a pinned `busybox`. Ignored for shell-bearing images (<= 0.26).
 - `replicas` (optional, default `1`) -- number of pods, minimum 1.
 - `adminPasswordSecretRef` (required) -- reference to a Secret containing the initial admin password. Sub-fields: `name` and `key`.
 - `http` (optional) -- HTTP listener configuration: `enabled` (default `true`), `port` (default `8888`), `serviceType` (default `ClusterIP`).
@@ -115,7 +116,7 @@ The controller requeues every 5 minutes. On each pass it compares the owned reso
 
 **Status:** ADDED
 
-The init container runs a generated `sh -c` script. User-controlled values (admin password, database URL) are passed to it as environment variables and referenced as quoted expansions (`"${ADMIN_PASSWORD}"`, `"${DATABASE_URL}"`), so the shell never parses them as code.
+Config seeding copies the operator-generated ConfigMap to the writable `/data/warpgate.yaml` on every boot and adapts to the Warpgate image. Shell-bearing images (<= 0.26) run a single generated `sh -c` init script in the Warpgate image. Distroless images (>= 0.27, including 0.30.x) have no shell, so seeding splits into a shell-free `init-setup` container that runs the Warpgate binary directly (admin bootstrap, keys and self-signed cert, made idempotent by Warpgate's `--if-config-exists skip`) and an `init-config` container built from the `seedImage` utility image (pinned `busybox` by default) that performs the file operations. In every case user-controlled values (admin password, database URL) reach the containers only as environment variables, referenced as quoted shell expansions (`"${DATABASE_URL}"`) or Kubernetes `$(VAR)` arg expansion (`--admin-password $(ADMIN_PASSWORD)`), so neither the shell nor the manifest ever carries the raw value.
 
 **Scenarios:**
 

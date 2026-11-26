@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -226,7 +227,84 @@ func resolveImage(inst *warpgatev1alpha1.WarpgateInstance) string {
 	// Upstream ghcr tags carry no leading "v" (ghcr.io/warp-tech/warpgate:0.26.0
 	// exists, :v0.26.0 does not), so normalise a user-supplied "v" away.
 	tag := strings.TrimPrefix(inst.Spec.Version, "v")
+	if tag == "" {
+		tag = warpgatev1alpha1.DefaultWarpgateVersion
+	}
 	return fmt.Sprintf("ghcr.io/warp-tech/warpgate:%s", tag)
+}
+
+// seedImage is the utility image for the config-seed init container on shell-less
+// Warpgate deployments. An explicit spec.seedImage wins; otherwise a pinned
+// busybox is used.
+func seedImage(inst *warpgatev1alpha1.WarpgateInstance) string {
+	if inst.Spec.SeedImage != "" {
+		return inst.Spec.SeedImage
+	}
+	return warpgatev1alpha1.DefaultSeedImage
+}
+
+// warpgateTag returns the Warpgate version tag the instance resolves to, with any
+// leading "v" stripped. It prefers spec.version, else parses the tag from
+// spec.image, else falls back to the operator default.
+func warpgateTag(inst *warpgatev1alpha1.WarpgateInstance) string {
+	if inst.Spec.Version != "" {
+		return strings.TrimPrefix(inst.Spec.Version, "v")
+	}
+	img := inst.Spec.Image
+	if img == "" {
+		return warpgatev1alpha1.DefaultWarpgateVersion
+	}
+	// Strip a digest, then take the tag after the last ':' that isn't a registry
+	// port (a port is followed by a '/').
+	if i := strings.IndexByte(img, '@'); i >= 0 {
+		img = img[:i]
+	}
+	if i := strings.LastIndexByte(img, ':'); i >= 0 {
+		if tag := img[i+1:]; !strings.Contains(tag, "/") {
+			return strings.TrimPrefix(tag, "v")
+		}
+	}
+	return ""
+}
+
+// imageHasShell reports whether the resolved Warpgate image bundles a POSIX shell
+// and coreutils. Warpgate shipped a Debian-based image with a shell through
+// 0.26; 0.27 switched to distroless (no /bin/sh, no cp). An unparseable tag
+// (e.g. "latest" or a custom image) is treated as shell-less, the modern
+// default, so the operator never assumes a shell it cannot rely on.
+func imageHasShell(inst *warpgatev1alpha1.WarpgateInstance) bool {
+	major, minor, ok := parseMajorMinor(warpgateTag(inst))
+	if !ok {
+		return false
+	}
+	return major == 0 && minor <= 26
+}
+
+// parseMajorMinor parses the leading "major.minor" of a version tag. It reports
+// ok=false for anything it cannot read as two integers (e.g. "latest").
+func parseMajorMinor(tag string) (major, minor int, ok bool) {
+	parts := strings.SplitN(tag, ".", 3)
+	if len(parts) < 2 {
+		return 0, 0, false
+	}
+	maj, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, false
+	}
+	// Minor may carry a pre-release/build suffix (e.g. "27-rc1"); read its digits.
+	minStr := parts[1]
+	end := 0
+	for end < len(minStr) && minStr[end] >= '0' && minStr[end] <= '9' {
+		end++
+	}
+	if end == 0 {
+		return 0, 0, false
+	}
+	min, err := strconv.Atoi(minStr[:end])
+	if err != nil {
+		return 0, 0, false
+	}
+	return maj, min, true
 }
 
 // defaultFSGroup is applied to the pod so Warpgate (which runs non-root) can
@@ -1034,6 +1112,13 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 		})
 	}
 
+	// Init containers. Shell-bearing Warpgate images (<= 0.26) seed the config in
+	// a single in-image init container that runs the script above. Shell-less
+	// distroless images (>= 0.27) have no /bin/sh or cp, so the script cannot run
+	// in the Warpgate image: seeding is split into a shell-free Warpgate setup
+	// container and a busybox config-seed container. See buildInitContainers.
+	initContainers, rolloutMaterial := buildInitContainers(inst, image, initScript, initEnv, initVolumeMounts)
+
 	// Probes — use HTTP health check on the Warpgate admin API when HTTP is enabled.
 	var livenessProbe, readinessProbe *corev1.Probe
 	if httpEnabled(inst) {
@@ -1071,7 +1156,7 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 	// name and configHash already derives the database URL with PBKDF2.
 	rollout := fnv.New64a()
 	_, _ = rollout.Write([]byte(configHash(inst))) // hash writes never fail
-	_, _ = rollout.Write([]byte(initScript))
+	_, _ = rollout.Write([]byte(rolloutMaterial))
 	hash := fmt.Sprintf("%016x", rollout.Sum64())[:12]
 
 	// Deployment strategy — default Recreate for RWO PVC compatibility.
@@ -1180,15 +1265,7 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 				},
 				Spec: corev1.PodSpec{
 					SecurityContext: podSecurityContext(inst),
-					InitContainers: []corev1.Container{
-						{
-							Name:         "init-setup",
-							Image:        image,
-							Command:      []string{"/bin/sh", "-c", initScript},
-							VolumeMounts: initVolumeMounts,
-							Env:          initEnv,
-						},
-					},
+					InitContainers:  initContainers,
 					Containers: []corev1.Container{
 						{
 							Name:  "warpgate",
@@ -1212,6 +1289,196 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 	}
 
 	return deploy
+}
+
+// buildInitContainers returns the pod's init containers and the string to fold
+// into the rollout hash so a change to any generated init step restarts the pod.
+//
+// Shell-bearing Warpgate images (<= 0.26) keep the original single in-image init
+// container that runs shellInitScript via /bin/sh. Shell-less distroless images
+// (>= 0.27, and anything whose tag the operator cannot parse) have no shell or
+// cp, so the Warpgate image cannot run the script: seeding is split into a
+// Warpgate setup container that runs the warpgate binary directly (shell-free)
+// and a busybox config-seed container that performs the file operations. Both
+// paths reapply the operator config on every boot and leave the admin bootstrap
+// as a one-time step.
+func buildInitContainers(
+	inst *warpgatev1alpha1.WarpgateInstance,
+	image, shellInitScript string,
+	shellEnv []corev1.EnvVar,
+	shellMounts []corev1.VolumeMount,
+) ([]corev1.Container, string) {
+	if imageHasShell(inst) {
+		return []corev1.Container{
+			{
+				Name:         "init-setup",
+				Image:        image,
+				Command:      []string{"/bin/sh", "-c", shellInitScript},
+				VolumeMounts: shellMounts,
+				Env:          shellEnv,
+			},
+		}, shellInitScript
+	}
+
+	// Distroless path. Container 1 runs the Warpgate binary (the image entrypoint)
+	// directly to bootstrap the admin user, keys and self-signed TLS cert once,
+	// writing /data/warpgate.yaml. Warpgate's own --if-config-exists skip makes
+	// re-runs a no-op, which replaces the shell "[ -f ]" guard. Container 2 then
+	// overwrites that config with the operator-generated one on every boot.
+	setupArgs := warpgateSetupArgs(inst)
+
+	setupEnv := []corev1.EnvVar{adminPasswordEnvVar(inst)}
+	setupMounts := []corev1.VolumeMount{{Name: "data", MountPath: "/data"}}
+	if externalDatabase(inst) {
+		setupEnv = append(setupEnv, databaseURLEnv(inst))
+	}
+	if inst.Spec.SSHKeysSecretName != "" {
+		// Setup imports the keys straight from the read-only Secret mount, so no
+		// pre-copy step (and thus no shell) is needed before it runs.
+		setupMounts = append(setupMounts, corev1.VolumeMount{
+			Name: "ssh-keys", MountPath: "/ssh-keys", ReadOnly: true,
+		})
+	}
+
+	seedScript := buildSeedScript(inst)
+
+	seedEnv := []corev1.EnvVar{}
+	if externalDatabase(inst) {
+		seedEnv = append(seedEnv, databaseURLEnv(inst))
+	}
+	seedEnv = append(seedEnv, ssoClientSecretEnvVars(inst)...)
+
+	seedMounts := []corev1.VolumeMount{
+		{Name: "data", MountPath: "/data"},
+		{Name: "config", MountPath: "/config", ReadOnly: true},
+	}
+	if servedTLSSecret(inst) != "" {
+		seedMounts = append(seedMounts, corev1.VolumeMount{
+			Name: "tls-secret", MountPath: "/tls-secret", ReadOnly: true,
+		})
+	}
+	if inst.Spec.ConfigOverride != "" {
+		seedMounts = append(seedMounts, corev1.VolumeMount{
+			Name: "config-override", MountPath: "/override", ReadOnly: true,
+		})
+	}
+
+	containers := []corev1.Container{
+		{
+			Name:         "init-setup",
+			Image:        image,
+			Args:         setupArgs,
+			VolumeMounts: setupMounts,
+			Env:          setupEnv,
+		},
+		{
+			Name:         "init-config",
+			Image:        seedImage(inst),
+			Command:      []string{"/bin/sh", "-c", seedScript},
+			VolumeMounts: seedMounts,
+			Env:          seedEnv,
+		},
+	}
+	return containers, strings.Join(setupArgs, " ") + "\n" + seedScript
+}
+
+// adminPasswordEnvVar returns the ADMIN_PASSWORD env var sourced from the admin
+// password Secret.
+func adminPasswordEnvVar(inst *warpgatev1alpha1.WarpgateInstance) corev1.EnvVar {
+	return corev1.EnvVar{
+		Name: "ADMIN_PASSWORD",
+		ValueFrom: &corev1.EnvVarSource{
+			SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: inst.Spec.AdminPasswordSecretRef.Name,
+				},
+				Key: adminPasswordKey(inst),
+			},
+		},
+	}
+}
+
+// warpgateSetupArgs returns the argv for the shell-free Warpgate setup init
+// container (distroless path). The image entrypoint is the warpgate binary, so
+// these are its arguments. Secret values arrive by Kubernetes $(VAR) expansion
+// of the container env, never literally in the manifest. --config points the
+// built-in "config already exists" check at the same /data/warpgate.yaml the
+// shell path guards on, and --if-config-exists skip makes a re-run a no-op.
+func warpgateSetupArgs(inst *warpgatev1alpha1.WarpgateInstance) []string {
+	args := []string{
+		"--config", "/data/warpgate.yaml",
+		"--skip-securing-files",
+		"unattended-setup",
+		"--data-path", "/data",
+		"--http-port", strconv.Itoa(int(instanceHTTPPort(inst))),
+		"--admin-password", "$(ADMIN_PASSWORD)",
+		"--if-config-exists", "skip",
+	}
+	if kubernetesEnabled(inst) {
+		args = append(args, "--kubernetes-port", strconv.Itoa(int(instanceKubernetesPort(inst))))
+	}
+	if externalDatabase(inst) {
+		args = append(args, "--database-url", "$(DATABASE_URL)")
+	}
+	if inst.Spec.RecordSessions != nil && *inst.Spec.RecordSessions {
+		args = append(args, "--record-sessions")
+	}
+	if inst.Spec.SSHKeysSecretName != "" {
+		args = append(args, "--import-ssh-host-keys", "/ssh-keys", "--import-ssh-client-keys", "/ssh-keys")
+	}
+	return args
+}
+
+// buildSeedScript returns the shell script run by the busybox config-seed init
+// container (distroless path). It reapplies the operator config to
+// /data/warpgate.yaml on every boot, mirroring steps 3-5 of the shell path but
+// without the admin bootstrap (done by the setup container), the SSH pre-copy
+// (setup imports keys from the Secret mount) and the openssl self-signed branch
+// (Warpgate's setup generates that certificate). busybox provides sh, cp, sed
+// and awk, so the script never touches the Warpgate image.
+func buildSeedScript(inst *warpgatev1alpha1.WarpgateInstance) string {
+	var parts []string
+	parts = append(parts, "#!/bin/sh", "set -e")
+
+	if inst.Spec.ConfigOverride != "" {
+		parts = append(parts,
+			`echo "Applying config override..."`,
+			`cp /override/warpgate.yaml /data/warpgate.yaml`,
+		)
+	} else {
+		parts = append(parts,
+			`echo "Applying operator config..."`,
+			`cp /config/warpgate.yaml /data/warpgate.yaml`,
+		)
+		if externalDatabase(inst) {
+			parts = append(parts,
+				`sed -i '/^database_url:/d' /data/warpgate.yaml`,
+				`printf "database_url: '%s'\n" "$(printf '%s' "${DATABASE_URL}" | sed "s/'/''/g")" >> /data/warpgate.yaml`,
+			)
+		}
+		parts = append(parts, ssoInitScriptLines(inst)...)
+	}
+
+	// Copy the served TLS certificate when a Secret provides one. Without one,
+	// the setup container already generated a self-signed pair in /data.
+	if servedTLSSecret(inst) != "" {
+		parts = append(parts,
+			`echo "Copying TLS certificates from secret..."`,
+			`if [ -f /tls-secret/tls.crt ]; then`,
+			`  cp /tls-secret/tls.crt /data/tls.certificate.pem`,
+			`  cp /tls-secret/tls.key /data/tls.key.pem`,
+			`  chmod 600 /data/tls.certificate.pem /data/tls.key.pem`,
+			`fi`,
+		)
+	}
+
+	parts = append(parts,
+		`chmod 600 /data/*.pem 2>/dev/null || true`,
+		`chmod 600 /data/warpgate.yaml 2>/dev/null || true`,
+		`echo "Config seed complete."`,
+	)
+
+	return strings.Join(parts, "\n")
 }
 
 func (r *WarpgateInstanceReconciler) ensureDeployment(ctx context.Context, inst *warpgatev1alpha1.WarpgateInstance) error {
