@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.6](https://github.com/thereisnotime/warpgate-operator/compare/warpgate-operator-v0.5.5...warpgate-operator-v0.5.6) (2026-11-26)
+
+
+### Features
+
+* **instance:** publish k8s/mysql/pg Services and k8s externalHost/externalPort ([#172](https://github.com/thereisnotime/warpgate-operator/issues/172)) ([d1f26c9](https://github.com/thereisnotime/warpgate-operator/commit/d1f26c99274909e4b40b9e220c7dfe50d89dea79))
+
 ## [0.5.5](https://github.com/thereisnotime/warpgate-operator/compare/warpgate-operator-v0.5.4...warpgate-operator-v0.5.5) (2026-11-26)
 
 
