@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.7](https://github.com/thereisnotime/warpgate-operator/compare/v0.5.6...v0.5.7) (2026-11-26)
+
+
+### Bug Fixes
+
+* **instance:** seed /data as the non-root runtime user and self-heal poisoned volumes ([#170](https://github.com/thereisnotime/warpgate-operator/issues/170)) ([7ebe711](https://github.com/thereisnotime/warpgate-operator/commit/7ebe711126f2f7961087bfea64f72bdcb46edfc2))
+
 ## [0.5.6](https://github.com/thereisnotime/warpgate-operator/compare/v0.5.5...v0.5.6) (2026-11-26)
 
 
