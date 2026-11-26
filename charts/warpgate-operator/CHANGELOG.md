@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.7](https://github.com/thereisnotime/warpgate-operator/compare/warpgate-operator-v0.5.6...warpgate-operator-v0.5.7) (2026-11-26)
+
+
+### Features
+
+* **target:** short-lived ServiceAccount tokens for Kubernetes targets ([#174](https://github.com/thereisnotime/warpgate-operator/issues/174)) ([d3c5646](https://github.com/thereisnotime/warpgate-operator/commit/d3c5646cb26d5698ef68593a7fa6b6d0e5dd48c1))
+
 ## [0.5.6](https://github.com/thereisnotime/warpgate-operator/compare/warpgate-operator-v0.5.5...warpgate-operator-v0.5.6) (2026-11-26)
 
 
