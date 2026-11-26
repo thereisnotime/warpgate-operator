@@ -1,0 +1,34 @@
+apiVersion: warpgate.warpgate.warp.tech/v1alpha1
+kind: WarpgateInstance
+metadata:
+  labels:
+    app.kubernetes.io/name: warpgate-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: warpgateinstance-sample
+spec:
+  version: "0.21.1"
+  adminPasswordSecretRef:
+    name: warpgate-admin
+    key: password
+  externalHost: gate.example.com
+  recordSessions: true
+  # OpenID Connect SSO. The client secret is read from the referenced Secret and
+  # injected at runtime, so it never lands in the generated ConfigMap. Roles sync
+  # from the provider's warpgate_roles claim.
+  sso:
+    providers:
+      - name: authentik
+        label: Authentik
+        clientID: warpgate-example
+        clientSecretSecretRef:
+          name: warpgate-sso-authentik
+          key: client-secret
+        issuerURL: https://auth.example.com/application/o/warpgate-example/
+        scopes:
+          - openid
+          - email
+          - profile
+          - warpgate_roles
+        autoCreateUsers: true
+        roleMappings:
+          example-k8s-admin: k8s-example-admin

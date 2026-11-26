@@ -23,6 +23,7 @@ lifecycle management.
 ## Features
 
 - **Deploy and manage Warpgate instances** directly on Kubernetes with the `WarpgateInstance` CRD
+- **First-class OpenID Connect SSO** on `WarpgateInstance` (`spec.sso`) -- the client secret comes from a referenced Secret (never the ConfigMap) and roles sync from the provider's `warpgate_roles` claim
 - **11 CRDs** covering all Warpgate resource types -- instances, connections, roles, users, targets, target groups, bindings, credentials, and tickets
 - **Multi-instance support** via `WarpgateConnection` CRDs pointing to different Warpgate instances
 - **Continuous drift reconciliation** that enforces desired state every 5 minutes

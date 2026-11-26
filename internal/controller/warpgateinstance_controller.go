@@ -22,6 +22,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"hash/fnv"
+	"sort"
 	"strings"
 	"time"
 
@@ -375,6 +376,26 @@ func configHash(inst *warpgatev1alpha1.WarpgateInstance) string {
 		h.Write([]byte(inst.Spec.DatabaseURLSecretRef.Name + "/" + databaseURLKey(inst)))
 	}
 	h.Write([]byte(inst.Spec.SSHKeysSecretName))
+	if ssoEnabled(inst) {
+		// Hash the non-secret SSO config plus the secret's ref (name/key), so a
+		// changed mapping or a rotated-to Secret rolls the pods. The secret value
+		// itself is never written to the rollout hash.
+		for _, p := range inst.Spec.SSO.Providers {
+			h.Write(fmt.Appendf(nil, "sso|%s|%s|%s|%s|%v|%v|%s/%s|%v|%v",
+				p.Name, p.Label, p.ClientID, p.IssuerURL,
+				p.Scopes, p.AutoCreateUsers,
+				p.ClientSecretSecretRef.Name, p.ClientSecretSecretRef.Key,
+				p.AdditionalTrustedAudiences, p.TrustUnknownAudiences))
+			rmKeys := make([]string, 0, len(p.RoleMappings))
+			for k := range p.RoleMappings {
+				rmKeys = append(rmKeys, k)
+			}
+			sort.Strings(rmKeys)
+			for _, k := range rmKeys {
+				h.Write(fmt.Appendf(nil, "rm|%s=%s", k, p.RoleMappings[k]))
+			}
+		}
+	}
 	return fmt.Sprintf("%x", h.Sum(nil))[:12]
 }
 
@@ -403,6 +424,144 @@ func databaseURLFingerprint(inst *warpgatev1alpha1.WarpgateInstance) []byte {
 // ---------------------------------------------------------------------------
 // 4. ConfigMap — warpgate.yaml
 // ---------------------------------------------------------------------------
+
+// ssoEnabled reports whether SSO providers are configured and should be
+// rendered. configOverride wins: when it is set the whole config comes from the
+// override, so sso is ignored.
+func ssoEnabled(inst *warpgatev1alpha1.WarpgateInstance) bool {
+	return inst.Spec.ConfigOverride == "" &&
+		inst.Spec.SSO != nil && len(inst.Spec.SSO.Providers) > 0
+}
+
+// ssoEnvSuffix turns a provider name into an upper-case, env-var-safe token
+// (every non-alphanumeric becomes an underscore).
+func ssoEnvSuffix(name string) string {
+	var b strings.Builder
+	for _, r := range strings.ToUpper(name) {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
+}
+
+// ssoClientSecretEnv is the env var name that carries a provider's client secret
+// into the init container.
+func ssoClientSecretEnv(name string) string {
+	return "WARPGATE_SSO_" + ssoEnvSuffix(name) + "_CLIENT_SECRET"
+}
+
+// ssoClientSecretSentinel is the placeholder written into the ConfigMap in place
+// of a provider's client secret; the init script swaps it for the real value
+// from the environment, so the secret never lands in the ConfigMap.
+func ssoClientSecretSentinel(name string) string {
+	return "__WG_SSO_SECRET_" + ssoEnvSuffix(name) + "__"
+}
+
+// yamlScalar renders s as a single safely-quoted YAML scalar (no trailing
+// newline), so operator-supplied values cannot break out of their field.
+func yamlScalar(s string) string {
+	out, err := yaml.Marshal(s)
+	if err != nil {
+		return `""`
+	}
+	return strings.TrimRight(string(out), "\n")
+}
+
+// writeSSOProviders renders the sso_providers block. Each client_secret is a
+// sentinel the init script replaces at runtime.
+func writeSSOProviders(b *strings.Builder, inst *warpgatev1alpha1.WarpgateInstance) {
+	b.WriteString("sso_providers:\n")
+	for _, p := range inst.Spec.SSO.Providers {
+		fmt.Fprintf(b, "  - name: %s\n", yamlScalar(p.Name))
+		label := p.Label
+		if label == "" {
+			label = p.Name
+		}
+		fmt.Fprintf(b, "    label: %s\n", yamlScalar(label))
+		if p.AutoCreateUsers {
+			b.WriteString("    auto_create_users: true\n")
+		}
+		b.WriteString("    provider:\n")
+		b.WriteString("      type: custom\n")
+		fmt.Fprintf(b, "      client_id: %s\n", yamlScalar(p.ClientID))
+		fmt.Fprintf(b, "      client_secret: '%s'\n", ssoClientSecretSentinel(p.Name))
+		fmt.Fprintf(b, "      issuer_url: %s\n", yamlScalar(p.IssuerURL))
+		b.WriteString("      scopes:\n")
+		for _, s := range p.Scopes {
+			fmt.Fprintf(b, "        - %s\n", yamlScalar(s))
+		}
+		if len(p.RoleMappings) > 0 {
+			b.WriteString("      role_mappings:\n")
+			keys := make([]string, 0, len(p.RoleMappings))
+			for k := range p.RoleMappings {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				fmt.Fprintf(b, "        %s: %s\n", yamlScalar(k), yamlScalar(p.RoleMappings[k]))
+			}
+		}
+		if len(p.AdditionalTrustedAudiences) > 0 {
+			b.WriteString("      additional_trusted_audiences:\n")
+			for _, a := range p.AdditionalTrustedAudiences {
+				fmt.Fprintf(b, "        - %s\n", yamlScalar(a))
+			}
+		}
+		if p.TrustUnknownAudiences {
+			b.WriteString("      trust_unknown_audiences: true\n")
+		}
+	}
+}
+
+// ssoClientSecretEnvVars returns the init-container env vars that carry each SSO
+// provider's client secret from its referenced Secret.
+func ssoClientSecretEnvVars(inst *warpgatev1alpha1.WarpgateInstance) []corev1.EnvVar {
+	if !ssoEnabled(inst) {
+		return nil
+	}
+	envs := make([]corev1.EnvVar, 0, len(inst.Spec.SSO.Providers))
+	for _, p := range inst.Spec.SSO.Providers {
+		key := p.ClientSecretSecretRef.Key
+		if key == "" {
+			key = "client-secret"
+		}
+		envs = append(envs, corev1.EnvVar{
+			Name: ssoClientSecretEnv(p.Name),
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: p.ClientSecretSecretRef.Name},
+					Key:                  key,
+				},
+			},
+		})
+	}
+	return envs
+}
+
+// ssoInitScriptLines returns the init-script lines that replace each provider's
+// client_secret sentinel in /data/warpgate.yaml with the value from its env var.
+// The whole client_secret line is rebuilt (fixed indent) rather than
+// pattern-substituted, so no special char in the secret can misfire: the quote
+// char arrives as an awk var and the value through ENVIRON, pre-escaped for a
+// single-quoted YAML scalar.
+func ssoInitScriptLines(inst *warpgatev1alpha1.WarpgateInstance) []string {
+	if !ssoEnabled(inst) {
+		return nil
+	}
+	var lines []string
+	for _, p := range inst.Spec.SSO.Providers {
+		escVar := "WG_SSO_ESC_" + ssoEnvSuffix(p.Name)
+		lines = append(lines,
+			escVar+`="$(printf '%s' "${`+ssoClientSecretEnv(p.Name)+`}" | sed "s/'/''/g")"`,
+			`export `+escVar,
+			`awk -v ph="`+ssoClientSecretSentinel(p.Name)+`" -v envk="`+escVar+`" -v q="'" 'index($0,ph)>0{print "      client_secret: " q ENVIRON[envk] q; next}{print}' /data/warpgate.yaml > /data/warpgate.yaml.sso && mv /data/warpgate.yaml.sso /data/warpgate.yaml`,
+		)
+	}
+	return lines
+}
 
 func (r *WarpgateInstanceReconciler) buildWarpgateConfig(inst *warpgatev1alpha1.WarpgateInstance) string {
 	var b strings.Builder
@@ -475,6 +634,12 @@ func (r *WarpgateInstanceReconciler) buildWarpgateConfig(inst *warpgatev1alpha1.
 
 	// Session recording lives in Warpgate's database parameters, not the config
 	// file; it is seeded through unattended-setup (see the init script).
+
+	// SSO providers. Each client_secret is a sentinel the init script swaps for
+	// the real value from the environment, so it never sits in the ConfigMap.
+	if ssoEnabled(inst) {
+		writeSSOProviders(&b, inst)
+	}
 
 	return b.String()
 }
@@ -689,6 +854,9 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 				`printf "database_url: '%s'\n" "$(printf '%s' "${DATABASE_URL}" | sed "s/'/''/g")" >> /data/warpgate.yaml`,
 			)
 		}
+		// Swap each SSO provider's client_secret sentinel for the real value from
+		// its env var (see ssoInitScriptLines).
+		scriptParts = append(scriptParts, ssoInitScriptLines(inst)...)
 	}
 
 	// 5. Generate self-signed TLS if no certs exist yet (and no TLS secret / cert-manager)
@@ -729,6 +897,7 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 	if externalDatabase(inst) {
 		initEnv = append(initEnv, databaseURLEnv(inst))
 	}
+	initEnv = append(initEnv, ssoClientSecretEnvVars(inst)...)
 
 	// Init container volume mounts
 	initVolumeMounts := []corev1.VolumeMount{

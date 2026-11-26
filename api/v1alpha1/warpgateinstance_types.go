@@ -133,6 +133,81 @@ type WarpgateInstanceSpec struct {
 	// Requires Warpgate v0.30.0+.
 	// +optional
 	SecretBackends *SecretBackendsSpec `json:"secretBackends,omitempty"`
+
+	// sso configures OpenID Connect single sign-on providers. Each provider's
+	// client secret is read from a referenced Secret and injected at runtime, so
+	// it never lands in the generated ConfigMap. Ignored when configOverride is
+	// set (the override owns the whole config).
+	// +optional
+	SSO *SSOSpec `json:"sso,omitempty"`
+}
+
+// SSOSpec configures Warpgate's OpenID Connect single sign-on providers.
+type SSOSpec struct {
+	// providers is the list of SSO providers to configure.
+	// +required
+	// +kubebuilder:validation:MinItems=1
+	Providers []SSOProviderSpec `json:"providers"`
+}
+
+// SSOProviderSpec is a single OpenID Connect provider (the generic "custom"
+// Warpgate provider type). Role syncing requires the provider to emit a
+// warpgate_roles claim, so include the scope that carries it in scopes.
+type SSOProviderSpec struct {
+	// name is the provider's unique id, used in the login URL and as the key for
+	// its injected client-secret environment variable.
+	// +required
+	Name string `json:"name"`
+
+	// label is the human-friendly name shown on the login page. Defaults to name.
+	// +optional
+	Label string `json:"label,omitempty"`
+
+	// type is the Warpgate provider type. Only "custom" (generic OIDC) is
+	// supported and it is the default.
+	// +optional
+	// +kubebuilder:default=custom
+	// +kubebuilder:validation:Enum=custom
+	Type string `json:"type,omitempty"`
+
+	// autoCreateUsers creates a Warpgate user on first successful login.
+	// +optional
+	AutoCreateUsers bool `json:"autoCreateUsers,omitempty"`
+
+	// clientID is the OIDC client id.
+	// +required
+	ClientID string `json:"clientID"`
+
+	// clientSecretSecretRef references a Secret key holding the OIDC client
+	// secret. It is injected as an environment variable and written into the
+	// config at runtime, so it is never stored in the ConfigMap.
+	// +required
+	ClientSecretSecretRef SecretKeyRef `json:"clientSecretSecretRef"`
+
+	// issuerURL is the OIDC issuer URL; its /.well-known/openid-configuration
+	// must be reachable from the Warpgate pod.
+	// +required
+	IssuerURL string `json:"issuerURL"`
+
+	// scopes are the OAuth scopes to request. Include the scope that carries the
+	// warpgate_roles claim when using role sync.
+	// +required
+	// +kubebuilder:validation:MinItems=1
+	Scopes []string `json:"scopes"`
+
+	// roleMappings maps a value from the provider's warpgate_roles claim to a
+	// Warpgate role name. When set, only the mapped roles are synced.
+	// +optional
+	RoleMappings map[string]string `json:"roleMappings,omitempty"`
+
+	// additionalTrustedAudiences accepts ID tokens whose audience is one of these
+	// values in addition to the client id.
+	// +optional
+	AdditionalTrustedAudiences []string `json:"additionalTrustedAudiences,omitempty"`
+
+	// trustUnknownAudiences disables audience validation on the ID token.
+	// +optional
+	TrustUnknownAudiences bool `json:"trustUnknownAudiences,omitempty"`
 }
 
 // SecretBackendsSpec configures external secret backends for Warpgate.
