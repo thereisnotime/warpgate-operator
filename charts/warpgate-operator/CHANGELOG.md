@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.5](https://github.com/thereisnotime/warpgate-operator/compare/warpgate-operator-v0.5.4...warpgate-operator-v0.5.5) (2026-11-26)
+
+
+### Features
+
+* **instance:** support distroless Warpgate images and default to 0.30.6 ([#168](https://github.com/thereisnotime/warpgate-operator/issues/168)) ([c165c39](https://github.com/thereisnotime/warpgate-operator/commit/c165c3996b717fe7672432248069c2b372704c98))
+
 ## [0.5.4](https://github.com/thereisnotime/warpgate-operator/compare/warpgate-operator-v0.5.3...warpgate-operator-v0.5.4) (2026-11-26)
 
 
