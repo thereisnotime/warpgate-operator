@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.5](https://github.com/thereisnotime/warpgate-operator/compare/v0.5.4...v0.5.5) (2026-11-26)
+
+
+### Features
+
+* **instance:** http.externalPort for SSO redirect + fold open PRs + latest-green deps ([#166](https://github.com/thereisnotime/warpgate-operator/issues/166)) ([acecd2a](https://github.com/thereisnotime/warpgate-operator/commit/acecd2a55edc7b45b0f0142859a452a14b2a2302))
+
 ## [0.5.4](https://github.com/thereisnotime/warpgate-operator/compare/v0.5.3...v0.5.4) (2026-11-26)
 
 
