@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/thereisnotime/warpgate-operator/compare/v0.5.1...v0.5.2) (2026-11-26)
+
+
+### Features
+
+* **instance:** first-class OpenID Connect SSO on WarpgateInstance ([#160](https://github.com/thereisnotime/warpgate-operator/issues/160)) ([08cf144](https://github.com/thereisnotime/warpgate-operator/commit/08cf1441419e99b74ef9cb9e8d330158c0d9ea6c))
+
 ## [0.5.1](https://github.com/thereisnotime/warpgate-operator/compare/v0.5.0...v0.5.1) (2026-11-23)
 
 
