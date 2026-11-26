@@ -53,6 +53,9 @@ spec:
             {{- with .Values.operator.watchNamespaceSelector }}
             - --watch-namespace-selector={{ . }}
             {{- end }}
+            {{- with .Values.operator.secretSelector }}
+            - {{ printf "--secret-selector=%s" . | quote }}
+            {{- end }}
             {{- if .Values.webhooks.enabled }}
             - --webhook-cert-path=/tmp/k8s-webhook-server/serving-certs
             {{- end }}

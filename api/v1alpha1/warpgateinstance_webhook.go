@@ -220,6 +220,15 @@ func validateDatabase(inst *WarpgateInstance, specPath *field.Path) (field.Error
 }
 
 // validateWarpgateInstance runs all field-level validation checks.
+// verifyConnectionWithoutCA reports whether verifyConnection is demanded with
+// no TLS Secret to verify against. certManager defaults to true, so only an
+// explicit false leaves no CA.
+func verifyConnectionWithoutCA(inst *WarpgateInstance) bool {
+	tls := inst.Spec.TLS
+	return tls != nil && tls.VerifyConnection != nil && *tls.VerifyConnection &&
+		tls.SecretName == "" && tls.CertManager != nil && !*tls.CertManager
+}
+
 func validateWarpgateInstance(inst *WarpgateInstance) (admission.Warnings, error) {
 	var allErrs field.ErrorList
 	var warnings admission.Warnings
@@ -275,8 +284,8 @@ func validateWarpgateInstance(inst *WarpgateInstance) (admission.Warnings, error
 		}
 	}
 
-	if tls := inst.Spec.TLS; tls != nil && tls.VerifyConnection != nil && *tls.VerifyConnection && tls.SecretName == "" {
-		warnings = append(warnings, "tls.verifyConnection is true but tls.secretName is not set; the operator has no CA to verify the auto-created connection against")
+	if verifyConnectionWithoutCA(inst) {
+		warnings = append(warnings, "tls.verifyConnection is true but tls.certManager is false and tls.secretName is not set; the operator has no CA to verify the auto-created connection against")
 	}
 	dbErrs, dbWarnings := validateDatabase(inst, specPath)
 	allErrs = append(allErrs, dbErrs...)

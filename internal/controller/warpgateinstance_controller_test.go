@@ -1839,6 +1839,44 @@ var _ = Describe("WarpgateInstance Controller", func() {
 	})
 
 	// -----------------------------------------------------------------------
+	// 10b. http.external_port (SSO redirect_uri port)
+	// -----------------------------------------------------------------------
+	Context("buildWarpgateConfig http external_port", func() {
+		base := func(name string) *warpgatev1alpha1.WarpgateInstance {
+			return &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version:                "0.26.0",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{Name: "dummy"},
+					HTTP:                   &warpgatev1alpha1.HTTPListenerSpec{Enabled: boolPtr(true), Port: int32Ptr(8888)},
+					TLS:                    &warpgatev1alpha1.InstanceTLSSpec{CertManager: boolPtr(false)},
+				},
+			}
+		}
+
+		It("defaults external_port to 443 when externalHost is set and externalPort is unset", func() {
+			inst := base("extport-default")
+			inst.Spec.ExternalHost = "gate.hz.rso.dev"
+			yaml := reconciler.buildWarpgateConfig(inst)
+			Expect(yaml).To(ContainSubstring("external_port: 443"))
+		})
+
+		It("uses the explicit http.externalPort when set", func() {
+			inst := base("extport-explicit")
+			inst.Spec.ExternalHost = "gate.hz.rso.dev"
+			inst.Spec.HTTP.ExternalPort = int32Ptr(8443)
+			yaml := reconciler.buildWarpgateConfig(inst)
+			Expect(yaml).To(ContainSubstring("external_port: 8443"))
+		})
+
+		It("omits external_port when neither externalHost nor externalPort is set", func() {
+			inst := base("extport-none")
+			yaml := reconciler.buildWarpgateConfig(inst)
+			Expect(yaml).NotTo(ContainSubstring("external_port"))
+		})
+	})
+
+	// -----------------------------------------------------------------------
 	// 11. Recreate strategy default
 	// -----------------------------------------------------------------------
 	Context("Recreate strategy default", func() {

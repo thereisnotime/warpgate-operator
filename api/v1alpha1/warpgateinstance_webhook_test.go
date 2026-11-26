@@ -696,7 +696,7 @@ func containsWarning(warnings []string, substr string) bool {
 
 func TestInstanceValidate_WarnVerifyConnectionWithoutSecret(t *testing.T) {
 	inst := validInstance()
-	inst.Spec.TLS = &InstanceTLSSpec{VerifyConnection: boolPtr(true)}
+	inst.Spec.TLS = &InstanceTLSSpec{VerifyConnection: boolPtr(true), CertManager: boolPtr(false)}
 
 	warnings, err := (&WarpgateInstanceCustomValidator{}).ValidateCreate(context.Background(), inst)
 	if err != nil {
@@ -710,5 +710,14 @@ func TestInstanceValidate_WarnVerifyConnectionWithoutSecret(t *testing.T) {
 	warnings, _ = (&WarpgateInstanceCustomValidator{}).ValidateCreate(context.Background(), inst)
 	if containsWarning(warnings, "verifyConnection") {
 		t.Errorf("did not expect a verifyConnection warning with secretName set, got: %v", warnings)
+	}
+
+	// cert-manager provides the CA, explicitly or through the default.
+	for _, cm := range []*bool{boolPtr(true), nil} {
+		inst.Spec.TLS = &InstanceTLSSpec{VerifyConnection: boolPtr(true), CertManager: cm}
+		warnings, _ = (&WarpgateInstanceCustomValidator{}).ValidateCreate(context.Background(), inst)
+		if containsWarning(warnings, "verifyConnection") {
+			t.Errorf("did not expect a verifyConnection warning with cert-manager enabled, got: %v", warnings)
+		}
 	}
 }

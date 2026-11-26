@@ -278,6 +278,14 @@ type HTTPListenerSpec struct {
 	// +optional
 	// +kubebuilder:default=8888
 	Port *int32 `json:"port,omitempty"`
+	// externalPort is the public port advertised in external URLs and the SSO
+	// redirect_uri (the port clients actually reach Warpgate on, e.g. 443 behind
+	// an ingress or TLS passthrough), independent of the in-cluster listener
+	// port. When unset and externalHost is set, it defaults to 443 so the
+	// redirect_uri omits the port; when both are unset, Warpgate falls back to
+	// the listener port.
+	// +optional
+	ExternalPort *int32 `json:"externalPort,omitempty"`
 	// serviceType is the Kubernetes Service type (ClusterIP, NodePort, LoadBalancer). Defaults to ClusterIP.
 	// +optional
 	// +kubebuilder:default="ClusterIP"
@@ -332,20 +340,24 @@ type StorageSpec struct {
 // InstanceTLSSpec configures TLS certificate provisioning.
 type InstanceTLSSpec struct {
 	// certManager enables automatic TLS cert provisioning via cert-manager.
+	// The operator creates a Certificate whose Secret (<name>-tls) is mounted
+	// into the pod and served by Warpgate. The Deployment is created once
+	// cert-manager has issued that Secret.
 	// +optional
 	CertManager *bool `json:"certManager,omitempty"`
 	// issuerRef references a custom cert-manager issuer.
 	// +optional
 	IssuerRef *CertIssuerRef `json:"issuerRef,omitempty"`
 	// secretName references an existing TLS Secret (with tls.crt and tls.key).
-	// If set, cert-manager is not used and the secret is mounted directly.
+	// If set, this Secret is mounted and served instead of the cert-manager one.
 	// +optional
 	SecretName string `json:"secretName,omitempty"`
 
 	// verifyConnection controls TLS verification on the auto-created WarpgateConnection.
-	// Unset: verify against the CA in secretName (its ca.crt, or tls.crt when there is no
-	// ca.crt) when secretName is set, and skip verification for the self-signed certificate
-	// generated inside the pod, which the operator has no copy of.
+	// Unset: verify against the served TLS Secret (secretName, or the cert-manager Secret
+	// when certManager is enabled) using its ca.crt, or tls.crt when there is no ca.crt.
+	// Skip verification for the self-signed certificate generated inside the pod when
+	// neither is configured, since the operator has no copy of it.
 	// true: always verify; reconciliation fails if the operator has no CA to verify against.
 	// false: never verify.
 	// +optional

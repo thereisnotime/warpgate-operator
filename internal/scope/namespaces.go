@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package scope limits the namespaces the operator watches.
+// Package scope limits the namespaces and Secrets the operator watches.
 package scope
 
 import (

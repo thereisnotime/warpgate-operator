@@ -64,7 +64,7 @@ func (r *WarpgatePublicKeyCredentialReconciler) Reconcile(ctx context.Context, r
 		meta.SetStatusCondition(&cred.Status.Conditions, metav1.Condition{
 			Type:               "Ready",
 			Status:             metav1.ConditionFalse,
-			Reason:             "ClientError",
+			Reason:             secretErrorReason(err, "ClientError"),
 			Message:            fmt.Sprintf("Failed to get Warpgate client: %v", err),
 			ObservedGeneration: cred.Generation,
 		})

@@ -85,7 +85,7 @@ func (r *WarpgateConnectionReconciler) Reconcile(ctx context.Context, req ctrl.R
 	wgClient, err := clientForConnection(ctx, r.Client, &conn)
 	if err != nil {
 		log.Error(err, "failed to build Warpgate client")
-		r.setReadyCondition(&conn, metav1.ConditionFalse, "ConnectionFailed", fmt.Sprintf("Failed to build client: %v", err))
+		r.setReadyCondition(&conn, metav1.ConditionFalse, secretErrorReason(err, "ConnectionFailed"), fmt.Sprintf("Failed to build client: %v", err))
 		if updateErr := r.Status().Update(ctx, &conn); updateErr != nil {
 			log.Error(updateErr, "failed to update status")
 			return ctrl.Result{}, updateErr

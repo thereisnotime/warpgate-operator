@@ -54,6 +54,7 @@ The chart installs 10 CRDs under the `warpgate.warpgate.warp.tech/v1alpha1` API 
 | `leaderElection.enabled` | Enable leader election for HA | `true` |
 | `operator.watchNamespaces` | Namespaces to watch (empty = all, unless `operator.watchNamespaceSelector` is set) | `[]` |
 | `operator.watchNamespaceSelector` | Label selector of additional namespaces to watch | `""` |
+| `operator.secretSelector` | Label selector limiting the Secrets the operator caches and reads (empty = all) | `""` |
 | `resources.requests.cpu` | CPU request | `100m` |
 | `resources.requests.memory` | Memory request | `128Mi` |
 | `resources.limits.cpu` | CPU limit | `500m` |
@@ -77,6 +78,32 @@ operator:
 Namespaces selected only by label need a RoleBinding to the
 manager ClusterRole (`<fullname>-manager`), created alongside the label. The operator
 restarts itself when the set of matching namespaces changes.
+
+## Limiting the Secrets the Operator Reads
+
+Inside the watched namespaces the operator caches every Secret by default. Set
+`operator.secretSelector` to cache and read only Secrets carrying a label:
+
+```yaml
+operator:
+  secretSelector: warpgate.warp.tech/managed=true
+```
+
+- Every Secret referenced by a Warpgate resource (connection auth and CA Secrets, target and
+  password credential Secrets, the instance admin password and TLS Secrets) must carry the label.
+  A referenced Secret that exists without it puts the resource in `Ready=False` with reason
+  `SecretNotSelected` and a message naming the missing label.
+- Secrets the operator creates (user passwords, ticket values, the instance admin auth Secret)
+  get the label automatically. Ones created by an older version don't have it: label them
+  before turning the selector on, or delete them and let the operator recreate them.
+- Secrets that are only mounted into the Warpgate pod (`sshKeysSecretName`, `databaseURLSecretRef`,
+  the Vault token) are read by the kubelet, not the operator, and don't need the label.
+- The selector must require at least one label the operator can set, e.g. `key=value`,
+  `key in (a,b)` or `key`.
+
+Kubernetes RBAC can't grant access by label, so the enforced boundary is still the namespace
+(`operator.watchNamespaces`). The selector keeps everything else out of the operator's memory
+and out of what its controllers can read through the cache.
 
 ## Links
 
