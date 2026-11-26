@@ -23,7 +23,12 @@ const DefaultTimeout = 30 * time.Second
 
 // Config holds the configuration for a Warpgate API client.
 type Config struct {
-	Host               string
+	Host string
+	// HostHeader overrides the HTTP Host header and TLS SNI on every request
+	// (e.g. the instance external_host) while still dialing Host. Warpgate binds
+	// its session cookie to external_host and rejects other Hosts, so an in-cluster
+	// client dialing the Service must present external_host here or it gets 401s.
+	HostHeader         string
 	Token              string // API token (recommended, bypasses OTP)
 	Username           string // For session auth fallback
 	Password           string // For session auth fallback
@@ -72,6 +77,7 @@ func (s *session) isAuthed() bool {
 // or per reconcile leaks connections. Use WithContext to bind a request context.
 type Client struct {
 	host       string
+	hostHeader string
 	baseURL    string
 	token      string // API token
 	username   string
@@ -89,6 +95,7 @@ func NewClient(cfg Config) *Client {
 
 	c := &Client{
 		host:       host,
+		hostHeader: cfg.HostHeader,
 		baseURL:    host + apiBasePath,
 		token:      cfg.Token,
 		httpClient: newHTTPClient(cfg),
@@ -125,6 +132,15 @@ func newHTTPClient(cfg Config) *http.Client {
 			RootCAs:    pool,
 			MinVersion: tls.VersionTLS12,
 		}
+	}
+
+	if cfg.HostHeader != "" {
+		if transport.TLSClientConfig == nil {
+			transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+		}
+		// SNI must match external_host too; verification stays governed by the
+		// switch above (InsecureSkipVerify / RootCAs).
+		transport.TLSClientConfig.ServerName = cfg.HostHeader
 	}
 
 	timeout := cfg.Timeout
@@ -196,6 +212,9 @@ func (c *Client) login() (uint64, error) {
 		return 0, fmt.Errorf("creating login request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if c.hostHeader != "" {
+		req.Host = c.hostHeader
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -280,6 +299,9 @@ func (c *Client) send(method, path string, hasBody bool, data []byte) (*http.Res
 
 	if c.token != "" {
 		req.Header.Set("X-Warpgate-Token", c.token)
+	}
+	if c.hostHeader != "" {
+		req.Host = c.hostHeader
 	}
 
 	resp, err := c.httpClient.Do(req)

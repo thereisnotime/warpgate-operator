@@ -611,3 +611,49 @@ func selfSignedPEM(t *testing.T) []byte {
 	}
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 }
+
+func TestHostHeaderOverride(t *testing.T) {
+	var loginHost, apiHost string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/@warpgate/api/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		loginHost = r.Host
+		http.SetCookie(w, &http.Cookie{Name: "warpgate", Value: "s", Path: "/"})
+		w.WriteHeader(http.StatusCreated)
+	})
+	mux.HandleFunc("/@warpgate/admin/api/roles", func(w http.ResponseWriter, r *http.Request) {
+		apiHost = r.Host
+		_ = json.NewEncoder(w).Encode([]map[string]string{})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	c := NewClient(Config{Host: srv.URL, Username: "admin", Password: "secret", HostHeader: "gate.example.com"})
+	if err := c.Get("/roles", nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Warpgate binds the session cookie to external_host and 401s other Hosts,
+	// so both the login and the API call must carry Host=HostHeader.
+	if loginHost != "gate.example.com" {
+		t.Errorf("login Host = %q, want gate.example.com", loginHost)
+	}
+	if apiHost != "gate.example.com" {
+		t.Errorf("api Host = %q, want gate.example.com", apiHost)
+	}
+}
+
+func TestHostHeaderDefault(t *testing.T) {
+	var apiHost string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		apiHost = r.Host
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := NewTestClient(srv.URL)
+	_ = c.Get("/roles", nil)
+	// With no HostHeader the request keeps the dialed host (the test server addr),
+	// so the override must not leak into the default path.
+	if apiHost == "gate.example.com" {
+		t.Errorf("unexpected overridden Host %q", apiHost)
+	}
+}

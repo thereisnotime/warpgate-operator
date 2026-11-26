@@ -61,6 +61,7 @@ func sameConfig(a, b warpgate.Config) bool {
 		a.Username == b.Username &&
 		a.Password == b.Password &&
 		a.InsecureSkipVerify == b.InsecureSkipVerify &&
+		a.HostHeader == b.HostHeader &&
 		bytes.Equal(a.CACert, b.CACert) &&
 		a.Timeout == b.Timeout
 }
@@ -139,6 +140,7 @@ func connectionConfig(ctx context.Context, r client.Reader, conn *warpgatev1alph
 
 	cfg := warpgate.Config{
 		Host:               conn.Spec.Host,
+		HostHeader:         conn.Spec.HostHeader,
 		InsecureSkipVerify: conn.Spec.InsecureSkipVerify,
 		CACert:             caCert,
 	}

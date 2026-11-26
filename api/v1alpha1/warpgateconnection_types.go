@@ -65,6 +65,12 @@ type WarpgateConnectionSpec struct {
 	// If the token key exists in the Secret, token auth is used. Otherwise, username/password auth is used.
 	// +required
 	AuthSecretRef AuthSecretRef `json:"authSecretRef"`
+	// hostHeader overrides the HTTP Host header and TLS SNI used when talking to
+	// Host (e.g. the instance external_host) while still dialing Host. Required
+	// when Warpgate has external_host set and this connection dials an in-cluster
+	// Service, since Warpgate binds its session cookie to external_host.
+	// +optional
+	HostHeader string `json:"hostHeader,omitempty"`
 	// insecureSkipVerify disables TLS certificate verification. Not recommended for production.
 	// +optional
 	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`

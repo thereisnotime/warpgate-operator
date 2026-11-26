@@ -92,6 +92,13 @@ spec:
               host:
                 description: host is the URL of the Warpgate instance (e.g. https://warpgate.example.com).
                 type: string
+              hostHeader:
+                description: |-
+                  hostHeader overrides the HTTP Host header and TLS SNI used when talking to
+                  Host (e.g. the instance external_host) while still dialing Host. Required
+                  when Warpgate has external_host set and this connection dials an in-cluster
+                  Service, since Warpgate binds its session cookie to external_host.
+                type: string
               insecureSkipVerify:
                 description: insecureSkipVerify disables TLS certificate verification.
                   Not recommended for production.
