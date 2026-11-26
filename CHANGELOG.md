@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3](https://github.com/thereisnotime/warpgate-operator/compare/v0.5.2...v0.5.3) (2026-11-26)
+
+
+### Bug Fixes
+
+* **instance:** harden deployment (arg order, image tag, gateway RBAC, fsGroup) ([#162](https://github.com/thereisnotime/warpgate-operator/issues/162)) ([98beb80](https://github.com/thereisnotime/warpgate-operator/commit/98beb807e259e666326203283f6840e31c0a5c05))
+
 ## [0.5.2](https://github.com/thereisnotime/warpgate-operator/compare/v0.5.1...v0.5.2) (2026-11-26)
 
 
