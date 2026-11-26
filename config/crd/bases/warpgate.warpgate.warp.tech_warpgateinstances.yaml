@@ -403,6 +403,105 @@ spec:
                   Expected keys: client-ed25519, client-rsa, host-ed25519, host-rsa.
                   If not set, Warpgate generates its own keys on first boot.
                 type: string
+              sso:
+                description: |-
+                  sso configures OpenID Connect single sign-on providers. Each provider's
+                  client secret is read from a referenced Secret and injected at runtime, so
+                  it never lands in the generated ConfigMap. Ignored when configOverride is
+                  set (the override owns the whole config).
+                properties:
+                  providers:
+                    description: providers is the list of SSO providers to configure.
+                    items:
+                      description: |-
+                        SSOProviderSpec is a single OpenID Connect provider (the generic "custom"
+                        Warpgate provider type). Role syncing requires the provider to emit a
+                        warpgate_roles claim, so include the scope that carries it in scopes.
+                      properties:
+                        additionalTrustedAudiences:
+                          description: |-
+                            additionalTrustedAudiences accepts ID tokens whose audience is one of these
+                            values in addition to the client id.
+                          items:
+                            type: string
+                          type: array
+                        autoCreateUsers:
+                          description: autoCreateUsers creates a Warpgate user on
+                            first successful login.
+                          type: boolean
+                        clientID:
+                          description: clientID is the OIDC client id.
+                          type: string
+                        clientSecretSecretRef:
+                          description: |-
+                            clientSecretSecretRef references a Secret key holding the OIDC client
+                            secret. It is injected as an environment variable and written into the
+                            config at runtime, so it is never stored in the ConfigMap.
+                          properties:
+                            key:
+                              description: |-
+                                key is the key within the Secret. Defaults to "password" for password refs.
+                                Unused by tokenSecretRef (which always reads "username" and "password" keys).
+                              type: string
+                            name:
+                              description: name is the name of the Secret.
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        issuerURL:
+                          description: |-
+                            issuerURL is the OIDC issuer URL; its /.well-known/openid-configuration
+                            must be reachable from the Warpgate pod.
+                          type: string
+                        label:
+                          description: label is the human-friendly name shown on the
+                            login page. Defaults to name.
+                          type: string
+                        name:
+                          description: |-
+                            name is the provider's unique id, used in the login URL and as the key for
+                            its injected client-secret environment variable.
+                          type: string
+                        roleMappings:
+                          additionalProperties:
+                            type: string
+                          description: |-
+                            roleMappings maps a value from the provider's warpgate_roles claim to a
+                            Warpgate role name. When set, only the mapped roles are synced.
+                          type: object
+                        scopes:
+                          description: |-
+                            scopes are the OAuth scopes to request. Include the scope that carries the
+                            warpgate_roles claim when using role sync.
+                          items:
+                            type: string
+                          minItems: 1
+                          type: array
+                        trustUnknownAudiences:
+                          description: trustUnknownAudiences disables audience validation
+                            on the ID token.
+                          type: boolean
+                        type:
+                          default: custom
+                          description: |-
+                            type is the Warpgate provider type. Only "custom" (generic OIDC) is
+                            supported and it is the default.
+                          enum:
+                          - custom
+                          type: string
+                      required:
+                      - clientID
+                      - clientSecretSecretRef
+                      - issuerURL
+                      - name
+                      - scopes
+                      type: object
+                    minItems: 1
+                    type: array
+                required:
+                - providers
+                type: object
               storage:
                 description: storage configures persistent storage for Warpgate data.
                 properties:

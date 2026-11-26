@@ -39,6 +39,38 @@ CRDs like `WarpgateRole` and `WarpgateUser` can reference the deployed instance 
 | `databaseURLSecretRef.name` | `string` | No | - | Secret holding the external (PostgreSQL) database URL. Takes precedence over `databaseURL` |
 | `databaseURLSecretRef.key` | `string` | No | `url` | Key in that Secret |
 | `databaseURL` | `string` | No | - | **Deprecated.** Inline database URL, stored in plain text in the CR and Deployment. Use `databaseURLSecretRef` |
+| `sso.providers` | `[]SSOProvider` | No | - | OpenID Connect SSO providers (see [SSO](#sso)). Ignored when `configOverride` is set |
+
+### SSO
+
+`spec.sso` configures Warpgate's OpenID Connect single sign-on providers as structured fields instead of
+hand-writing `sso_providers` into `configOverride`. Each provider's client secret is read from a referenced
+`Secret`, injected into the init container as an environment variable, and written into `warpgate.yaml` at
+runtime, so it never lands in the generated ConfigMap.
+
+`sso` is ignored when `configOverride` is set, because the override replaces the whole config.
+
+Each entry in `sso.providers`:
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `name` | `string` | Yes | - | Provider id, used in the login URL and to name its injected secret env var |
+| `label` | `string` | No | `name` | Human-friendly name shown on the login page |
+| `type` | `string` | No | `custom` | Warpgate provider type. Only `custom` (generic OIDC) is supported |
+| `autoCreateUsers` | `bool` | No | `false` | Create a Warpgate user on first successful login |
+| `clientID` | `string` | Yes | - | OIDC client id |
+| `clientSecretSecretRef.name` | `string` | Yes | - | Secret holding the OIDC client secret |
+| `clientSecretSecretRef.key` | `string` | No | `client-secret` | Key within that Secret |
+| `issuerURL` | `string` | Yes | - | OIDC issuer URL (its `/.well-known/openid-configuration` must be reachable from the pod) |
+| `scopes` | `[]string` | Yes | - | OAuth scopes to request; include the scope carrying the `warpgate_roles` claim for role sync |
+| `roleMappings` | `map[string]string` | No | - | Map a `warpgate_roles` claim value to a Warpgate role name. When set, only the mapped roles are synced |
+| `additionalTrustedAudiences` | `[]string` | No | - | Accept ID tokens whose audience is one of these, in addition to the client id |
+| `trustUnknownAudiences` | `bool` | No | `false` | Disable audience validation on the ID token |
+
+**Role sync.** Warpgate maps a user to roles from a `warpgate_roles` claim (an array of role names) that the
+provider must emit, so the identity provider is the single source of access. Put the scope that carries it in
+`scopes` (named `warpgate_roles` in the example below). With `roleMappings` you translate the provider's values
+into Warpgate role names; without it the claim values are used as-is.
 
 ## Status Fields
 
@@ -163,6 +195,53 @@ spec:
     port: 2222
     serviceType: LoadBalancer
 ```
+
+### SSO with OpenID Connect
+
+A deployment that authenticates users against an OIDC provider (Authentik here), with the client secret sourced from a Secret and roles synced from the `warpgate_roles` claim:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: warpgate-sso-authentik
+type: Opaque
+stringData:
+  client-secret: "oidc-client-secret-value"
+---
+apiVersion: warpgate.warpgate.warp.tech/v1alpha1
+kind: WarpgateInstance
+metadata:
+  name: warpgate-hz
+spec:
+  version: "0.21.1"
+  adminPasswordSecretRef:
+    name: warpgate-admin
+    key: password
+  externalHost: gate.hz.example.com
+  sso:
+    providers:
+      - name: authentik
+        label: Authentik
+        clientID: warpgate-hz
+        clientSecretSecretRef:
+          name: warpgate-sso-authentik
+          key: client-secret
+        issuerURL: https://auth.example.com/application/o/warpgate-hz/
+        scopes:
+          - openid
+          - email
+          - profile
+          - warpgate_roles
+        autoCreateUsers: true
+        roleMappings:
+          hz-k8s-admin: k8s-hz-admin
+          hz-k8s-view: k8s-hz-view
+```
+
+The client secret never appears in the generated ConfigMap: the operator injects it into the init container as
+`WARPGATE_SSO_<NAME>_CLIENT_SECRET` and writes it into `warpgate.yaml` at startup. The provider's redirect URL
+is `https://<externalHost>/@warpgate/api/sso/return`.
 
 ## Notes
 

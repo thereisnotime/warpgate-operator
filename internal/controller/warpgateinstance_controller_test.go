@@ -4922,4 +4922,117 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			Expect(err.Error()).To(ContainSubstring("not found"))
 		})
 	})
+
+	Context("SSO providers", func() {
+		makeInst := func(name string, sso *warpgatev1alpha1.SSOSpec, override string) *warpgatev1alpha1.WarpgateInstance {
+			return &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version:                "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{Name: "dummy"},
+					ExternalHost:           "gate.example.com",
+					TLS:                    &warpgatev1alpha1.InstanceTLSSpec{CertManager: boolPtr(false)},
+					ConfigOverride:         override,
+					SSO:                    sso,
+				},
+			}
+		}
+		authentik := warpgatev1alpha1.SSOProviderSpec{
+			Name:                  "authentik",
+			Label:                 "Authentik",
+			ClientID:              "warpgate-hz",
+			ClientSecretSecretRef: warpgatev1alpha1.SecretKeyRef{Name: "wg-sso-authentik", Key: "client-secret"},
+			IssuerURL:             "https://auth.example.com/application/o/warpgate-hz/",
+			Scopes:                []string{"openid", "email", "profile", "warpgate_roles"},
+			AutoCreateUsers:       true,
+			RoleMappings:          map[string]string{"hz-k8s-admin": "k8s-hz-admin"},
+		}
+		oneProvider := func(p warpgatev1alpha1.SSOProviderSpec) *warpgatev1alpha1.SSOSpec {
+			return &warpgatev1alpha1.SSOSpec{Providers: []warpgatev1alpha1.SSOProviderSpec{p}}
+		}
+
+		It("renders sso_providers with id, issuer, scopes, mappings and a secret sentinel (never the secret)", func() {
+			out := reconciler.buildWarpgateConfig(makeInst("sso-render", oneProvider(authentik), ""))
+			Expect(out).To(ContainSubstring("sso_providers:"))
+			Expect(out).To(ContainSubstring("name: authentik"))
+			Expect(out).To(ContainSubstring("label: Authentik"))
+			Expect(out).To(ContainSubstring("type: custom"))
+			Expect(out).To(ContainSubstring("client_id: warpgate-hz"))
+			Expect(out).To(ContainSubstring("issuer_url: https://auth.example.com/application/o/warpgate-hz/"))
+			Expect(out).To(ContainSubstring("auto_create_users: true"))
+			Expect(out).To(ContainSubstring("- warpgate_roles"))
+			Expect(out).To(ContainSubstring("role_mappings:"))
+			Expect(out).To(ContainSubstring("hz-k8s-admin: k8s-hz-admin"))
+			Expect(out).To(ContainSubstring("client_secret: '__WG_SSO_SECRET_AUTHENTIK__'"))
+		})
+
+		It("ignores sso when configOverride is set (override wins)", func() {
+			out := reconciler.buildWarpgateConfig(makeInst("sso-override", oneProvider(authentik), "database_url: sqlite:/data/db\n"))
+			Expect(out).NotTo(ContainSubstring("sso_providers:"))
+		})
+
+		It("changes the config hash when the sso config changes", func() {
+			base := makeInst("sso-hash", nil, "")
+			withSSO := makeInst("sso-hash", oneProvider(authentik), "")
+			Expect(configHash(withSSO)).NotTo(Equal(configHash(base)))
+
+			p2 := authentik
+			p2.RoleMappings = map[string]string{"hz-k8s-view": "k8s-hz-view"}
+			Expect(configHash(makeInst("sso-hash", oneProvider(p2), ""))).NotTo(Equal(configHash(withSSO)))
+		})
+
+		It("injects the client secret as an init-container env var and keeps it out of the ConfigMap", func() {
+			const (
+				instName  = "sso-reconcile"
+				adminPW   = "sso-reconcile-admin"
+				ssoSecret = "wg-sso-authentik"
+			)
+			mkSecret := func(n string, data map[string][]byte) {
+				Expect(k8sClient.Create(ctx, &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: n, Namespace: testNamespace}, Data: data,
+				})).To(Succeed())
+			}
+			mkSecret(adminPW, map[string][]byte{"password": []byte("x")})
+			mkSecret(ssoSecret, map[string][]byte{"client-secret": []byte("super-secret-value")})
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: instName, Namespace: testNamespace},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version:                "0.21.1",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{Name: adminPW},
+					ExternalHost:           "gate.example.com",
+					TLS:                    &warpgatev1alpha1.InstanceTLSSpec{CertManager: boolPtr(false)},
+					SSO:                    oneProvider(authentik),
+				},
+			}
+			Expect(k8sClient.Create(ctx, inst)).To(Succeed())
+			DeferCleanup(func() {
+				_ = k8sClient.Delete(ctx, inst)
+				_ = k8sClient.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: adminPW, Namespace: testNamespace}})
+				_ = k8sClient.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: ssoSecret, Namespace: testNamespace}})
+			})
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: instName, Namespace: testNamespace}})
+			Expect(err).NotTo(HaveOccurred())
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, &dep)).To(Succeed())
+			Expect(dep.Spec.Template.Spec.InitContainers).NotTo(BeEmpty())
+			var found *corev1.EnvVar
+			env := dep.Spec.Template.Spec.InitContainers[0].Env
+			for i := range env {
+				if env[i].Name == "WARPGATE_SSO_AUTHENTIK_CLIENT_SECRET" {
+					found = &env[i]
+				}
+			}
+			Expect(found).NotTo(BeNil())
+			Expect(found.ValueFrom).NotTo(BeNil())
+			Expect(found.ValueFrom.SecretKeyRef.Name).To(Equal(ssoSecret))
+			Expect(found.ValueFrom.SecretKeyRef.Key).To(Equal("client-secret"))
+
+			var cm corev1.ConfigMap
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName + "-config", Namespace: testNamespace}, &cm)).To(Succeed())
+			Expect(cm.Data["warpgate.yaml"]).To(ContainSubstring("__WG_SSO_SECRET_AUTHENTIK__"))
+			Expect(cm.Data["warpgate.yaml"]).NotTo(ContainSubstring("super-secret-value"))
+		})
+	})
 })
