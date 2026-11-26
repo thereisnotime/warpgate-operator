@@ -145,6 +145,51 @@ spec:
                     required:
                     - name
                     type: object
+                  serviceAccountToken:
+                    description: |-
+                      serviceAccountToken makes the operator request a short-lived bearer token for a
+                      ServiceAccount in the target's namespace through the TokenRequest API, instead of
+                      reading one from a Secret (for Token auth). The token is kept in memory only and
+                      renewed after half its lifetime. Mutually exclusive with tokenSecretRef.
+                      The ServiceAccount must allow the audiences and the clusterURL with the annotations
+                      warpgate.warp.tech/token-audiences and warpgate.warp.tech/token-cluster-urls, and the
+                      operator needs get and create on serviceaccounts/token for it (Helm value
+                      serviceAccountTokens.allowed).
+                    properties:
+                      audiences:
+                        description: |-
+                          audiences the token is issued for: what the cluster at clusterURL expects in the
+                          token's aud claim. Required, so a token is never issued for the operator cluster's
+                          own API audiences by accident. Every value must be allowed by the ServiceAccount's
+                          warpgate.warp.tech/token-audiences annotation, and clusterURL by its
+                          warpgate.warp.tech/token-cluster-urls annotation.
+                        items:
+                          maxLength: 256
+                          minLength: 1
+                          type: string
+                        maxItems: 8
+                        minItems: 1
+                        type: array
+                        x-kubernetes-list-type: set
+                      expirationSeconds:
+                        default: 7200
+                        description: |-
+                          expirationSeconds is the requested token lifetime. The API server may shorten it.
+                          The operator renews after half the lifetime it actually got. Keep it above twice
+                          Warpgate's kubernetes.session_max_age (30m by default).
+                        format: int64
+                        maximum: 172800
+                        minimum: 7200
+                        type: integer
+                      name:
+                        description: name is the ServiceAccount in the target's namespace.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                    required:
+                    - audiences
+                    - name
+                    type: object
                   tls:
                     description: tls configures TLS settings for the API server connection.
                     properties:
@@ -166,8 +211,9 @@ spec:
                     - mode
                     type: object
                   tokenSecretRef:
-                    description: tokenSecretRef references a Secret containing the
-                      bearer token (for Token auth).
+                    description: |-
+                      tokenSecretRef references a Secret containing the bearer token (for Token auth).
+                      Mutually exclusive with serviceAccountToken.
                     properties:
                       key:
                         description: |-
@@ -566,6 +612,21 @@ spec:
               externalID:
                 description: externalID is the target's ID in Warpgate.
                 type: string
+              serviceAccountToken:
+                description: |-
+                  serviceAccountToken reports the expiry and renewal time of the token requested for
+                  spec.kubernetes.serviceAccountToken. Unset for every other target.
+                properties:
+                  expirationTimestamp:
+                    description: expirationTimestamp is when the current token expires.
+                    format: date-time
+                    type: string
+                  renewAfter:
+                    description: renewAfter is when the operator requests the next
+                      token.
+                    format: date-time
+                    type: string
+                type: object
             type: object
         required:
         - spec

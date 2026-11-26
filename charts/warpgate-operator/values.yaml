@@ -28,6 +28,19 @@ crds:
   # -- Whether to install CRDs as part of the Helm release.
   install: true
 
+serviceAccountTokens:
+  # -- ServiceAccounts the operator may request short-lived tokens for, for Kubernetes
+  # targets with spec.kubernetes.serviceAccountToken. Each entry renders a Role and
+  # RoleBinding in its namespace, limited to the listed ServiceAccounts (create on
+  # serviceaccounts/token, get on serviceaccounts). List each namespace once. Empty: the
+  # operator can't request tokens at all. Not rendered when rbac.create is false. Each
+  # ServiceAccount must also carry the warpgate.warp.tech/token-audiences and
+  # warpgate.warp.tech/token-cluster-urls annotations.
+  allowed: []
+  # - namespace: warpgate-operator
+  #   serviceAccounts:
+  #     - warpgate-k8s-drinking
+
 resources:
   requests:
     cpu: 100m

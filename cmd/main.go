@@ -264,6 +264,9 @@ func main() {
 		Client:            k8sClient,
 		Scheme:            mgr.GetScheme(),
 		ReconcileInterval: reconcileInterval,
+		// Uncached, so serviceAccountToken targets need get on their ServiceAccount
+		// only, not a cluster-wide ServiceAccount informer.
+		APIReader: mgr.GetAPIReader(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "WarpgateTarget")
 		os.Exit(1)

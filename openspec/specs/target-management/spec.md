@@ -90,3 +90,43 @@ Target passwords (SSH, MySQL, PostgreSQL) are always read from Kubernetes Secret
 **Scenarios:**
 - **Given** a target with `passwordSecretRef` pointing to Secret `db-creds` with no key specified **When** the controller reads the password **Then** it uses `secret.Data["password"]`.
 - **Given** a target with `passwordSecretRef` pointing to a non-existent Secret **When** the controller reconciles **Then** it sets `Ready=False` with reason `BuildError`.
+
+### REQ-TARGET-009: Kubernetes Target
+**Status:** ADDED
+
+Kubernetes targets support `clusterURL`, `authKind` (enum: `Token`, `Certificate`, `IamRole`), optional `tls`, and per auth kind:
+- `Token`: exactly one of `tokenSecretRef` (default key `token`) and `serviceAccountToken` (REQ-TARGET-010).
+- `Certificate`: both `certificateSecretRef` (default key `certificate`) and `privateKeySecretRef` (default key `privateKey`).
+- `IamRole`: no credentials; `serviceAccountToken` is rejected.
+
+**Scenarios:**
+- **Given** a Kubernetes target with `authKind: Token` and a `tokenSecretRef` **When** the controller reconciles **Then** it reads the token from the Secret and sends it in the target options.
+- **Given** a Kubernetes target with `authKind: Token` and neither token source **When** it is submitted **Then** the webhook rejects it; **and When** the webhook is bypassed **Then** the controller sets `Ready=False` with reason `BuildError` and does not crash.
+- **Given** a Kubernetes target with `authKind: Certificate` missing either Secret reference **When** it is submitted **Then** the webhook rejects it.
+
+### REQ-TARGET-010: Short-Lived ServiceAccount Tokens
+**Status:** ADDED
+
+`spec.kubernetes.serviceAccountToken` (`name`, `audiences` 1-8, `expirationSeconds` 7200-172800, default 7200) makes the operator request the bearer token from the TokenRequest API for a ServiceAccount in the target's namespace.
+
+- The ServiceAccount must carry `warpgate.warp.tech/token-audiences` (comma-separated) listing every requested audience, and `warpgate.warp.tech/token-cluster-urls` listing the target's `clusterURL` exactly. Otherwise no token is requested.
+- `audiences` is required: a TokenRequest is never sent without audiences.
+- The token is kept in memory per target UID and is never written to a Secret, the status, a condition, a log or an event. Errors from the Warpgate API have it redacted.
+- The token is reused until half of the granted lifetime has passed. A new one is requested at that point, when the ServiceAccount UID, `clusterURL`, the audiences or the lifetime change, and after a restart.
+- `status.serviceAccountToken` reports `expirationTimestamp` and `renewAfter`. The target is requeued no later than `renewAfter`, and within one minute after a token failure or a failed Warpgate update of a target holding a token. A reconcile interval of 0 still means no periodic resync for other targets.
+- The generated ClusterRole has no `serviceaccounts/token` permission. The Helm value `serviceAccountTokens.allowed` grants `create` on `serviceaccounts/token` and `get` on `serviceaccounts` per namespace, limited by `resourceNames`.
+- ServiceAccounts are read with the uncached API reader.
+
+Condition reasons: `ServiceAccountNotFound`, `ServiceAccountNotOptedIn`, `TokenAudienceNotAllowed`, `TokenClusterURLNotAllowed`, `TokenRequestForbidden`, `TokenRequestError`.
+
+Updates that leave the spec unchanged, and updates of objects being deleted, are not validated by the webhook.
+
+**Scenarios:**
+- **Given** an opted-in ServiceAccount and the RBAC **When** the controller reconciles **Then** it requests a token with exactly the requested audiences and lifetime, sends it to Warpgate, sets `Ready=True` and `status.serviceAccountToken`, and requeues at `renewAfter`.
+- **Given** a cached token **When** the target is reconciled before `renewAfter` **Then** the same token is sent; **and When** reconciled after `renewAfter` **Then** a new token is requested.
+- **Given** a change to the audiences or lifetime, or a recreated ServiceAccount **When** the controller reconciles **Then** it requests a new token at once.
+- **Given** a ServiceAccount without either annotation, or one not allowing every requested audience or the `clusterURL` **When** the controller reconciles **Then** no token is requested, Warpgate is not called, and `Ready=False` with `ServiceAccountNotOptedIn`, `TokenAudienceNotAllowed` or `TokenClusterURLNotAllowed`.
+- **Given** a target whose `clusterURL` is changed to one the ServiceAccount doesn't allow **When** the controller reconciles **Then** Warpgate receives no token for it.
+- **Given** the operator lacks `create` on `serviceaccounts/token` for the ServiceAccount **When** the controller reconciles **Then** `Ready=False` with `TokenRequestForbidden` and a message naming the Helm value.
+- **Given** Warpgate rejects the target with a body echoing the request **When** the controller sets the condition **Then** the token appears as `[REDACTED]`, and appears nowhere in the stored object.
+- **Given** a target that stops using `serviceAccountToken`, or is deleted **When** it is reconciled **Then** the cached token and `status.serviceAccountToken` are cleared.

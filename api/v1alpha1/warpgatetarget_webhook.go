@@ -18,7 +18,12 @@ package v1alpha1
 
 import (
 	"context"
+	"strings"
+	"unicode"
 
+	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -98,6 +103,10 @@ func (d *WarpgateTargetCustomDefaulter) Default(ctx context.Context, target *War
 	}
 	if target.Spec.Kubernetes != nil {
 		defaultTLS(target.Spec.Kubernetes.TLS)
+		if sat := target.Spec.Kubernetes.ServiceAccountToken; sat != nil && sat.ExpirationSeconds == nil {
+			v := ServiceAccountTokenDefaultExpirationSeconds
+			sat.ExpirationSeconds = &v
+		}
 	}
 
 	return nil
@@ -129,6 +138,12 @@ func (v *WarpgateTargetCustomValidator) ValidateCreate(ctx context.Context, targ
 // ValidateUpdate implements webhook.CustomValidator.
 func (v *WarpgateTargetCustomValidator) ValidateUpdate(ctx context.Context, oldTarget, target *WarpgateTarget) (admission.Warnings, error) {
 	warpgatetargetlog.Info("Validating update", "name", target.GetName())
+	// Ratchet: an update that leaves the spec alone (finalizers, labels, annotations) or
+	// lands on an object being deleted is always allowed, so objects admitted under older,
+	// looser rules can still have their finalizer removed and finish deleting.
+	if !target.DeletionTimestamp.IsZero() || (oldTarget != nil && equality.Semantic.DeepEqual(oldTarget.Spec, target.Spec)) {
+		return nil, nil
+	}
 	return nil, validateWarpgateTarget(target)
 }
 
@@ -238,6 +253,85 @@ func validateKubernetesTarget(k8s *KubernetesTargetSpec, fldPath *field.Path) fi
 	}
 	if k8s.TLS != nil {
 		errs = append(errs, validateTLS(k8s.TLS, fldPath.Child("tls"))...)
+	}
+	switch k8s.AuthKind {
+	case "Token":
+		hasSecret, hasSA := k8s.TokenSecretRef != nil, k8s.ServiceAccountToken != nil
+		switch {
+		case hasSecret && hasSA:
+			errs = append(errs, field.Forbidden(fldPath.Child("serviceAccountToken"), "tokenSecretRef and serviceAccountToken are mutually exclusive"))
+		case !hasSecret && !hasSA:
+			errs = append(errs, field.Required(fldPath, "authKind Token needs tokenSecretRef or serviceAccountToken"))
+		}
+		if hasSecret {
+			errs = append(errs, validateSecretKeyRef(k8s.TokenSecretRef, fldPath.Child("tokenSecretRef"))...)
+		}
+		if hasSA {
+			errs = append(errs, validateServiceAccountToken(k8s.ServiceAccountToken, fldPath.Child("serviceAccountToken"))...)
+		}
+	case "Certificate":
+		if k8s.CertificateSecretRef == nil {
+			errs = append(errs, field.Required(fldPath.Child("certificateSecretRef"), "authKind Certificate needs certificateSecretRef"))
+		} else {
+			errs = append(errs, validateSecretKeyRef(k8s.CertificateSecretRef, fldPath.Child("certificateSecretRef"))...)
+		}
+		if k8s.PrivateKeySecretRef == nil {
+			errs = append(errs, field.Required(fldPath.Child("privateKeySecretRef"), "authKind Certificate needs privateKeySecretRef"))
+		} else {
+			errs = append(errs, validateSecretKeyRef(k8s.PrivateKeySecretRef, fldPath.Child("privateKeySecretRef"))...)
+		}
+	}
+	if k8s.AuthKind != "Token" && k8s.ServiceAccountToken != nil {
+		errs = append(errs, field.Forbidden(fldPath.Child("serviceAccountToken"), "serviceAccountToken is only valid with authKind Token"))
+	}
+	return errs
+}
+
+func validateSecretKeyRef(ref *SecretKeyRef, fldPath *field.Path) field.ErrorList {
+	if ref.Name == "" {
+		return field.ErrorList{field.Required(fldPath.Child("name"), "name must not be empty")}
+	}
+	return nil
+}
+
+// validateServiceAccountToken checks serviceAccountToken. Audiences may not contain
+// commas or whitespace, so they can be matched exactly against the comma-separated
+// warpgate.warp.tech/token-audiences annotation.
+func validateServiceAccountToken(sat *ServiceAccountTokenSpec, fldPath *field.Path) field.ErrorList {
+	var errs field.ErrorList
+	if sat.Name == "" {
+		errs = append(errs, field.Required(fldPath.Child("name"), "name must not be empty"))
+	} else {
+		for _, msg := range validation.IsDNS1123Subdomain(sat.Name) {
+			errs = append(errs, field.Invalid(fldPath.Child("name"), sat.Name, msg))
+		}
+	}
+	audPath := fldPath.Child("audiences")
+	switch {
+	case len(sat.Audiences) == 0:
+		errs = append(errs, field.Required(audPath, "at least one audience is required"))
+	case len(sat.Audiences) > 8:
+		errs = append(errs, field.TooMany(audPath, len(sat.Audiences), 8))
+	}
+	seen := sets.New[string]()
+	for i, aud := range sat.Audiences {
+		p := audPath.Index(i)
+		switch {
+		case aud == "":
+			errs = append(errs, field.Required(p, "audience must not be empty"))
+		case len(aud) > 256:
+			errs = append(errs, field.TooLong(p, aud, 256))
+		case strings.ContainsFunc(aud, func(r rune) bool { return r == ',' || unicode.IsSpace(r) || unicode.IsControl(r) }):
+			errs = append(errs, field.Invalid(p, aud, "audience must not contain commas, whitespace or control characters"))
+		case seen.Has(aud):
+			errs = append(errs, field.Duplicate(p, aud))
+		}
+		seen.Insert(aud)
+	}
+	if exp := sat.ExpirationSeconds; exp != nil &&
+		(*exp < ServiceAccountTokenMinExpirationSeconds || *exp > ServiceAccountTokenMaxExpirationSeconds) {
+		errs = append(errs, field.Invalid(fldPath.Child("expirationSeconds"), *exp,
+			"expirationSeconds must be between 7200 (2h) and 172800 (48h)"))
 	}
 	return errs
 }
