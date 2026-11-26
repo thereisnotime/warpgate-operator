@@ -127,7 +127,16 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			var sts appsv1.Deployment
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, &sts)).To(Succeed())
 			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(1))
-			Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("ghcr.io/warp-tech/warpgate:v0.21.1"))
+			Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("ghcr.io/warp-tech/warpgate:0.21.1"))
+			// Global flags must precede the run subcommand (the CLI parser rejects
+			// --skip-securing-files after "run").
+			Expect(sts.Spec.Template.Spec.Containers[0].Args).To(Equal(
+				[]string{"--config", "/data/warpgate.yaml", "--skip-securing-files", "run"}))
+			// A default fsGroup lets the non-root process write the data PVC on
+			// CSI volumes that provision root-owned.
+			Expect(sts.Spec.Template.Spec.SecurityContext).NotTo(BeNil())
+			Expect(sts.Spec.Template.Spec.SecurityContext.FSGroup).NotTo(BeNil())
+			Expect(*sts.Spec.Template.Spec.SecurityContext.FSGroup).To(Equal(int64(1000)))
 			Expect(sts.Spec.Template.Spec.Containers[0].Ports).To(ContainElement(
 				corev1.ContainerPort{Name: "http", ContainerPort: 8888, Protocol: corev1.ProtocolTCP},
 			))
@@ -421,7 +430,7 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			// Verify initial image.
 			var sts appsv1.Deployment
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, &sts)).To(Succeed())
-			Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("ghcr.io/warp-tech/warpgate:v0.20.0"))
+			Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("ghcr.io/warp-tech/warpgate:0.20.0"))
 
 			// Update the version.
 			var inst warpgatev1alpha1.WarpgateInstance
@@ -435,7 +444,7 @@ var _ = Describe("WarpgateInstance Controller", func() {
 
 			// Verify updated image.
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, &sts)).To(Succeed())
-			Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("ghcr.io/warp-tech/warpgate:v0.21.1"))
+			Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("ghcr.io/warp-tech/warpgate:0.21.1"))
 
 			// Status should reflect the new version.
 			var updated warpgatev1alpha1.WarpgateInstance
@@ -3122,16 +3131,35 @@ var _ = Describe("WarpgateInstance Controller", func() {
 					Version: "0.21.1",
 				},
 			}
-			Expect(resolveImage(inst)).To(Equal("ghcr.io/warp-tech/warpgate:v0.21.1"))
+			Expect(resolveImage(inst)).To(Equal("ghcr.io/warp-tech/warpgate:0.21.1"))
 		})
 
-		It("resolveImage does not double-prefix 'v'", func() {
+		It("resolveImage strips a user-supplied leading 'v'", func() {
 			inst := &warpgatev1alpha1.WarpgateInstance{
 				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
 					Version: "v0.21.1",
 				},
 			}
-			Expect(resolveImage(inst)).To(Equal("ghcr.io/warp-tech/warpgate:v0.21.1"))
+			Expect(resolveImage(inst)).To(Equal("ghcr.io/warp-tech/warpgate:0.21.1"))
+		})
+
+		It("podSecurityContext defaults fsGroup when unset", func() {
+			sc := podSecurityContext(&warpgatev1alpha1.WarpgateInstance{})
+			Expect(sc).NotTo(BeNil())
+			Expect(sc.FSGroup).NotTo(BeNil())
+			Expect(*sc.FSGroup).To(Equal(int64(1000)))
+			Expect(sc.FSGroupChangePolicy).NotTo(BeNil())
+			Expect(*sc.FSGroupChangePolicy).To(Equal(corev1.FSGroupChangeOnRootMismatch))
+		})
+
+		It("podSecurityContext honours an explicit value", func() {
+			fg := int64(2000)
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					PodSecurityContext: &corev1.PodSecurityContext{FSGroup: &fg},
+				},
+			}
+			Expect(*podSecurityContext(inst).FSGroup).To(Equal(int64(2000)))
 		})
 
 		It("configHash changes when databaseURLSecretRef changes", func() {
