@@ -20,6 +20,7 @@ Auth mode is auto-detected from the referenced Secret: if the `token` key exists
 | `authSecretRef.tokenKey` | `string` | No | `token` | Key in the Secret that holds the API token (token auth) |
 | `authSecretRef.usernameKey` | `string` | No | `username` | Key in the Secret that holds the username (session auth) |
 | `authSecretRef.passwordKey` | `string` | No | `password` | Key in the Secret that holds the password (session auth) |
+| `hostHeader` | `string` | No | - | HTTP `Host` header + TLS SNI to send to `host` while still dialing it (e.g. the instance `externalHost`). Required when Warpgate has `external_host` set and this connection dials an in-cluster Service, since Warpgate binds its session cookie to `external_host` and 401s other Hosts. |
 | `insecureSkipVerify` | `bool` | No | `false` | Disable TLS certificate verification (not recommended for production) |
 | `caSecretRef.name` | `string` | No | - | Secret holding a PEM CA bundle used to verify the Warpgate server certificate instead of the system trust store |
 | `caSecretRef.key` | `string` | No | `ca.crt` | Key in that Secret |

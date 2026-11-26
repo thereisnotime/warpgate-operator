@@ -299,6 +299,7 @@ var _ = Describe("WarpgateInstance Controller", func() {
 						Size: "1Gi",
 					},
 					CreateConnection: boolPtr(true),
+					ExternalHost:     "gate.example.com",
 				},
 			}
 			Expect(k8sClient.Create(ctx, inst)).To(Succeed())
@@ -347,6 +348,10 @@ var _ = Describe("WarpgateInstance Controller", func() {
 			// Host should point to the HTTP service.
 			Expect(conn.Spec.Host).To(ContainSubstring(instName + "-http"))
 			Expect(conn.Spec.Host).To(ContainSubstring("8888"))
+
+			// With externalHost set, the connection must present it as the Host
+			// header so Warpgate accepts the operator's session cookie.
+			Expect(conn.Spec.HostHeader).To(Equal("gate.example.com"))
 
 			// Auth secret should reference the auto-created auth secret.
 			Expect(conn.Spec.AuthSecretRef.Name).To(Equal(instName + "-admin-auth"))

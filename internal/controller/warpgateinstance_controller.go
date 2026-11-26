@@ -1312,6 +1312,26 @@ func (r *WarpgateInstanceReconciler) ensureSelfSignedIssuer(ctx context.Context,
 	return err
 }
 
+// certificateDNSNames returns the SANs for the instance's serving Certificate.
+// With a user-supplied (public CA) issuer, only public names are included: a
+// public CA rejects an order that carries internal Service SANs ("not a valid
+// public suffix"). The internal Service SANs are used only for the default
+// self-signed issuer.
+func certificateDNSNames(inst *warpgatev1alpha1.WarpgateInstance) []string {
+	userIssuer := inst.Spec.TLS != nil && inst.Spec.TLS.IssuerRef != nil && inst.Spec.TLS.IssuerRef.Name != ""
+	var names []string
+	if !userIssuer {
+		names = append(names,
+			fmt.Sprintf("%s-http.%s.svc", inst.Name, inst.Namespace),
+			fmt.Sprintf("%s-http.%s.svc.cluster.local", inst.Name, inst.Namespace),
+		)
+	}
+	if inst.Spec.ExternalHost != "" {
+		names = append(names, inst.Spec.ExternalHost)
+	}
+	return names
+}
+
 func (r *WarpgateInstanceReconciler) ensureCertificate(ctx context.Context, inst *warpgatev1alpha1.WarpgateInstance, issuerRefName string) error {
 	name := inst.Name + "-tls"
 
@@ -1320,12 +1340,15 @@ func (r *WarpgateInstanceReconciler) ensureCertificate(ctx context.Context, inst
 		issuerKind = inst.Spec.TLS.IssuerRef.Kind
 	}
 
-	dnsNames := []any{
-		fmt.Sprintf("%s-http.%s.svc", inst.Name, inst.Namespace),
-		fmt.Sprintf("%s-http.%s.svc.cluster.local", inst.Name, inst.Namespace),
+	names := certificateDNSNames(inst)
+	// Nothing public to certify (public issuer but no externalHost): skip the
+	// Certificate rather than request an invalid empty-SAN order.
+	if len(names) == 0 {
+		return nil
 	}
-	if inst.Spec.ExternalHost != "" {
-		dnsNames = append(dnsNames, inst.Spec.ExternalHost)
+	dnsNames := make([]any, len(names))
+	for i, n := range names {
+		dnsNames[i] = n
 	}
 
 	desired := &unstructured.Unstructured{}
@@ -1426,6 +1449,7 @@ func (r *WarpgateInstanceReconciler) ensureWarpgateConnection(ctx context.Contex
 		}
 		conn.Spec = warpgatev1alpha1.WarpgateConnectionSpec{
 			Host:               host,
+			HostHeader:         inst.Spec.ExternalHost,
 			AuthSecretRef:      warpgatev1alpha1.AuthSecretRef{Name: authSecretName},
 			InsecureSkipVerify: insecure,
 			CASecretRef:        caRef,
