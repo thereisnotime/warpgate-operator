@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3](https://github.com/thereisnotime/warpgate-operator/compare/warpgate-operator-v0.5.2...warpgate-operator-v0.5.3) (2026-11-26)
+
+
+### Bug Fixes
+
+* **instance:** send Host=external_host on the operator's Warpgate API client ([#164](https://github.com/thereisnotime/warpgate-operator/issues/164)) ([9ebaa7f](https://github.com/thereisnotime/warpgate-operator/commit/9ebaa7fde5466659dc849bab60f04b28ea96ff76))
+
 ## [0.5.2](https://github.com/thereisnotime/warpgate-operator/compare/warpgate-operator-v0.5.1...warpgate-operator-v0.5.2) (2026-11-26)
 
 
