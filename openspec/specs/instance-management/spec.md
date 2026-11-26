@@ -64,13 +64,18 @@ The controller creates and manages a StatefulSet for the Warpgate pods, using `v
 
 **Status:** ADDED
 
-When `tls.certManager` is true, the controller creates a cert-manager `Certificate` resource. If `tls.issuerRef` is provided, it references that issuer. Otherwise, the controller creates a self-signed `Issuer` in the same namespace.
+When `tls.certManager` is true, the controller creates a cert-manager `Certificate` resource whose Secret is `<name>-tls`. If `tls.issuerRef` is provided, it references that issuer. Otherwise, the controller creates a self-signed `Issuer` in the same namespace.
+
+Unless `tls.secretName` is set, the pod mounts the `<name>-tls` Secret and the init container copies `tls.crt`/`tls.key` into `/data`, the same way as a user-provided TLS Secret, and no self-signed certificate is generated. The Deployment is not created or updated until that Secret exists with `tls.crt` and `tls.key`; until then the instance reports `Ready=False` with reason `CertificatePending` and requeues. A change to the served certificate (for example a renewal) changes a pod template annotation, so the pods restart and copy the new pair.
 
 **Scenarios:**
 
 - **Given** a `WarpgateInstance` with `tls.certManager: true` and no `issuerRef` **When** the controller reconciles **Then** it creates a self-signed Issuer and a Certificate referencing it.
 - **Given** a `WarpgateInstance` with `tls.issuerRef` pointing to a ClusterIssuer **When** the controller reconciles **Then** the Certificate references the specified ClusterIssuer.
 - **Given** cert-manager is not installed in the cluster **When** the controller creates a Certificate resource **Then** the resource fails to reconcile and the `WarpgateInstance` status reflects the issue.
+- **Given** a `WarpgateInstance` with `tls.certManager: true` and no `tls.secretName` **When** the `<name>-tls` Secret has been issued **Then** the Deployment mounts it at `/tls-secret` and the init script copies it into `/data` without generating a self-signed certificate.
+- **Given** a `WarpgateInstance` with `tls.certManager: true` **When** the `<name>-tls` Secret does not exist yet **Then** no Deployment is created, `Ready=False` with reason `CertificatePending`, and the controller requeues.
+- **Given** a running instance using the cert-manager Secret **When** cert-manager renews the certificate **Then** the pod template's TLS hash changes and the Deployment rolls out.
 
 ### REQ-INST-004: Auto-Created WarpgateConnection
 
@@ -133,11 +138,12 @@ When an external database is configured (`databaseURLSecretRef` or the deprecate
 
 **Status:** ADDED
 
-The auto-created `WarpgateConnection` verifies the instance's TLS certificate whenever the operator knows it. With `tls.secretName`, the connection gets `caSecretRef` pointing at that Secret's `ca.crt` (or `tls.crt` if there is no `ca.crt`) and `insecureSkipVerify: false`. Without it, the pod serves a self-signed certificate it generates at startup, so the connection skips verification. `tls.verifyConnection: true` makes the missing CA a reconcile error instead; `tls.verifyConnection: false` always skips verification.
+The auto-created `WarpgateConnection` verifies the instance's TLS certificate whenever the operator knows it. With `tls.secretName`, or with `tls.certManager` (the `<name>-tls` Secret), the connection gets `caSecretRef` pointing at that Secret's `ca.crt` (or `tls.crt` if there is no `ca.crt`) and `insecureSkipVerify: false`. `tls.secretName` wins when both are set. Without either, the pod serves a self-signed certificate it generates at startup, so the connection skips verification. `tls.verifyConnection: true` makes the missing CA a reconcile error instead; `tls.verifyConnection: false` always skips verification.
 
 **Scenarios:**
 
 - **Given** a `WarpgateInstance` with `tls.secretName` whose Secret has `ca.crt` **When** the controller reconciles **Then** the connection has `caSecretRef: {name: <secretName>, key: ca.crt}` and verification on.
-- **Given** a `WarpgateInstance` without `tls.secretName` **When** the controller reconciles **Then** the connection has `insecureSkipVerify: true`.
-- **Given** `tls.verifyConnection: true` and no `tls.secretName` **When** the controller reconciles **Then** no connection is created and `Ready=False` with reason `ConnectionFailed`.
+- **Given** a `WarpgateInstance` with `tls.certManager: true`, no `tls.secretName`, and an issued `<name>-tls` Secret with `ca.crt` **When** the controller reconciles **Then** the connection has `caSecretRef: {name: <name>-tls, key: ca.crt}` and verification on.
+- **Given** a `WarpgateInstance` with `tls.certManager: false` and no `tls.secretName` **When** the controller reconciles **Then** the connection has `insecureSkipVerify: true`.
+- **Given** `tls.verifyConnection: true`, `tls.certManager: false` and no `tls.secretName` **When** the controller reconciles **Then** no connection is created and `Ready=False` with reason `ConnectionFailed`.
 

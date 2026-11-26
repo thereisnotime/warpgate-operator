@@ -60,7 +60,7 @@ func (r *WarpgateUserRoleReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	wgClient, err := getWarpgateClient(ctx, r.Client, userRole.Namespace, userRole.Spec.ConnectionRef)
 	if err != nil {
 		log.Error(err, "unable to build warpgate client")
-		setUserRoleCondition(&userRole, metav1.ConditionFalse, "ClientError", err.Error())
+		setUserRoleCondition(&userRole, metav1.ConditionFalse, secretErrorReason(err, "ClientError"), err.Error())
 		if updateErr := r.Status().Update(ctx, &userRole); updateErr != nil {
 			log.Error(updateErr, "unable to update status")
 		}

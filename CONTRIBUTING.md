@@ -98,15 +98,16 @@ Current targets: **controllers 85%+**, **warpgate client 99%+**, **webhooks ~99%
 
 | Code | Coverage | Why |
 |------|----------|-----|
-| cert-manager functions (`ensureCertManagerResources`, `ensureSelfSignedIssuer`, `ensureCertificate`) | 0% | envtest doesn't have cert-manager CRDs installed |
 | Reconcile error branches (`if err := r.ensureConfigMap(...); err != nil`) | ~53% of instance Reconcile | Would require the K8s API to reject valid creates/updates mid-reconcile |
 | `r.Status().Update()` / `r.Update()` error returns | 85-92% per controller | Same — K8s API doesn't fail in envtest |
 | `generateRandomPassword` error path | 75% | `crypto/rand.Read` failure is impossible to trigger without mocking |
 | `ensurePasswordCredential` SetControllerReference error | 77.8% | Requires nil scheme, which breaks envtest |
 
 These are the realistic ceiling for envtest-based testing. The remaining gaps would require
-either mocking the Kubernetes client (adds complexity without real value) or installing
-cert-manager CRDs in the test environment.
+mocking the Kubernetes client, which adds complexity without real value.
+
+envtest has no cert-manager controller, so the suite loads minimal `Issuer` and `Certificate` CRDs from
+`internal/controller/testdata/crds/` and tests create the issued TLS Secret themselves.
 
 ## Building and Deploying
 

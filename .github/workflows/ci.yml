@@ -27,7 +27,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install just
-        uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab  # v2.87.13
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283  # v2.87.29
         with:
           tool: just
 
@@ -47,7 +47,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install just
-        uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab  # v2.87.13
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283  # v2.87.29
         with:
           tool: just
 
@@ -90,7 +90,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install just
-        uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab  # v2.87.13
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283  # v2.87.29
         with:
           tool: just
 
@@ -135,7 +135,7 @@ jobs:
           version: v3.20.2
 
       - name: Set up chart-testing
-        uses: helm/chart-testing-action@6ec842c01de15ebb84c8627d2744a0c2f2755c9f  # v2.8.0
+        uses: helm/chart-testing-action@720270857a28afd41e2426521a7801db09e9b510  # v2.9.0
 
       - name: Lint Helm chart
         run: ct lint --charts charts/warpgate-operator --validate-maintainers=false
@@ -153,7 +153,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install just
-        uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab  # v2.87.13
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283  # v2.87.29
         with:
           tool: just
 

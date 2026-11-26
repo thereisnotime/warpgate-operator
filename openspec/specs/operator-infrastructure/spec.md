@@ -136,3 +136,16 @@ The operator can be limited to a set of namespaces with `--watch-namespaces` (na
 - **Given** `--watch-namespace-selector` **When** a namespace starts or stops matching it **Then** the operator exits so that it restarts with the new set of namespaces.
 - **Given** the flags select no namespace **When** the operator starts **Then** it exits with an error instead of watching all namespaces.
 - **Given** `operator.watchNamespaces` in the Helm values **When** the chart is rendered **Then** it creates a RoleBinding to the manager ClusterRole in each listed namespace and the release namespace, and no ClusterRoleBinding.
+
+### REQ-INFRA-016: Secret Label Selector
+**Status:** ADDED
+
+The operator can limit the Secrets it caches and reads with `--secret-selector` (Helm value `operator.secretSelector`). The selector is applied to the manager cache's Secret informer, on top of the namespace scope. Secrets the operator creates or updates get the selector's labels. A referenced Secret that exists without the labels is reported, not silently treated as missing.
+
+**Scenarios:**
+- **Given** `--secret-selector` is empty **When** the operator starts **Then** it caches every Secret in the watched namespaces as before.
+- **Given** `--secret-selector=warpgate.warp.tech/managed=true` **When** the operator starts **Then** its Secret informer lists and watches only Secrets with that label.
+- **Given** the selector is set **When** a resource references a Secret that exists without the label **Then** the resource gets `Ready=False` with reason `SecretNotSelected` and a message naming the label to add.
+- **Given** the selector is set **When** the operator creates a user password, ticket or instance admin auth Secret **Then** the Secret carries the selector's labels.
+- **Given** a selector that no fixed set of labels satisfies (for example only `key!=value`) **When** the operator starts **Then** it exits with an error.
+- **Given** the Helm chart **When** it is rendered **Then** the manager ClusterRole grants `get/list/watch` on `gateway.networking.k8s.io/httproutes`, matching the generated role.

@@ -69,7 +69,7 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var reconcileInterval time.Duration
-	var watchNamespaces, watchNamespaceSelector string
+	var watchNamespaces, watchNamespaceSelector, secretSelector string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -95,6 +95,9 @@ func main() {
 	flag.StringVar(&watchNamespaceSelector, "watch-namespace-selector", "",
 		"Label selector of namespaces to watch, in addition to --watch-namespaces. "+
 			"The operator exits to restart when the matching namespaces change.")
+	flag.StringVar(&secretSelector, "secret-selector", "",
+		"Label selector limiting the Secrets the operator caches and reads (e.g. warpgate.warp.tech/managed=true). "+
+			"Referenced Secrets must carry the label; Secrets the operator creates get it. Empty reads all Secrets.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -175,9 +178,17 @@ func main() {
 		setupLog.Error(err, "Invalid namespace scope")
 		os.Exit(1)
 	}
+	secrets, err := scope.ParseSecrets(secretSelector)
+	if err != nil {
+		setupLog.Error(err, "Invalid secret selector")
+		os.Exit(1)
+	}
 	restConfig := ctrl.GetConfigOrDie()
 	var watched []string
-	var cacheOptions cache.Options
+	cacheOptions := cache.Options{ByObject: secrets.ByObject()}
+	if secrets != nil {
+		setupLog.Info("Limiting Secrets to a label selector", "selector", secrets.String())
+	}
 	if namespaces.Enabled() {
 		reader, err := client.New(restConfig, client.Options{Scheme: scheme})
 		if err != nil {
@@ -217,8 +228,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// With --secret-selector the cached client only sees matching Secrets. The
+	// wrapper labels the Secrets the operator writes and explains, instead of a
+	// bare NotFound, when a referenced Secret exists without the label.
+	k8sClient := secrets.Client(mgr.GetClient(), mgr.GetAPIReader())
+
 	if err := (&controller.WarpgateConnectionReconciler{
-		Client:            mgr.GetClient(),
+		Client:            k8sClient,
 		Scheme:            mgr.GetScheme(),
 		ReconcileInterval: reconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
@@ -227,7 +243,7 @@ func main() {
 	}
 
 	if err := (&controller.WarpgateRoleReconciler{
-		Client:            mgr.GetClient(),
+		Client:            k8sClient,
 		Scheme:            mgr.GetScheme(),
 		ReconcileInterval: reconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
@@ -236,7 +252,7 @@ func main() {
 	}
 
 	if err := (&controller.WarpgateUserReconciler{
-		Client:            mgr.GetClient(),
+		Client:            k8sClient,
 		Scheme:            mgr.GetScheme(),
 		ReconcileInterval: reconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
@@ -245,7 +261,7 @@ func main() {
 	}
 
 	if err := (&controller.WarpgateTargetReconciler{
-		Client:            mgr.GetClient(),
+		Client:            k8sClient,
 		Scheme:            mgr.GetScheme(),
 		ReconcileInterval: reconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
@@ -254,7 +270,7 @@ func main() {
 	}
 
 	if err := (&controller.WarpgateTargetGroupReconciler{
-		Client:            mgr.GetClient(),
+		Client:            k8sClient,
 		Scheme:            mgr.GetScheme(),
 		ReconcileInterval: reconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
@@ -263,7 +279,7 @@ func main() {
 	}
 
 	if err := (&controller.WarpgateUserRoleReconciler{
-		Client:            mgr.GetClient(),
+		Client:            k8sClient,
 		Scheme:            mgr.GetScheme(),
 		ReconcileInterval: reconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
@@ -272,7 +288,7 @@ func main() {
 	}
 
 	if err := (&controller.WarpgateTargetRoleReconciler{
-		Client:            mgr.GetClient(),
+		Client:            k8sClient,
 		Scheme:            mgr.GetScheme(),
 		ReconcileInterval: reconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
@@ -281,7 +297,7 @@ func main() {
 	}
 
 	if err := (&controller.WarpgatePasswordCredentialReconciler{
-		Client:            mgr.GetClient(),
+		Client:            k8sClient,
 		Scheme:            mgr.GetScheme(),
 		ReconcileInterval: reconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
@@ -290,7 +306,7 @@ func main() {
 	}
 
 	if err := (&controller.WarpgatePublicKeyCredentialReconciler{
-		Client:            mgr.GetClient(),
+		Client:            k8sClient,
 		Scheme:            mgr.GetScheme(),
 		ReconcileInterval: reconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
@@ -299,7 +315,7 @@ func main() {
 	}
 
 	if err := (&controller.WarpgateTicketReconciler{
-		Client:            mgr.GetClient(),
+		Client:            k8sClient,
 		Scheme:            mgr.GetScheme(),
 		ReconcileInterval: reconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
@@ -307,7 +323,7 @@ func main() {
 		os.Exit(1)
 	}
 	if err := (&controller.WarpgateInstanceReconciler{
-		Client:            mgr.GetClient(),
+		Client:            k8sClient,
 		Scheme:            mgr.GetScheme(),
 		ReconcileInterval: reconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
@@ -316,7 +332,7 @@ func main() {
 	}
 
 	if err := (&controller.HTTPRouteWatcherReconciler{
-		Client: mgr.GetClient(),
+		Client: k8sClient,
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "HTTPRouteWatcher")

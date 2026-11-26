@@ -61,7 +61,7 @@ func (r *WarpgateTargetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	wgClient, err := getWarpgateClient(ctx, r.Client, target.Namespace, target.Spec.ConnectionRef)
 	if err != nil {
 		log.Error(err, "unable to build warpgate client")
-		r.setCondition(&target, metav1.ConditionFalse, "ClientError", err.Error())
+		r.setCondition(&target, metav1.ConditionFalse, secretErrorReason(err, "ClientError"), err.Error())
 		if updateErr := r.Status().Update(ctx, &target); updateErr != nil {
 			log.Error(updateErr, "unable to update status")
 		}
@@ -94,7 +94,7 @@ func (r *WarpgateTargetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	targetReq, targetType, err := r.buildTargetRequest(ctx, &target)
 	if err != nil {
 		log.Error(err, "unable to build target request")
-		r.setCondition(&target, metav1.ConditionFalse, "BuildError", err.Error())
+		r.setCondition(&target, metav1.ConditionFalse, secretErrorReason(err, "BuildError"), err.Error())
 		if updateErr := r.Status().Update(ctx, &target); updateErr != nil {
 			log.Error(updateErr, "unable to update status")
 		}

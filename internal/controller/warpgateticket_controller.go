@@ -26,7 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -67,7 +66,7 @@ func (r *WarpgateTicketReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		meta.SetStatusCondition(&ticket.Status.Conditions, metav1.Condition{
 			Type:               "Ready",
 			Status:             metav1.ConditionFalse,
-			Reason:             "ClientError",
+			Reason:             secretErrorReason(err, "ClientError"),
 			Message:            fmt.Sprintf("Failed to get Warpgate client: %v", err),
 			ObservedGeneration: ticket.Generation,
 		})
@@ -87,16 +86,14 @@ func (r *WarpgateTicketReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			}
 			// Clean up the auto-created Secret.
 			if ticket.Status.SecretRef != "" {
-				var secret corev1.Secret
-				if err := r.Get(ctx, types.NamespacedName{
-					Name:      ticket.Status.SecretRef,
-					Namespace: ticket.Namespace,
-				}, &secret); err == nil {
-					if err := r.Delete(ctx, &secret); err != nil && !errors.IsNotFound(err) {
-						log.Error(err, "failed to delete ticket secret", "secret", ticket.Status.SecretRef)
-						return ctrl.Result{}, err
-					}
+				// Delete by name rather than through the cache, so a Secret created
+				// before --secret-selector was set (and so unlabelled) is removed too.
+				secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: ticket.Status.SecretRef, Namespace: ticket.Namespace}}
+				if err := r.Delete(ctx, secret); err == nil {
 					log.Info("deleted ticket secret", "secret", ticket.Status.SecretRef)
+				} else if !errors.IsNotFound(err) {
+					log.Error(err, "failed to delete ticket secret", "secret", ticket.Status.SecretRef)
+					return ctrl.Result{}, err
 				}
 			}
 			controllerutil.RemoveFinalizer(&ticket, ticketFinalizer)
