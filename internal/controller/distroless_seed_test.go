@@ -179,6 +179,169 @@ func TestBuildInitContainersShellPath(t *testing.T) {
 	}
 }
 
+// TestBuildInitContainersNonRootOwnership is the regression test for the
+// production bug where the busybox seed container ran as root and wrote a
+// root-owned /data/warpgate.yaml the non-root Warpgate user could not read
+// ("Could not load config: Permission denied"). Both distroless init containers
+// must run as the runtime uid/gid, and the seed script must leave files group
+// readable.
+func TestBuildInitContainersNonRootOwnership(t *testing.T) {
+	inst := seedTestInstance("0.30.6", "")
+	containers, _ := buildInitContainers(inst, resolveImage(inst), "unused",
+		[]corev1.EnvVar{{Name: "ADMIN_PASSWORD"}}, []corev1.VolumeMount{{Name: "data"}})
+
+	if len(containers) != 2 {
+		t.Fatalf("distroless path should produce 2 init containers, got %d", len(containers))
+	}
+	for _, c := range containers {
+		sc := c.SecurityContext
+		if sc == nil || sc.RunAsUser == nil || sc.RunAsGroup == nil {
+			t.Fatalf("init container %q must set RunAsUser/RunAsGroup so seeded files are owned by the runtime user", c.Name)
+		}
+		if *sc.RunAsUser != 1000 || *sc.RunAsGroup != 1000 {
+			t.Errorf("init container %q RunAsUser/Group = %d/%d, want 1000/1000 (the Warpgate image uid/gid)", c.Name, *sc.RunAsUser, *sc.RunAsGroup)
+		}
+		if sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot {
+			t.Errorf("init container %q must assert RunAsNonRoot so a restricted PodSecurity policy does not fall back to root", c.Name)
+		}
+	}
+}
+
+func TestSeedSecurityContextRespectsPodRunAsUser(t *testing.T) {
+	inst := seedTestInstance("0.30.6", "")
+	uid := int64(2000)
+	gid := int64(3000)
+	inst.Spec.PodSecurityContext = &corev1.PodSecurityContext{RunAsUser: &uid, RunAsGroup: &gid}
+
+	sc := seedSecurityContext(inst)
+	// The seed must match whatever user the main container runs as, so a pinned
+	// pod RunAsUser propagates to the init containers.
+	if sc.RunAsUser == nil || *sc.RunAsUser != 2000 || sc.RunAsGroup == nil || *sc.RunAsGroup != 3000 {
+		t.Errorf("seedSecurityContext should follow pod RunAsUser/Group 2000/3000, got %v/%v", sc.RunAsUser, sc.RunAsGroup)
+	}
+}
+
+func TestSeedScriptGroupReadable(t *testing.T) {
+	inst := seedTestInstance("0.30.6", "")
+	inst.Spec.TLS = &warpgatev1alpha1.InstanceTLSSpec{SecretName: "wg-tls"}
+	script := buildSeedScript(inst)
+
+	// The config and any seeded PEM must be group readable (0640), never
+	// owner-only (0600), so the runtime user can read them via the fsGroup.
+	if strings.Contains(script, "chmod 600 ") || strings.Contains(script, "chmod 0600 ") {
+		t.Errorf("seed script must not chmod files to owner-only; got:\n%s", script)
+	}
+	if !strings.Contains(script, "chmod 0640 /data/warpgate.yaml") {
+		t.Errorf("seed script should chmod the config to 0640; got:\n%s", script)
+	}
+	if !strings.Contains(script, "chmod 0640 /data/tls.certificate.pem /data/tls.key.pem") {
+		t.Errorf("seed script should chmod the copied TLS pair to 0640; got:\n%s", script)
+	}
+}
+
+// TestSeedScriptSelfHealsPoisonedConfig is the regression test for the bricked
+// PVC: an older seed that ran as root left /data/warpgate.yaml root-owned, which
+// a non-root `cp` cannot overwrite. The seed must unlink the file before copying
+// so the volume recovers automatically. Covers both seed paths.
+func TestSeedScriptSelfHealsPoisonedConfig(t *testing.T) {
+	// Distroless (>= 0.27) seed script.
+	distroless := buildSeedScript(seedTestInstance("0.30.6", ""))
+	assertRemoveBeforeCopy(t, "distroless", distroless)
+
+	// Shell (<= 0.26) seed script, taken from the real built Deployment.
+	inst := seedTestInstance("0.26.0", "")
+	deploy := (&WarpgateInstanceReconciler{}).buildDeployment(inst)
+	ics := deploy.Spec.Template.Spec.InitContainers
+	if len(ics) != 1 || len(ics[0].Command) < 3 {
+		t.Fatalf("shell path should be a single /bin/sh -c init container, got %d", len(ics))
+	}
+	assertRemoveBeforeCopy(t, "shell", ics[0].Command[2])
+}
+
+// assertRemoveBeforeCopy checks the script removes /data/warpgate.yaml before it
+// copies a new one into place (self-heal), not after.
+func assertRemoveBeforeCopy(t *testing.T, label, script string) {
+	t.Helper()
+	rm := strings.Index(script, "rm -f /data/warpgate.yaml")
+	if rm < 0 {
+		t.Errorf("%s seed must `rm -f /data/warpgate.yaml` to self-heal a root-owned file; got:\n%s", label, script)
+		return
+	}
+	cpCfg := indexOfCopyToConfig(script)
+	if cpCfg < 0 {
+		t.Errorf("%s seed must copy a config into /data/warpgate.yaml; got:\n%s", label, script)
+		return
+	}
+	if rm > cpCfg {
+		t.Errorf("%s seed must remove the old config BEFORE copying the new one (rm@%d, cp@%d)", label, rm, cpCfg)
+	}
+}
+
+func indexOfCopyToConfig(script string) int {
+	for _, needle := range []string{
+		"cp /config/warpgate.yaml /data/warpgate.yaml",
+		"cp /override/warpgate.yaml /data/warpgate.yaml",
+	} {
+		if i := strings.Index(script, needle); i >= 0 {
+			return i
+		}
+	}
+	return -1
+}
+
+func TestResolveImageStripsLeadingV(t *testing.T) {
+	// Upstream ghcr tags have no leading v: v0.30.6 must normalise to 0.30.6.
+	cases := map[string]string{
+		"0.30.6":  "ghcr.io/warp-tech/warpgate:0.30.6",
+		"v0.30.6": "ghcr.io/warp-tech/warpgate:0.30.6",
+		"0.26.0":  "ghcr.io/warp-tech/warpgate:0.26.0",
+	}
+	for version, want := range cases {
+		if got := resolveImage(seedTestInstance(version, "")); got != want {
+			t.Errorf("resolveImage(%q) = %q, want %q", version, got, want)
+		}
+	}
+}
+
+// TestExternalPortDefaults443 covers the SSO redirect_uri regression: an
+// instance with externalHost set must advertise external_port 443, not the
+// in-cluster listener port, so the OIDC redirect_uri carries no :8888.
+func TestExternalPortDefaults443(t *testing.T) {
+	inst := seedTestInstance("0.30.6", "")
+	inst.Spec.ExternalHost = "warpgate.example.com"
+
+	port, ok := instanceHTTPExternalPort(inst)
+	if !ok || port != 443 {
+		t.Fatalf("instanceHTTPExternalPort with externalHost set = (%d,%v), want (443,true)", port, ok)
+	}
+	cfg := (&WarpgateInstanceReconciler{}).buildWarpgateConfig(inst)
+	if !strings.Contains(cfg, "external_port: 443") {
+		t.Errorf("config should set external_port: 443; got:\n%s", cfg)
+	}
+}
+
+// TestSSOProviderRendersSentinelNotSecret covers item 8: an SSO provider renders
+// into warpgate.yaml with a sentinel in place of the client secret, which the
+// init script later swaps for the real value from the environment.
+func TestSSOProviderRendersSentinelNotSecret(t *testing.T) {
+	inst := seedTestInstance("0.30.6", "")
+	inst.Spec.SSO = &warpgatev1alpha1.SSOSpec{
+		Providers: []warpgatev1alpha1.SSOProviderSpec{{
+			Name:                  "authentik",
+			Label:                 "Authentik",
+			ClientID:              "warpgate-client",
+			IssuerURL:             "https://sso.example.com/application/o/warpgate/",
+			ClientSecretSecretRef: warpgatev1alpha1.SecretKeyRef{Name: "sso-secret", Key: "client-secret"},
+		}},
+	}
+	cfg := (&WarpgateInstanceReconciler{}).buildWarpgateConfig(inst)
+	for _, want := range []string{"warpgate-client", "https://sso.example.com/application/o/warpgate/", ssoClientSecretSentinel("authentik")} {
+		if !strings.Contains(cfg, want) {
+			t.Errorf("SSO config missing %q; got:\n%s", want, cfg)
+		}
+	}
+}
+
 // TestBuildSeedScriptNoSetupNoOpenssl asserts the busybox seed script does not
 // run unattended-setup (the setup container owns that) or openssl (Warpgate's
 // setup generates the self-signed cert), so busybox is sufficient.

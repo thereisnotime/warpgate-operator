@@ -322,6 +322,74 @@ spec:
 			Eventually(verifyMetricsAvailable, 2*time.Minute).Should(Succeed())
 		})
 
+		It("should boot a WarpgateInstance under a non-root securityContext and load its seeded config", func() {
+			// Regression for the production outage: the seed wrote /data/warpgate.yaml
+			// as root, so the non-root runtime user could not read it and the pod
+			// crash-looped on "Could not load config: Permission denied". This runs a
+			// full instance under runAsNonRoot + fsGroup (as the real clusters do) and
+			// asserts the Deployment becomes Available, which only happens once the
+			// readiness probe gets 200 from the admin API, i.e. the config loaded.
+			const instNS = "warpgate-instance-e2e"
+
+			By("creating an isolated namespace for the instance")
+			_, err := utils.Run(exec.Command("kubectl", "create", "ns", instNS))
+			Expect(err).NotTo(HaveOccurred(), "Failed to create instance namespace")
+			DeferCleanup(func() {
+				_, _ = utils.Run(exec.Command("kubectl", "delete", "ns", instNS, "--wait=false"))
+			})
+
+			By("creating the admin password Secret")
+			_, err = utils.Run(exec.Command("kubectl", "create", "secret", "generic", "wg-admin",
+				"-n", instNS, "--from-literal=password=e2e-admin-pass-123"))
+			Expect(err).NotTo(HaveOccurred(), "Failed to create admin Secret")
+
+			By("applying a WarpgateInstance pinned non-root with fsGroup")
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(`
+apiVersion: warpgate.warpgate.warp.tech/v1alpha1
+kind: WarpgateInstance
+metadata:
+  name: wg-e2e
+  namespace: warpgate-instance-e2e
+spec:
+  version: "0.30.6"
+  adminPasswordSecretRef:
+    name: wg-admin
+    key: password
+  http:
+    enabled: true
+    port: 8888
+  storage:
+    enabled: false
+  tls:
+    certManager: false
+  createConnection: false
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+`)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to apply WarpgateInstance")
+
+			By("waiting for the Warpgate Deployment to become Available (config loaded by the non-root user)")
+			verifyInstanceAvailable := func(g Gomega) {
+				out, err := utils.Run(exec.Command("kubectl", "get", "deployment", "wg-e2e",
+					"-n", instNS, "-o", "jsonpath={.status.conditions[?(@.type=='Available')].status}"))
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("True"), "Warpgate Deployment not Available; the seeded config likely unreadable by the non-root user")
+			}
+			Eventually(verifyInstanceAvailable, 6*time.Minute, 5*time.Second).Should(Succeed())
+
+			By("confirming no config-load permission error in the warpgate container logs")
+			logs, err := utils.Run(exec.Command("kubectl", "logs", "-n", instNS,
+				"deployment/wg-e2e", "-c", "warpgate", "--tail=200"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(logs).NotTo(ContainSubstring("Could not load config"))
+			Expect(logs).NotTo(ContainSubstring("Permission denied"))
+		})
+
 		// +kubebuilder:scaffold:e2e-webhooks-checks
 
 		// TODO: Customize the e2e test suite with scenarios specific to your project.
