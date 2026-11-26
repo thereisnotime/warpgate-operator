@@ -6,7 +6,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: warpgateinstance-sample
 spec:
-  version: "0.21.1"
+  version: "0.26.0"
   adminPasswordSecretRef:
     name: warpgate-admin
     key: password

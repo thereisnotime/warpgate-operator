@@ -140,6 +140,14 @@ type WarpgateInstanceSpec struct {
 	// set (the override owns the whole config).
 	// +optional
 	SSO *SSOSpec `json:"sso,omitempty"`
+
+	// podSecurityContext sets the pod-level security context. When unset, the
+	// operator defaults fsGroup (with fsGroupChangePolicy OnRootMismatch) so
+	// Warpgate, which runs non-root, can write its data directory on CSI volumes
+	// that provision root-owned filesystems. Set it explicitly to override the
+	// default; set an empty fsGroup-less context to opt out.
+	// +optional
+	PodSecurityContext *corev1.PodSecurityContext `json:"podSecurityContext,omitempty"`
 }
 
 // SSOSpec configures Warpgate's OpenID Connect single sign-on providers.

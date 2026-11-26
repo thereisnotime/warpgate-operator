@@ -9,7 +9,13 @@ CRDs like `WarpgateRole` and `WarpgateUser` can reference the deployed instance 
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `version` | `string` | Yes | - | Warpgate image tag to deploy (e.g. `0.21.1`, `latest`) |
+| `version` | `string` | Yes | - | Warpgate image tag to deploy (e.g. `0.26.0`, `latest`) |
+
+> Warpgate's ghcr tags carry **no** leading `v` (e.g.
+> `ghcr.io/warp-tech/warpgate:0.26.0`), and only some versions are published
+> there (0.26.0 is the highest at time of writing; 0.27+/0.30.x are not on
+> ghcr). Pick a published tag that supports the features you need (k8s targets
+> since 0.21, `--skip-securing-files` since ~0.22).
 | `image` | `string` | No | `ghcr.io/warp-tech/warpgate:<version>` | Full image reference override |
 | `replicas` | `int32` | No | `1` | Number of Warpgate pods (minimum 1) |
 | `adminPasswordSecretRef.name` | `string` | Yes | - | Name of the Secret containing the initial admin password |
@@ -111,7 +117,7 @@ kind: WarpgateInstance
 metadata:
   name: warpgate
 spec:
-  version: "0.21.1"
+  version: "0.26.0"
   adminPasswordSecretRef:
     name: warpgate-admin
     key: password
@@ -127,7 +133,7 @@ kind: WarpgateInstance
 metadata:
   name: warpgate-production
 spec:
-  version: "0.21.1"
+  version: "0.26.0"
   replicas: 2
   externalHost: warpgate.example.com
   adminPasswordSecretRef:
@@ -182,7 +188,7 @@ kind: WarpgateInstance
 metadata:
   name: warpgate-ssh
 spec:
-  version: "0.21.1"
+  version: "0.26.0"
   adminPasswordSecretRef:
     name: warpgate-admin
     key: password
@@ -214,7 +220,7 @@ kind: WarpgateInstance
 metadata:
   name: warpgate-hz
 spec:
-  version: "0.21.1"
+  version: "0.26.0"
   adminPasswordSecretRef:
     name: warpgate-admin
     key: password

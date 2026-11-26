@@ -186,11 +186,31 @@ func resolveImage(inst *warpgatev1alpha1.WarpgateInstance) string {
 	if inst.Spec.Image != "" {
 		return inst.Spec.Image
 	}
-	tag := inst.Spec.Version
-	if !strings.HasPrefix(tag, "v") {
-		tag = "v" + tag
-	}
+	// Upstream ghcr tags carry no leading "v" (ghcr.io/warp-tech/warpgate:0.26.0
+	// exists, :v0.26.0 does not), so normalise a user-supplied "v" away.
+	tag := strings.TrimPrefix(inst.Spec.Version, "v")
 	return fmt.Sprintf("ghcr.io/warp-tech/warpgate:%s", tag)
+}
+
+// defaultFSGroup is applied to the pod so Warpgate (which runs non-root) can
+// write its data directory on CSI volumes that provision root-owned
+// filesystems: fsGroup is added to the process as a supplementary group and the
+// volume is chowned to it.
+const defaultFSGroup int64 = 1000
+
+// podSecurityContext returns the pod-level security context to apply. An
+// explicit spec.podSecurityContext wins; otherwise a default fsGroup
+// (OnRootMismatch) is set so the data PVC is writable by the non-root process.
+func podSecurityContext(inst *warpgatev1alpha1.WarpgateInstance) *corev1.PodSecurityContext {
+	if inst.Spec.PodSecurityContext != nil {
+		return inst.Spec.PodSecurityContext
+	}
+	fsGroup := defaultFSGroup
+	policy := corev1.FSGroupChangeOnRootMismatch
+	return &corev1.PodSecurityContext{
+		FSGroup:             &fsGroup,
+		FSGroupChangePolicy: &policy,
+	}
 }
 
 func instanceReplicas(inst *warpgatev1alpha1.WarpgateInstance) int32 {
@@ -371,6 +391,14 @@ func configHash(inst *warpgatev1alpha1.WarpgateInstance) string {
 		kubernetesEnabled(inst)))
 	h.Write([]byte(inst.Spec.ExternalHost))
 	h.Write([]byte(inst.Spec.ConfigOverride))
+	if sc := podSecurityContext(inst); sc != nil {
+		if sc.FSGroup != nil {
+			h.Write(fmt.Appendf(nil, "fsgroup=%d", *sc.FSGroup))
+		}
+		if sc.RunAsUser != nil {
+			h.Write(fmt.Appendf(nil, "runasuser=%d", *sc.RunAsUser))
+		}
+	}
 	h.Write(databaseURLFingerprint(inst))
 	if databaseURLFromSecret(inst) {
 		h.Write([]byte(inst.Spec.DatabaseURLSecretRef.Name + "/" + databaseURLKey(inst)))
@@ -1065,6 +1093,7 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 					},
 				},
 				Spec: corev1.PodSpec{
+					SecurityContext: podSecurityContext(inst),
 					InitContainers: []corev1.Container{
 						{
 							Name:         "init-setup",
@@ -1078,7 +1107,7 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 						{
 							Name:  "warpgate",
 							Image: image,
-							Args:  []string{"--config", "/data/warpgate.yaml", "run", "--skip-securing-files"},
+							Args:  []string{"--config", "/data/warpgate.yaml", "--skip-securing-files", "run"},
 							Ports: ports,
 							VolumeMounts: []corev1.VolumeMount{
 								{Name: "data", MountPath: "/data"},
