@@ -199,10 +199,36 @@ spec:
                   enabled:
                     description: enabled enables this protocol listener.
                     type: boolean
+                  externalHost:
+                    description: |-
+                      externalHost is the public hostname this protocol is reached on, advertised
+                      in generated client configs (for a Kubernetes listener, the kubeconfig
+                      server URL). Use it when the proxy is fronted on a different hostname than
+                      the gate's HTTP host (e.g. a dedicated SNI name for TLS passthrough). When
+                      unset, Warpgate falls back to the instance externalHost.
+                    type: string
+                  externalPort:
+                    description: |-
+                      externalPort is the public port advertised in generated client configs (the
+                      port clients actually reach this listener on, e.g. 443 behind TLS
+                      passthrough), independent of the in-cluster listener port. When unset and
+                      externalHost is set, it defaults to 443; when both are unset, Warpgate falls
+                      back to the listener port.
+                    format: int32
+                    type: integer
                   port:
                     description: port is the container port.
                     format: int32
                     type: integer
+                  serviceType:
+                    default: ClusterIP
+                    description: serviceType is the Kubernetes Service type (ClusterIP,
+                      NodePort, LoadBalancer). Defaults to ClusterIP.
+                    enum:
+                    - ClusterIP
+                    - NodePort
+                    - LoadBalancer
+                    type: string
                 type: object
               mysql:
                 description: mysql configures the MySQL protocol proxy listener.
@@ -210,10 +236,36 @@ spec:
                   enabled:
                     description: enabled enables this protocol listener.
                     type: boolean
+                  externalHost:
+                    description: |-
+                      externalHost is the public hostname this protocol is reached on, advertised
+                      in generated client configs (for a Kubernetes listener, the kubeconfig
+                      server URL). Use it when the proxy is fronted on a different hostname than
+                      the gate's HTTP host (e.g. a dedicated SNI name for TLS passthrough). When
+                      unset, Warpgate falls back to the instance externalHost.
+                    type: string
+                  externalPort:
+                    description: |-
+                      externalPort is the public port advertised in generated client configs (the
+                      port clients actually reach this listener on, e.g. 443 behind TLS
+                      passthrough), independent of the in-cluster listener port. When unset and
+                      externalHost is set, it defaults to 443; when both are unset, Warpgate falls
+                      back to the listener port.
+                    format: int32
+                    type: integer
                   port:
                     description: port is the container port.
                     format: int32
                     type: integer
+                  serviceType:
+                    default: ClusterIP
+                    description: serviceType is the Kubernetes Service type (ClusterIP,
+                      NodePort, LoadBalancer). Defaults to ClusterIP.
+                    enum:
+                    - ClusterIP
+                    - NodePort
+                    - LoadBalancer
+                    type: string
                 type: object
               nodeSelector:
                 additionalProperties:
@@ -461,10 +513,36 @@ spec:
                   enabled:
                     description: enabled enables this protocol listener.
                     type: boolean
+                  externalHost:
+                    description: |-
+                      externalHost is the public hostname this protocol is reached on, advertised
+                      in generated client configs (for a Kubernetes listener, the kubeconfig
+                      server URL). Use it when the proxy is fronted on a different hostname than
+                      the gate's HTTP host (e.g. a dedicated SNI name for TLS passthrough). When
+                      unset, Warpgate falls back to the instance externalHost.
+                    type: string
+                  externalPort:
+                    description: |-
+                      externalPort is the public port advertised in generated client configs (the
+                      port clients actually reach this listener on, e.g. 443 behind TLS
+                      passthrough), independent of the in-cluster listener port. When unset and
+                      externalHost is set, it defaults to 443; when both are unset, Warpgate falls
+                      back to the listener port.
+                    format: int32
+                    type: integer
                   port:
                     description: port is the container port.
                     format: int32
                     type: integer
+                  serviceType:
+                    default: ClusterIP
+                    description: serviceType is the Kubernetes Service type (ClusterIP,
+                      NodePort, LoadBalancer). Defaults to ClusterIP.
+                    enum:
+                    - ClusterIP
+                    - NodePort
+                    - LoadBalancer
+                    type: string
                 type: object
               recordSessions:
                 description: recordSessions enables session recording. Defaults to

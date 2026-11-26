@@ -1877,6 +1877,123 @@ var _ = Describe("WarpgateInstance Controller", func() {
 	})
 
 	// -----------------------------------------------------------------------
+	// Regression: the operator opens the k8s proxy container port but must also
+	// publish a Service for it, or the port is reachable nowhere and kubectl
+	// hangs on connect (the gate shows a target but the data plane is dead).
+	// -----------------------------------------------------------------------
+	Context("Create instance with Kubernetes enabled", func() {
+		const (
+			instName   = "inst-k8s"
+			secretName = "inst-k8s-admin-pw"
+		)
+
+		BeforeEach(func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: testNamespace},
+				Data:       map[string][]byte{"password": []byte("k8s-secret")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			inst := &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: instName, Namespace: testNamespace},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version:                "0.30.6",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{Name: secretName},
+					Replicas:               int32Ptr(1),
+					HTTP:                   &warpgatev1alpha1.HTTPListenerSpec{Enabled: boolPtr(true), Port: int32Ptr(8888), ServiceType: "ClusterIP"},
+					Kubernetes: &warpgatev1alpha1.ProtocolListenerSpec{
+						Enabled:      boolPtr(true),
+						Port:         int32Ptr(8443),
+						ExternalHost: "k8s-gate.hz.rso.dev",
+						ServiceType:  "ClusterIP",
+					},
+					Storage:          &warpgatev1alpha1.StorageSpec{Size: "1Gi"},
+					CreateConnection: boolPtr(false),
+				},
+			}
+			Expect(k8sClient.Create(ctx, inst)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			inst := &warpgatev1alpha1.WarpgateInstance{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: instName, Namespace: testNamespace}, inst); err == nil {
+				controllerutil.RemoveFinalizer(inst, instanceFinalizer)
+				_ = k8sClient.Update(ctx, inst)
+				_ = k8sClient.Delete(ctx, inst)
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: testNamespace}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("publishes a Service for the kubernetes proxy port", func() {
+			nn := types.NamespacedName{Name: instName, Namespace: testNamespace}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var k8sSvc corev1.Service
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: instName + "-kubernetes", Namespace: testNamespace}, &k8sSvc)).To(Succeed())
+			Expect(k8sSvc.Spec.Type).To(Equal(corev1.ServiceTypeClusterIP))
+			Expect(k8sSvc.Spec.Ports).To(HaveLen(1))
+			Expect(k8sSvc.Spec.Ports[0].Port).To(Equal(int32(8443)))
+			Expect(k8sSvc.Spec.Ports[0].TargetPort.StrVal).To(Equal("kubernetes"))
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			Expect(dep.Spec.Template.Spec.Containers[0].Ports).To(ContainElement(
+				corev1.ContainerPort{Name: "kubernetes", ContainerPort: 8443, Protocol: corev1.ProtocolTCP},
+			))
+		})
+	})
+
+	// -----------------------------------------------------------------------
+	// 10c. kubernetes.external_host / external_port (kubeconfig server URL)
+	// Regression: the kubeconfig server URL is built from the kubernetes
+	// listener's external_host/external_port; without them it is stuck on the
+	// gate's HTTP host and the in-cluster 8443, which is routable nowhere, so
+	// kubectl hangs on connect.
+	// -----------------------------------------------------------------------
+	Context("buildWarpgateConfig kubernetes external host/port", func() {
+		base := func(name string) *warpgatev1alpha1.WarpgateInstance {
+			return &warpgatev1alpha1.WarpgateInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace},
+				Spec: warpgatev1alpha1.WarpgateInstanceSpec{
+					Version:                "0.30.6",
+					AdminPasswordSecretRef: warpgatev1alpha1.SecretKeyRef{Name: "dummy"},
+					HTTP:                   &warpgatev1alpha1.HTTPListenerSpec{Enabled: boolPtr(true), Port: int32Ptr(8888)},
+					Kubernetes:             &warpgatev1alpha1.ProtocolListenerSpec{Enabled: boolPtr(true), Port: int32Ptr(8443)},
+					TLS:                    &warpgatev1alpha1.InstanceTLSSpec{CertManager: boolPtr(false)},
+				},
+			}
+		}
+
+		It("advertises the kubernetes externalHost and defaults externalPort to 443", func() {
+			inst := base("k8s-exthost")
+			inst.Spec.Kubernetes.ExternalHost = "k8s-gate.hz.rso.dev"
+			yaml := reconciler.buildWarpgateConfig(inst)
+			Expect(yaml).To(ContainSubstring("kubernetes:"))
+			Expect(yaml).To(ContainSubstring("external_host: k8s-gate.hz.rso.dev"))
+			Expect(yaml).To(ContainSubstring("external_port: 443"))
+		})
+
+		It("uses the explicit kubernetes.externalPort when set", func() {
+			inst := base("k8s-extport")
+			inst.Spec.Kubernetes.ExternalHost = "k8s-gate.hz.rso.dev"
+			inst.Spec.Kubernetes.ExternalPort = int32Ptr(6443)
+			yaml := reconciler.buildWarpgateConfig(inst)
+			Expect(yaml).To(ContainSubstring("external_port: 6443"))
+		})
+
+		It("omits kubernetes external_host/port when unset", func() {
+			inst := base("k8s-noext")
+			yaml := reconciler.buildWarpgateConfig(inst)
+			Expect(yaml).To(ContainSubstring("kubernetes:"))
+			Expect(yaml).NotTo(ContainSubstring("external_host"))
+		})
+	})
+
+	// -----------------------------------------------------------------------
 	// 11. Recreate strategy default
 	// -----------------------------------------------------------------------
 	Context("Recreate strategy default", func() {

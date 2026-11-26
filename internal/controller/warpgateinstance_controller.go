@@ -430,6 +430,33 @@ func instanceKubernetesPort(inst *warpgatev1alpha1.WarpgateInstance) int32 {
 	return 8443
 }
 
+// instanceKubernetesExternalHost returns the public hostname the kubeconfig
+// server URL should point at, or "" to fall back to the instance externalHost.
+func instanceKubernetesExternalHost(inst *warpgatev1alpha1.WarpgateInstance) string {
+	if inst.Spec.Kubernetes != nil {
+		return inst.Spec.Kubernetes.ExternalHost
+	}
+	return ""
+}
+
+// instanceKubernetesExternalPort returns the public port advertised in the
+// kubeconfig server URL and whether it should be written to the config. An
+// explicit kubernetes.externalPort wins; otherwise a set kubernetes.externalHost
+// implies public HTTPS on 443; otherwise it is omitted and Warpgate falls back
+// to the listener port.
+func instanceKubernetesExternalPort(inst *warpgatev1alpha1.WarpgateInstance) (int32, bool) {
+	if inst.Spec.Kubernetes == nil {
+		return 0, false
+	}
+	if inst.Spec.Kubernetes.ExternalPort != nil {
+		return *inst.Spec.Kubernetes.ExternalPort, true
+	}
+	if inst.Spec.Kubernetes.ExternalHost != "" {
+		return 443, true
+	}
+	return 0, false
+}
+
 func instanceStorageSize(inst *warpgatev1alpha1.WarpgateInstance) string {
 	if inst.Spec.Storage != nil && inst.Spec.Storage.Size != "" {
 		return inst.Spec.Storage.Size
@@ -559,6 +586,10 @@ func configHash(inst *warpgatev1alpha1.WarpgateInstance) string {
 	h.Write([]byte(inst.Spec.ExternalHost))
 	if ep, ok := instanceHTTPExternalPort(inst); ok {
 		h.Write(fmt.Appendf(nil, "extport=%d", ep))
+	}
+	h.Write([]byte(instanceKubernetesExternalHost(inst)))
+	if ep, ok := instanceKubernetesExternalPort(inst); ok {
+		h.Write(fmt.Appendf(nil, "k8sextport=%d", ep))
 	}
 	h.Write([]byte(inst.Spec.ConfigOverride))
 	if sc := podSecurityContext(inst); sc != nil {
@@ -800,6 +831,19 @@ func (r *WarpgateInstanceReconciler) buildWarpgateConfig(inst *warpgatev1alpha1.
 	}
 	if kubernetesEnabled(inst) {
 		listener("kubernetes", true, instanceKubernetesPort(inst), true)
+		// external_host/external_port put the kubeconfig server URL on a
+		// dedicated public name/port (e.g. a TLS-passthrough SNI host on 443)
+		// instead of the gate's HTTP host and the in-cluster listener port.
+		if h := instanceKubernetesExternalHost(inst); h != "" {
+			// Marshal instead of printf so the value can't break out of its scalar.
+			if out, err := yaml.Marshal(map[string]string{"external_host": h}); err == nil {
+				b.WriteString("  ")
+				b.Write(out)
+			}
+		}
+		if ep, ok := instanceKubernetesExternalPort(inst); ok {
+			fmt.Fprintf(&b, "  external_port: %d\n", ep)
+		}
 	}
 
 	if inst.Spec.ExternalHost != "" {
@@ -1672,6 +1716,59 @@ func (r *WarpgateInstanceReconciler) ensureServices(ctx context.Context, inst *w
 		}
 	} else {
 		r.deleteIfExists(ctx, &corev1.Service{}, inst.Namespace, inst.Name+"-ssh")
+	}
+
+	// Kubernetes Service. The container opens the k8s proxy port whenever the
+	// listener is enabled, but it is only reachable once a Service publishes it
+	// (e.g. for a Traefik IngressRouteTCP to front).
+	if kubernetesEnabled(inst) {
+		svcType := corev1.ServiceTypeClusterIP
+		if inst.Spec.Kubernetes != nil && inst.Spec.Kubernetes.ServiceType != "" {
+			svcType = corev1.ServiceType(inst.Spec.Kubernetes.ServiceType)
+		}
+		if err := r.ensureService(ctx, inst, inst.Name+"-kubernetes", selector,
+			corev1.ServicePort{
+				Name: "kubernetes", Port: instanceKubernetesPort(inst),
+				TargetPort: intstr.FromString("kubernetes"), Protocol: corev1.ProtocolTCP,
+			}, svcType); err != nil {
+			return err
+		}
+	} else {
+		r.deleteIfExists(ctx, &corev1.Service{}, inst.Namespace, inst.Name+"-kubernetes")
+	}
+
+	// MySQL Service.
+	if mysqlEnabled(inst) {
+		svcType := corev1.ServiceTypeClusterIP
+		if inst.Spec.MySQL != nil && inst.Spec.MySQL.ServiceType != "" {
+			svcType = corev1.ServiceType(inst.Spec.MySQL.ServiceType)
+		}
+		if err := r.ensureService(ctx, inst, inst.Name+"-mysql", selector,
+			corev1.ServicePort{
+				Name: "mysql", Port: instanceMySQLPort(inst),
+				TargetPort: intstr.FromString("mysql"), Protocol: corev1.ProtocolTCP,
+			}, svcType); err != nil {
+			return err
+		}
+	} else {
+		r.deleteIfExists(ctx, &corev1.Service{}, inst.Namespace, inst.Name+"-mysql")
+	}
+
+	// PostgreSQL Service.
+	if pgEnabled(inst) {
+		svcType := corev1.ServiceTypeClusterIP
+		if inst.Spec.PostgreSQL != nil && inst.Spec.PostgreSQL.ServiceType != "" {
+			svcType = corev1.ServiceType(inst.Spec.PostgreSQL.ServiceType)
+		}
+		if err := r.ensureService(ctx, inst, inst.Name+"-postgresql", selector,
+			corev1.ServicePort{
+				Name: "postgresql", Port: instancePGPort(inst),
+				TargetPort: intstr.FromString("postgresql"), Protocol: corev1.ProtocolTCP,
+			}, svcType); err != nil {
+			return err
+		}
+	} else {
+		r.deleteIfExists(ctx, &corev1.Service{}, inst.Namespace, inst.Name+"-postgresql")
 	}
 
 	return nil

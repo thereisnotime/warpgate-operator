@@ -329,7 +329,8 @@ type SSHListenerSpec struct {
 	ServiceType string `json:"serviceType,omitempty"`
 }
 
-// ProtocolListenerSpec configures a generic protocol proxy listener (MySQL, PostgreSQL).
+// ProtocolListenerSpec configures a generic protocol proxy listener
+// (Kubernetes, MySQL, PostgreSQL).
 type ProtocolListenerSpec struct {
 	// enabled enables this protocol listener.
 	// +optional
@@ -337,6 +338,25 @@ type ProtocolListenerSpec struct {
 	// port is the container port.
 	// +optional
 	Port *int32 `json:"port,omitempty"`
+	// externalHost is the public hostname this protocol is reached on, advertised
+	// in generated client configs (for a Kubernetes listener, the kubeconfig
+	// server URL). Use it when the proxy is fronted on a different hostname than
+	// the gate's HTTP host (e.g. a dedicated SNI name for TLS passthrough). When
+	// unset, Warpgate falls back to the instance externalHost.
+	// +optional
+	ExternalHost string `json:"externalHost,omitempty"`
+	// externalPort is the public port advertised in generated client configs (the
+	// port clients actually reach this listener on, e.g. 443 behind TLS
+	// passthrough), independent of the in-cluster listener port. When unset and
+	// externalHost is set, it defaults to 443; when both are unset, Warpgate falls
+	// back to the listener port.
+	// +optional
+	ExternalPort *int32 `json:"externalPort,omitempty"`
+	// serviceType is the Kubernetes Service type (ClusterIP, NodePort, LoadBalancer). Defaults to ClusterIP.
+	// +optional
+	// +kubebuilder:default="ClusterIP"
+	// +kubebuilder:validation:Enum=ClusterIP;NodePort;LoadBalancer
+	ServiceType string `json:"serviceType,omitempty"`
 }
 
 // StorageSpec configures persistent storage for Warpgate data.
