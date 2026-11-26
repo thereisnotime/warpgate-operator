@@ -118,9 +118,13 @@ The controller requeues every 5 minutes. On each pass it compares the owned reso
 
 Config seeding copies the operator-generated ConfigMap to the writable `/data/warpgate.yaml` on every boot and adapts to the Warpgate image. Shell-bearing images (<= 0.26) run a single generated `sh -c` init script in the Warpgate image. Distroless images (>= 0.27, including 0.30.x) have no shell, so seeding splits into a shell-free `init-setup` container that runs the Warpgate binary directly (admin bootstrap, keys and self-signed cert, made idempotent by Warpgate's `--if-config-exists skip`) and an `init-config` container built from the `seedImage` utility image (pinned `busybox` by default) that performs the file operations. In every case user-controlled values (admin password, database URL) reach the containers only as environment variables, referenced as quoted shell expansions (`"${DATABASE_URL}"`) or Kubernetes `$(VAR)` arg expansion (`--admin-password $(ADMIN_PASSWORD)`), so neither the shell nor the manifest ever carries the raw value.
 
+The init containers run as the pod's runtime uid/gid (1000, or `podSecurityContext.runAsUser`/`runAsGroup` when set), so every file they seed into `/data` is owned by, and readable by, the non-root Warpgate user under a non-root `securityContext`; files are left group-readable (0640) so the `fsGroup` can read them on any CSI driver. The seed removes an existing `/data/warpgate.yaml` (and copied TLS pair) before rewriting it, so a volume left with a wrong-owner file by an earlier operator version recovers automatically on the next reconcile rather than failing with "Permission denied".
+
 **Scenarios:**
 
 - **Given** a `WarpgateInstance` whose `databaseURL` contains shell metacharacters (`"`, `;`, `$(...)`, backticks) **When** the controller builds the Deployment **Then** the init script only references `${DATABASE_URL}` and the raw value appears solely in the init container's `DATABASE_URL` environment variable.
+- **Given** a distroless `WarpgateInstance` **When** the controller builds the Deployment **Then** both init containers run as the runtime uid/gid (not root) so the seeded config is readable by the non-root Warpgate process.
+- **Given** a `/data` left with a root-owned `/data/warpgate.yaml` by an earlier operator version **When** the seed runs **Then** it removes and rewrites the file as the runtime user, so the pod boots and loads the config without manual intervention.
 
 ### REQ-INST-008: Database Credentials Stay Out of the ConfigMap
 

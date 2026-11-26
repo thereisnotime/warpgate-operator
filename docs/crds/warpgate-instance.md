@@ -264,7 +264,11 @@ is `https://<externalHost>/@warpgate/api/sso/return`.
   Warpgate's own `--if-config-exists skip`), and an `init-config` container built from a small utility image
   (`seedImage`, a pinned `busybox` by default) that performs the file operations. The operator picks the path
   automatically from the resolved version; set `seedImage` to override the utility image (for example to use an
-  internal mirror).
+  internal mirror). The init containers run as the pod's runtime uid/gid (1000, or `podSecurityContext.runAsUser`
+  if set), so every file they write to `/data` is owned by, and readable by, the non-root Warpgate user under a
+  non-root `securityContext`. The seed also removes the old `/data/warpgate.yaml` before rewriting it, so a volume
+  left with a wrong-owner file by an earlier operator version self-heals on the next reconcile without manual PVC
+  surgery.
 - **cert-manager integration:** When `tls.certManager` is true (the default), the operator creates a `Certificate`
   resource for TLS. If no `tls.issuerRef` is provided, a self-signed `Issuer` is created automatically. The
   Certificate's Secret (`<name>-tls`) is mounted into the pod and copied into `/data` by the init container, so

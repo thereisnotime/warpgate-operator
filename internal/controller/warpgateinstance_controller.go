@@ -307,6 +307,15 @@ func parseMajorMinor(tag string) (major, minor int, ok bool) {
 	return maj, min, true
 }
 
+// warpgateImageUID and warpgateImageGID are the uid/gid the upstream Warpgate
+// image runs as (the "warpgate" user, 1000:1000). The distroless init
+// containers default to this so the files they seed into /data are owned by the
+// runtime user; they also match the default fsGroup.
+const (
+	warpgateImageUID int64 = 1000
+	warpgateImageGID int64 = 1000
+)
+
 // defaultFSGroup is applied to the pod so Warpgate (which runs non-root) can
 // write its data directory on CSI volumes that provision root-owned
 // filesystems: fsGroup is added to the process as a supplementary group and the
@@ -1015,16 +1024,21 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 		`fi`,
 	)
 
-	// 3. Copy config override if provided
+	// 3. Copy config override if provided. Remove any existing file first so a
+	// /data left root-owned by an older seed (which this non-root user could not
+	// overwrite in place) is replaced rather than hit with "Permission denied";
+	// unlinking only needs write on the fsGroup-owned /data directory.
 	if inst.Spec.ConfigOverride != "" {
 		scriptParts = append(scriptParts,
 			`echo "Applying config override..."`,
+			`rm -f /data/warpgate.yaml`,
 			`cp /override/warpgate.yaml /data/warpgate.yaml`,
 		)
 	} else {
 		// Apply the operator-generated config
 		scriptParts = append(scriptParts,
 			`echo "Applying operator config..."`,
+			`rm -f /data/warpgate.yaml`,
 			`cp /config/warpgate.yaml /data/warpgate.yaml`,
 		)
 		if externalDatabase(inst) {
@@ -1047,6 +1061,7 @@ func (r *WarpgateInstanceReconciler) buildDeployment(inst *warpgatev1alpha1.Warp
 		scriptParts = append(scriptParts,
 			`echo "Copying TLS certificates from secret..."`,
 			`if [ -f /tls-secret/tls.crt ]; then`,
+			`  rm -f /data/tls.certificate.pem /data/tls.key.pem`,
 			`  cp /tls-secret/tls.crt /data/tls.certificate.pem`,
 			`  cp /tls-secret/tls.key /data/tls.key.pem`,
 			`  chmod 600 /data/tls.certificate.pem /data/tls.key.pem`,
@@ -1363,23 +1378,69 @@ func buildInitContainers(
 		})
 	}
 
+	// Both init containers must create files in /data as the same user that the
+	// main container runs as, so the non-root runtime can read them. The seed
+	// image (busybox) defaults to the root user, which would otherwise write a
+	// root-owned config the Warpgate user cannot read under a non-root
+	// securityContext. See seedSecurityContext.
+	initSC := seedSecurityContext(inst)
+
 	containers := []corev1.Container{
 		{
-			Name:         "init-setup",
-			Image:        image,
-			Args:         setupArgs,
-			VolumeMounts: setupMounts,
-			Env:          setupEnv,
+			Name:            "init-setup",
+			Image:           image,
+			Args:            setupArgs,
+			VolumeMounts:    setupMounts,
+			Env:             setupEnv,
+			SecurityContext: initSC,
 		},
 		{
-			Name:         "init-config",
-			Image:        seedImage(inst),
-			Command:      []string{"/bin/sh", "-c", seedScript},
-			VolumeMounts: seedMounts,
-			Env:          seedEnv,
+			Name:            "init-config",
+			Image:           seedImage(inst),
+			Command:         []string{"/bin/sh", "-c", seedScript},
+			VolumeMounts:    seedMounts,
+			Env:             seedEnv,
+			SecurityContext: initSC,
 		},
 	}
 	return containers, strings.Join(setupArgs, " ") + "\n" + seedScript
+}
+
+// seedRuntimeUser returns the uid and gid the Warpgate pod runs as, which the
+// distroless init containers must also use so the files they seed into /data are
+// owned by (and readable by) the runtime user. An explicit
+// spec.podSecurityContext RunAsUser/RunAsGroup wins; otherwise the default is
+// 1000:1000, the uid/gid baked into the upstream Warpgate image and the default
+// fsGroup.
+func seedRuntimeUser(inst *warpgatev1alpha1.WarpgateInstance) (uid, gid int64) {
+	uid, gid = warpgateImageUID, warpgateImageGID
+	if sc := inst.Spec.PodSecurityContext; sc != nil {
+		if sc.RunAsUser != nil {
+			uid = *sc.RunAsUser
+		}
+		if sc.RunAsGroup != nil {
+			gid = *sc.RunAsGroup
+		}
+	}
+	return uid, gid
+}
+
+// seedSecurityContext pins the distroless init containers to the runtime
+// uid/gid. Without it the busybox seed container runs as root and writes a
+// root-owned /data/warpgate.yaml that the non-root Warpgate user cannot read
+// ("Could not load config: Permission denied"). RunAsNonRoot is asserted unless
+// the operator was explicitly told to run as uid 0.
+func seedSecurityContext(inst *warpgatev1alpha1.WarpgateInstance) *corev1.SecurityContext {
+	uid, gid := seedRuntimeUser(inst)
+	sc := &corev1.SecurityContext{
+		RunAsUser:  &uid,
+		RunAsGroup: &gid,
+	}
+	if uid != 0 {
+		nonRoot := true
+		sc.RunAsNonRoot = &nonRoot
+	}
+	return sc
 }
 
 // adminPasswordEnvVar returns the ADMIN_PASSWORD env var sourced from the admin
@@ -1440,14 +1501,22 @@ func buildSeedScript(inst *warpgatev1alpha1.WarpgateInstance) string {
 	var parts []string
 	parts = append(parts, "#!/bin/sh", "set -e")
 
+	// Remove any existing config first, then write a fresh copy owned by this
+	// (runtime) user. A /data poisoned by an older seed that ran as root leaves
+	// /data/warpgate.yaml root-owned; an in-place `cp` would fail with
+	// "Permission denied", so unlink it first (write on the fsGroup-owned /data
+	// directory is enough) and recreate it. This self-heals a bricked volume on
+	// the next reconcile without manual PVC surgery.
 	if inst.Spec.ConfigOverride != "" {
 		parts = append(parts,
 			`echo "Applying config override..."`,
+			`rm -f /data/warpgate.yaml`,
 			`cp /override/warpgate.yaml /data/warpgate.yaml`,
 		)
 	} else {
 		parts = append(parts,
 			`echo "Applying operator config..."`,
+			`rm -f /data/warpgate.yaml`,
 			`cp /config/warpgate.yaml /data/warpgate.yaml`,
 		)
 		if externalDatabase(inst) {
@@ -1465,16 +1534,22 @@ func buildSeedScript(inst *warpgatev1alpha1.WarpgateInstance) string {
 		parts = append(parts,
 			`echo "Copying TLS certificates from secret..."`,
 			`if [ -f /tls-secret/tls.crt ]; then`,
+			`  rm -f /data/tls.certificate.pem /data/tls.key.pem`,
 			`  cp /tls-secret/tls.crt /data/tls.certificate.pem`,
 			`  cp /tls-secret/tls.key /data/tls.key.pem`,
-			`  chmod 600 /data/tls.certificate.pem /data/tls.key.pem`,
+			`  chmod 0640 /data/tls.certificate.pem /data/tls.key.pem`,
 			`fi`,
 		)
 	}
 
+	// Mode 0640 (not 0600) so the files stay readable by the pod's group as well
+	// as the owner. This container runs as the runtime uid (see
+	// seedSecurityContext), and the fsGroup owns /data, so the non-root Warpgate
+	// process can always read what the seed writes, on every CSI driver,
+	// regardless of which uid created the file.
 	parts = append(parts,
-		`chmod 600 /data/*.pem 2>/dev/null || true`,
-		`chmod 600 /data/warpgate.yaml 2>/dev/null || true`,
+		`chmod 0640 /data/*.pem 2>/dev/null || true`,
+		`chmod 0640 /data/warpgate.yaml 2>/dev/null || true`,
 		`echo "Config seed complete."`,
 	)
 
